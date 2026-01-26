@@ -243,6 +243,11 @@ namespace StarterAssets
             {
                 StartGrind(_splineContainers[0], 0f);
             }
+            else
+            {
+                // Exit grind and jump if already grinding
+                ExitGrindWithJump();
+            }
         }
 
         public void StartGrind(SplineContainer spline, float startT)
@@ -262,10 +267,36 @@ namespace StarterAssets
             _controller.enabled = true;
         }
 
+        private void ExitGrindWithJump()
+        {
+            // Re-enable controller
+            _controller.enabled = true;
+            _isGrinding = false;
+
+            // Apply jump velocity
+            _verticalVelocity = Mathf.Sqrt(JumpHeight * -2f * Gravity);
+
+            // Update animator if using character
+            if (_hasAnimator)
+            {
+                _animator.SetBool(_animIDJump, true);
+            }
+
+            // Clear jump input to prevent double jumping
+            _input.jump = false;
+        }
+
         private void Grind()
         {
             if (GrindSpline == null || GrindSpline.Spline == null)
                 return;
+
+            // Check for jump input to exit grind early
+            if (_input.jump)
+            {
+                ExitGrindWithJump();
+                return;
+            }
 
             // Determine target speed (allow sprint to boost grind)
             float targetSpeed = _input.sprint ? SprintSpeed : GrindSpeed;
