@@ -878,6 +878,17 @@ MonoBehaviour:
       m_Data: []
   m_Knots:
     m_KnotsLink: []
+--- !u!114 &865937882 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 2070925441746177913, guid: a1a802ecaf6775746bb2a929fb554ad8, type: 3}
+  m_PrefabInstance: {fileID: 865937881}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 45e653bab7fb20e499bda25e1b646fea, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
 --- !u!1001 &466131006
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -932,8 +943,12 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 7908608487435845942, guid: 64dce48905ffd9b4293e595fa6941544, type: 3}
       propertyPath: GrindSpline
-      value: 
+      value:
       objectReference: {fileID: 437443454}
+    - target: {fileID: 7908608487435845942, guid: 64dce48905ffd9b4293e595fa6941544, type: 3}
+      propertyPath: VirtualCamera
+      value:
+      objectReference: {fileID: 865937882}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []

@@ -77,6 +77,14 @@ namespace StarterAssets
         private float _grindRotationVelocity;
         private SplineTravelDirection _grindDirection;
 
+        [Header("Grind Camera Effects")]
+        [Tooltip("Reference to the Cinemachine Virtual Camera")]
+        public Cinemachine.CinemachineVirtualCamera VirtualCamera;
+        [Tooltip("FOV increase when grinding")]
+        public float GrindFOVBoost = 10f;
+        [Tooltip("Speed of FOV transition")]
+        public float FOVLerpSpeed = 5f;
+
         [Header("Cinemachine")]
         [Tooltip("The follow target set in the Cinemachine Virtual Camera that the camera will follow")]
         public GameObject CinemachineCameraTarget;
@@ -93,9 +101,22 @@ namespace StarterAssets
         [Tooltip("For locking the camera position on all axis")]
         public bool LockCameraPosition = false;
 
+        [Tooltip("Smoothing time for camera look movement")]
+        public float LookSmoothTime = 0.1f;
+
         // cinemachine
         private float _cinemachineTargetYaw;
         private float _cinemachineTargetPitch;
+
+        // Look smoothing
+        private float _smoothYaw;
+        private float _smoothPitch;
+        private float _yawVelocity;
+        private float _pitchVelocity;
+
+        // FOV
+        private float _baseFOV;
+        private float _targetFOV;
 
         // player
         private float _speed;
@@ -172,6 +193,13 @@ namespace StarterAssets
             // reset our timeouts on start
             _jumpTimeoutDelta = JumpTimeout;
             _fallTimeoutDelta = FallTimeout;
+
+            // Initialize FOV
+            if (VirtualCamera != null)
+            {
+                _baseFOV = VirtualCamera.m_Lens.FieldOfView;
+                _targetFOV = _baseFOV;
+            }
         }
 
         private void Update()
@@ -194,6 +222,7 @@ namespace StarterAssets
         private void LateUpdate()
         {
             CameraRotation();
+            UpdateGrindFOV();
         }
 
         private void AssignAnimationIDs()
@@ -238,9 +267,24 @@ namespace StarterAssets
             _cinemachineTargetYaw = ClampAngle(_cinemachineTargetYaw, float.MinValue, float.MaxValue);
             _cinemachineTargetPitch = ClampAngle(_cinemachineTargetPitch, BottomClamp, TopClamp);
 
+            // Smooth the rotation values
+            _smoothYaw = Mathf.SmoothDamp(_smoothYaw, _cinemachineTargetYaw, ref _yawVelocity, LookSmoothTime);
+            _smoothPitch = Mathf.SmoothDamp(_smoothPitch, _cinemachineTargetPitch, ref _pitchVelocity, LookSmoothTime);
+
             // Cinemachine will follow this target
-            CinemachineCameraTarget.transform.rotation = Quaternion.Euler(_cinemachineTargetPitch + CameraAngleOverride,
-                _cinemachineTargetYaw, 0.0f);
+            CinemachineCameraTarget.transform.rotation = Quaternion.Euler(_smoothPitch + CameraAngleOverride,
+                _smoothYaw, 0.0f);
+        }
+
+        private void UpdateGrindFOV()
+        {
+            if (VirtualCamera == null) return;
+
+            _targetFOV = _isGrinding ? (_baseFOV + GrindFOVBoost) : _baseFOV;
+
+            var lens = VirtualCamera.m_Lens;
+            lens.FieldOfView = Mathf.Lerp(lens.FieldOfView, _targetFOV, Time.deltaTime * FOVLerpSpeed);
+            VirtualCamera.m_Lens = lens;
         }
 
         void OnGrindRequested(InputAction.CallbackContext context)
