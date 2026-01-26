@@ -92,6 +92,42 @@ namespace Unity.Splines.Examples
         }
 
         /// <summary>
+        /// Gets the nearest point on splines with travel direction based on a facing direction.
+        /// Use this when starting a grind to determine direction based on which way the player is facing.
+        /// </summary>
+        /// <param name="worldPosition">The world position to query from</param>
+        /// <param name="facingDirection">The direction the player is facing (e.g., transform.forward)</param>
+        /// <param name="splineContainers">Optional array of spline containers to search</param>
+        /// <returns>Result containing position, distance, parameter, container, and travel direction</returns>
+        public static NearestPointResult GetNearestPointWithFacingDirection(
+            float3 worldPosition,
+            float3 facingDirection,
+            SplineContainer[] splineContainers = null)
+        {
+            var result = GetNearestPointOnSplines(worldPosition, splineContainers);
+
+            if (result.Container == null)
+                return result;
+
+            // Get tangent at nearest point
+            using var native = new NativeSpline(result.Container.Spline, result.Container.transform.localToWorldMatrix);
+            float3 tangent = math.normalize(native.EvaluateTangent(result.SplineParameter));
+
+            // Flatten both vectors to horizontal plane for more intuitive direction matching
+            float3 flatFacing = math.normalize(new float3(facingDirection.x, 0, facingDirection.z));
+            float3 flatTangent = math.normalize(new float3(tangent.x, 0, tangent.z));
+
+            // Dot product tells us if facing aligns with tangent direction
+            float dotProduct = math.dot(flatFacing, flatTangent);
+
+            var direction = dotProduct >= 0
+                ? SplineTravelDirection.StartToEnd
+                : SplineTravelDirection.EndToStart;
+
+            return new NearestPointResult(result.Position, result.Distance, result.SplineParameter, result.Container, direction);
+        }
+
+        /// <summary>
         /// Gets the nearest point on splines with travel direction based on previous position.
         /// This method tracks the change in spline parameter and world position to determine direction.
         /// </summary>

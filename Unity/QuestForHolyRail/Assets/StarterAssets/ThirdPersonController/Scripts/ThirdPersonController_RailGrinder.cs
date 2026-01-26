@@ -1,7 +1,6 @@
 ﻿ using UnityEngine;
  using UnityEngine.Splines;
  using Unity.Splines.Examples;
- using Unity.Mathematics;
  using Random = UnityEngine.Random;
 #if ENABLE_INPUT_SYSTEM 
 using UnityEngine.InputSystem;
@@ -71,20 +70,12 @@ namespace StarterAssets
         public float GrindSpeed = 8f;
         public float GrindAcceleration = 12f;
         public float GrindRotationSmoothTime = 0.08f;
-        [Tooltip("Minimum change in spline parameter to detect direction when starting grind")]
-        public float DirectionDetectionThreshold = 0.001f;
 
         private bool _isGrinding;
         private float _grindT;                 // Normalized spline position (0–1)
         private float _grindSpeedCurrent;
         private float _grindRotationVelocity;
         private SplineTravelDirection _grindDirection;
-
-        // For tracking direction before grinding starts (used by GetNearestPointWithDirection)
-        private float _previousSplineT = -1f;
-        private SplineContainer _previousSplineContainer;
-        private bool _hasPositionHistory;
-        private float3 _previousWorldPosition;
 
         [Header("Cinemachine")]
         [Tooltip("The follow target set in the Cinemachine Virtual Camera that the camera will follow")]
@@ -124,6 +115,7 @@ namespace StarterAssets
         private int _animIDJump;
         private int _animIDFreeFall;
         private int _animIDMotionSpeed;
+        private int _animIDGrinding;
 
 #if ENABLE_INPUT_SYSTEM 
         private PlayerInput _playerInput;
@@ -211,6 +203,8 @@ namespace StarterAssets
             _animIDJump = Animator.StringToHash("Jump");
             _animIDFreeFall = Animator.StringToHash("FreeFall");
             _animIDMotionSpeed = Animator.StringToHash("MotionSpeed");
+            _animIDGrinding = Animator.StringToHash("Grinding");
+            
         }
 
         private void GroundedCheck()
@@ -253,13 +247,10 @@ namespace StarterAssets
         {
             if (!_isGrinding)
             {
-                // Always use direction-aware query - it handles the case when there's no previous state
-                var result = ShowNearestPoint.GetNearestPointWithDirection(
+                // Use facing direction to determine grind direction
+                var result = ShowNearestPoint.GetNearestPointWithFacingDirection(
                     transform.position,
-                    _previousSplineT,
-                    _previousSplineContainer,
-                    _previousWorldPosition,
-                    DirectionDetectionThreshold,
+                    transform.forward,
                     _splineContainers);
 
                 if (result.Container != null)
@@ -271,12 +262,6 @@ namespace StarterAssets
                 {
                     Debug.LogWarning("No spline found to grind on.");
                 }
-
-                // Update tracking for next call
-                _previousSplineT = result.SplineParameter;
-                _previousSplineContainer = result.Container;
-                _previousWorldPosition = transform.position;
-                _hasPositionHistory = true;
             }
             else
             {
@@ -292,6 +277,11 @@ namespace StarterAssets
             _grindSpeedCurrent = 0f;
             _verticalVelocity = 0f;
             _isGrinding = true;
+            if (_hasAnimator)
+            {
+                _animator.SetBool(_animIDJump, false);
+                _animator.SetBool(_animIDGrinding, true);
+            }
 
             // Store the direction, defaulting to StartToEnd if Unknown or Stationary
             _grindDirection = (direction == SplineTravelDirection.EndToStart) 
@@ -304,6 +294,7 @@ namespace StarterAssets
         public void StopGrind()
         {
             _isGrinding = false;
+            _animator.SetBool(_animIDGrinding, false);
             _controller.enabled = true;
         }
 
@@ -320,6 +311,7 @@ namespace StarterAssets
             if (_hasAnimator)
             {
                 _animator.SetBool(_animIDJump, true);
+                _animator.SetBool(_animIDGrinding, false);
             }
 
             // Clear jump input to prevent double jumping
@@ -338,8 +330,8 @@ namespace StarterAssets
                 return;
             }
 
-            // Determine target speed (allow sprint to boost grind)
-            float targetSpeed = _input.sprint ? SprintSpeed : GrindSpeed;
+            // Determine target speed (apply same sprint ratio as ground movement)
+            float targetSpeed = _input.sprint ? GrindSpeed * (SprintSpeed / MoveSpeed) : GrindSpeed;
 
             // Accelerate / decelerate like Move()
             _grindSpeedCurrent = Mathf.Lerp(
@@ -375,6 +367,12 @@ namespace StarterAssets
                 (Vector3)GrindSpline.Spline.EvaluateTangent(_grindT)
             ).normalized;
 
+            // Flip tangent when grinding in reverse direction so character faces movement direction
+            if (_grindDirection == SplineTravelDirection.EndToStart)
+            {
+                tangent = -tangent;
+            }
+
             tangent.y = 0f;
             tangent.Normalize();
 
@@ -400,7 +398,6 @@ namespace StarterAssets
             {
                 _animator.SetFloat(_animIDSpeed, _grindSpeedCurrent);
                 _animator.SetFloat(_animIDMotionSpeed, 1f);
-                _animator.SetBool(_animIDGrounded, true);
             }
         }
 
