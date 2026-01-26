@@ -1,5 +1,8 @@
 ﻿ using UnityEngine;
  using UnityEngine.Splines;
+ using Unity.Splines.Examples;
+ using Unity.Mathematics;
+ using Random = UnityEngine.Random;
 #if ENABLE_INPUT_SYSTEM 
 using UnityEngine.InputSystem;
 #endif
@@ -241,7 +244,17 @@ namespace StarterAssets
         {
             if (!_isGrinding)
             {
-                StartGrind(_splineContainers[0], 0f);
+                // Find the nearest spline point to the player's current position
+                var result = ShowNearestPoint.GetNearestPointOnSplines(transform.position, _splineContainers);
+
+                if (result.Container != null)
+                {
+                    StartGrind(result.Container, result.SplineParameter);
+                }
+                else
+                {
+                    Debug.LogWarning("No spline found to grind on.");
+                }
             }
             else
             {
