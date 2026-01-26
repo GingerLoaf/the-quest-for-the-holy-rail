@@ -38,7 +38,6 @@ namespace Unity.Splines.Examples
 
         void Update()
         {
-            var position = CalculatePosition();
             var nearest = new float4(0, 0, 0, float.PositiveInfinity);
 
             foreach (var container in m_SplineContainer)
@@ -49,10 +48,9 @@ namespace Unity.Splines.Examples
                     nearest = new float4(p, d);
             }
 
-            m_LineRenderer.SetPosition(0, position);
+            m_LineRenderer.SetPosition(0, transform.position);
             m_LineRenderer.SetPosition(1, nearest.xyz);
             m_NearestPoint.position = nearest.xyz;
-            transform.position = position;
         }
 
         Vector3 CalculatePosition()
