@@ -39,8 +39,7 @@
         {"m_Id": "node_fresnel"},
         {"m_Id": "node_fresnel_power"},
         {"m_Id": "node_multiply_fresnel"},
-        {"m_Id": "node_fresnel_color_mult"},
-        {"m_Id": "node_subtract_fresnel"},
+        {"m_Id": "node_lerp_fresnel"},
         {"m_Id": "node_multiply_emission"},
         {"m_Id": "node_prop_basecolor"},
         {"m_Id": "node_prop_gradientcolor"},
@@ -50,7 +49,9 @@
         {"m_Id": "node_prop_emissionintensity"},
         {"m_Id": "node_prop_fresnelcolor"},
         {"m_Id": "node_prop_fresnelamount"},
-        {"m_Id": "node_prop_fresnelpower"}
+        {"m_Id": "node_prop_fresnelpower"},
+        {"m_Id": "node_normal_vector"},
+        {"m_Id": "node_view_direction"}
     ],
     "m_GroupDatas": [],
     "m_StickyNoteDatas": [],
@@ -73,18 +74,19 @@
         {"m_OutputSlot": {"m_Node": {"m_Id": "node_prop_gradientcolor"}, "m_SlotId": 0}, "m_InputSlot": {"m_Node": {"m_Id": "node_multiply_color"}, "m_SlotId": 1}},
         {"m_OutputSlot": {"m_Node": {"m_Id": "node_multiply_color"}, "m_SlotId": 2}, "m_InputSlot": {"m_Node": {"m_Id": "node_add_basecolor"}, "m_SlotId": 0}},
         {"m_OutputSlot": {"m_Node": {"m_Id": "node_prop_basecolor"}, "m_SlotId": 0}, "m_InputSlot": {"m_Node": {"m_Id": "node_add_basecolor"}, "m_SlotId": 1}},
+        {"m_OutputSlot": {"m_Node": {"m_Id": "node_normal_vector"}, "m_SlotId": 0}, "m_InputSlot": {"m_Node": {"m_Id": "node_fresnel"}, "m_SlotId": 0}},
+        {"m_OutputSlot": {"m_Node": {"m_Id": "node_view_direction"}, "m_SlotId": 0}, "m_InputSlot": {"m_Node": {"m_Id": "node_fresnel"}, "m_SlotId": 1}},
         {"m_OutputSlot": {"m_Node": {"m_Id": "node_fresnel"}, "m_SlotId": 4}, "m_InputSlot": {"m_Node": {"m_Id": "node_fresnel_power"}, "m_SlotId": 0}},
         {"m_OutputSlot": {"m_Node": {"m_Id": "node_prop_fresnelpower"}, "m_SlotId": 0}, "m_InputSlot": {"m_Node": {"m_Id": "node_fresnel_power"}, "m_SlotId": 1}},
         {"m_OutputSlot": {"m_Node": {"m_Id": "node_fresnel_power"}, "m_SlotId": 2}, "m_InputSlot": {"m_Node": {"m_Id": "node_multiply_fresnel"}, "m_SlotId": 0}},
         {"m_OutputSlot": {"m_Node": {"m_Id": "node_prop_fresnelamount"}, "m_SlotId": 0}, "m_InputSlot": {"m_Node": {"m_Id": "node_multiply_fresnel"}, "m_SlotId": 1}},
-        {"m_OutputSlot": {"m_Node": {"m_Id": "node_multiply_fresnel"}, "m_SlotId": 2}, "m_InputSlot": {"m_Node": {"m_Id": "node_fresnel_color_mult"}, "m_SlotId": 0}},
-        {"m_OutputSlot": {"m_Node": {"m_Id": "node_prop_fresnelcolor"}, "m_SlotId": 0}, "m_InputSlot": {"m_Node": {"m_Id": "node_fresnel_color_mult"}, "m_SlotId": 1}},
         {"m_OutputSlot": {"m_Node": {"m_Id": "node_add_basecolor"}, "m_SlotId": 2}, "m_InputSlot": {"m_Node": {"m_Id": "node_multiply_emission"}, "m_SlotId": 0}},
         {"m_OutputSlot": {"m_Node": {"m_Id": "node_prop_emissionintensity"}, "m_SlotId": 0}, "m_InputSlot": {"m_Node": {"m_Id": "node_multiply_emission"}, "m_SlotId": 1}},
-        {"m_OutputSlot": {"m_Node": {"m_Id": "node_multiply_emission"}, "m_SlotId": 2}, "m_InputSlot": {"m_Node": {"m_Id": "node_subtract_fresnel"}, "m_SlotId": 0}},
-        {"m_OutputSlot": {"m_Node": {"m_Id": "node_fresnel_color_mult"}, "m_SlotId": 2}, "m_InputSlot": {"m_Node": {"m_Id": "node_subtract_fresnel"}, "m_SlotId": 1}},
-        {"m_OutputSlot": {"m_Node": {"m_Id": "node_subtract_fresnel"}, "m_SlotId": 2}, "m_InputSlot": {"m_Node": {"m_Id": "node_basecolor_out"}, "m_SlotId": 0}},
-        {"m_OutputSlot": {"m_Node": {"m_Id": "node_subtract_fresnel"}, "m_SlotId": 2}, "m_InputSlot": {"m_Node": {"m_Id": "node_emission"}, "m_SlotId": 0}}
+        {"m_OutputSlot": {"m_Node": {"m_Id": "node_multiply_emission"}, "m_SlotId": 2}, "m_InputSlot": {"m_Node": {"m_Id": "node_lerp_fresnel"}, "m_SlotId": 0}},
+        {"m_OutputSlot": {"m_Node": {"m_Id": "node_prop_fresnelcolor"}, "m_SlotId": 0}, "m_InputSlot": {"m_Node": {"m_Id": "node_lerp_fresnel"}, "m_SlotId": 1}},
+        {"m_OutputSlot": {"m_Node": {"m_Id": "node_multiply_fresnel"}, "m_SlotId": 2}, "m_InputSlot": {"m_Node": {"m_Id": "node_lerp_fresnel"}, "m_SlotId": 2}},
+        {"m_OutputSlot": {"m_Node": {"m_Id": "node_lerp_fresnel"}, "m_SlotId": 3}, "m_InputSlot": {"m_Node": {"m_Id": "node_basecolor_out"}, "m_SlotId": 0}},
+        {"m_OutputSlot": {"m_Node": {"m_Id": "node_lerp_fresnel"}, "m_SlotId": 3}, "m_InputSlot": {"m_Node": {"m_Id": "node_emission"}, "m_SlotId": 0}}
     ],
     "m_VertexContext": {
         "m_Position": {"x": 1200.0, "y": 0.0},
@@ -282,21 +284,15 @@
 
 {"m_SGVersion": 0, "m_Type": "UnityEditor.ShaderGraph.DynamicValueMaterialSlot", "m_ObjectId": "slot_multiply_fresnel_out", "m_Id": 2, "m_DisplayName": "Out", "m_SlotType": 1, "m_Hidden": false, "m_ShaderOutputName": "Out", "m_StageCapability": 3, "m_Value": {"e00": 0.0, "e01": 0.0, "e02": 0.0, "e03": 0.0, "e10": 0.0, "e11": 0.0, "e12": 0.0, "e13": 0.0, "e20": 0.0, "e21": 0.0, "e22": 0.0, "e23": 0.0, "e30": 0.0, "e31": 0.0, "e32": 0.0, "e33": 0.0}, "m_DefaultValue": {"e00": 1.0, "e01": 0.0, "e02": 0.0, "e03": 0.0, "e10": 0.0, "e11": 1.0, "e12": 0.0, "e13": 0.0, "e20": 0.0, "e21": 0.0, "e22": 1.0, "e23": 0.0, "e30": 0.0, "e31": 0.0, "e32": 0.0, "e33": 1.0}}
 
-{"m_SGVersion": 0, "m_Type": "UnityEditor.ShaderGraph.MultiplyNode", "m_ObjectId": "node_fresnel_color_mult", "m_Group": {"m_Id": ""}, "m_Name": "Multiply", "m_DrawState": {"m_Expanded": false, "m_Position": {"serializedVersion": "2", "x": -440.0, "y": 400.0, "width": 130.0, "height": 94.0}}, "m_Slots": [{"m_Id": "slot_fresnel_color_mult_a"}, {"m_Id": "slot_fresnel_color_mult_b"}, {"m_Id": "slot_fresnel_color_mult_out"}], "synonyms": [], "m_Precision": 0, "m_PreviewExpanded": false, "m_PreviewMode": 0, "m_CustomColors": {"m_SerializableColors": []}}
+{"m_SGVersion": 0, "m_Type": "UnityEditor.ShaderGraph.LerpNode", "m_ObjectId": "node_lerp_fresnel", "m_Group": {"m_Id": ""}, "m_Name": "Lerp", "m_DrawState": {"m_Expanded": false, "m_Position": {"serializedVersion": "2", "x": -280.0, "y": 400.0, "width": 130.0, "height": 118.0}}, "m_Slots": [{"m_Id": "slot_lerp_fresnel_a"}, {"m_Id": "slot_lerp_fresnel_b"}, {"m_Id": "slot_lerp_fresnel_t"}, {"m_Id": "slot_lerp_fresnel_out"}], "synonyms": [], "m_Precision": 0, "m_PreviewExpanded": false, "m_PreviewMode": 0, "m_CustomColors": {"m_SerializableColors": []}}
 
-{"m_SGVersion": 0, "m_Type": "UnityEditor.ShaderGraph.DynamicValueMaterialSlot", "m_ObjectId": "slot_fresnel_color_mult_a", "m_Id": 0, "m_DisplayName": "A", "m_SlotType": 0, "m_Hidden": false, "m_ShaderOutputName": "A", "m_StageCapability": 3, "m_Value": {"e00": 0.0, "e01": 0.0, "e02": 0.0, "e03": 0.0, "e10": 0.0, "e11": 0.0, "e12": 0.0, "e13": 0.0, "e20": 0.0, "e21": 0.0, "e22": 0.0, "e23": 0.0, "e30": 0.0, "e31": 0.0, "e32": 0.0, "e33": 0.0}, "m_DefaultValue": {"e00": 1.0, "e01": 0.0, "e02": 0.0, "e03": 0.0, "e10": 0.0, "e11": 1.0, "e12": 0.0, "e13": 0.0, "e20": 0.0, "e21": 0.0, "e22": 1.0, "e23": 0.0, "e30": 0.0, "e31": 0.0, "e32": 0.0, "e33": 1.0}}
+{"m_SGVersion": 0, "m_Type": "UnityEditor.ShaderGraph.DynamicVectorMaterialSlot", "m_ObjectId": "slot_lerp_fresnel_a", "m_Id": 0, "m_DisplayName": "A", "m_SlotType": 0, "m_Hidden": false, "m_ShaderOutputName": "A", "m_StageCapability": 3, "m_Value": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 0.0}, "m_DefaultValue": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 0.0}}
 
-{"m_SGVersion": 0, "m_Type": "UnityEditor.ShaderGraph.DynamicValueMaterialSlot", "m_ObjectId": "slot_fresnel_color_mult_b", "m_Id": 1, "m_DisplayName": "B", "m_SlotType": 0, "m_Hidden": false, "m_ShaderOutputName": "B", "m_StageCapability": 3, "m_Value": {"e00": 1.0, "e01": 1.0, "e02": 1.0, "e03": 1.0, "e10": 1.0, "e11": 1.0, "e12": 1.0, "e13": 1.0, "e20": 1.0, "e21": 1.0, "e22": 1.0, "e23": 1.0, "e30": 1.0, "e31": 1.0, "e32": 1.0, "e33": 1.0}, "m_DefaultValue": {"e00": 1.0, "e01": 0.0, "e02": 0.0, "e03": 0.0, "e10": 0.0, "e11": 1.0, "e12": 0.0, "e13": 0.0, "e20": 0.0, "e21": 0.0, "e22": 1.0, "e23": 0.0, "e30": 0.0, "e31": 0.0, "e32": 0.0, "e33": 1.0}}
+{"m_SGVersion": 0, "m_Type": "UnityEditor.ShaderGraph.DynamicVectorMaterialSlot", "m_ObjectId": "slot_lerp_fresnel_b", "m_Id": 1, "m_DisplayName": "B", "m_SlotType": 0, "m_Hidden": false, "m_ShaderOutputName": "B", "m_StageCapability": 3, "m_Value": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 0.0}, "m_DefaultValue": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 0.0}}
 
-{"m_SGVersion": 0, "m_Type": "UnityEditor.ShaderGraph.DynamicValueMaterialSlot", "m_ObjectId": "slot_fresnel_color_mult_out", "m_Id": 2, "m_DisplayName": "Out", "m_SlotType": 1, "m_Hidden": false, "m_ShaderOutputName": "Out", "m_StageCapability": 3, "m_Value": {"e00": 0.0, "e01": 0.0, "e02": 0.0, "e03": 0.0, "e10": 0.0, "e11": 0.0, "e12": 0.0, "e13": 0.0, "e20": 0.0, "e21": 0.0, "e22": 0.0, "e23": 0.0, "e30": 0.0, "e31": 0.0, "e32": 0.0, "e33": 0.0}, "m_DefaultValue": {"e00": 1.0, "e01": 0.0, "e02": 0.0, "e03": 0.0, "e10": 0.0, "e11": 1.0, "e12": 0.0, "e13": 0.0, "e20": 0.0, "e21": 0.0, "e22": 1.0, "e23": 0.0, "e30": 0.0, "e31": 0.0, "e32": 0.0, "e33": 1.0}}
+{"m_SGVersion": 0, "m_Type": "UnityEditor.ShaderGraph.DynamicVectorMaterialSlot", "m_ObjectId": "slot_lerp_fresnel_t", "m_Id": 2, "m_DisplayName": "T", "m_SlotType": 0, "m_Hidden": false, "m_ShaderOutputName": "T", "m_StageCapability": 3, "m_Value": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 0.0}, "m_DefaultValue": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 0.0}}
 
-{"m_SGVersion": 0, "m_Type": "UnityEditor.ShaderGraph.SubtractNode", "m_ObjectId": "node_subtract_fresnel", "m_Group": {"m_Id": ""}, "m_Name": "Subtract", "m_DrawState": {"m_Expanded": false, "m_Position": {"serializedVersion": "2", "x": -280.0, "y": 400.0, "width": 130.0, "height": 94.0}}, "m_Slots": [{"m_Id": "slot_subtract_fresnel_a"}, {"m_Id": "slot_subtract_fresnel_b"}, {"m_Id": "slot_subtract_fresnel_out"}], "synonyms": [], "m_Precision": 0, "m_PreviewExpanded": false, "m_PreviewMode": 0, "m_CustomColors": {"m_SerializableColors": []}}
-
-{"m_SGVersion": 0, "m_Type": "UnityEditor.ShaderGraph.DynamicVectorMaterialSlot", "m_ObjectId": "slot_subtract_fresnel_a", "m_Id": 0, "m_DisplayName": "A", "m_SlotType": 0, "m_Hidden": false, "m_ShaderOutputName": "A", "m_StageCapability": 3, "m_Value": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 0.0}, "m_DefaultValue": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 0.0}}
-
-{"m_SGVersion": 0, "m_Type": "UnityEditor.ShaderGraph.DynamicVectorMaterialSlot", "m_ObjectId": "slot_subtract_fresnel_b", "m_Id": 1, "m_DisplayName": "B", "m_SlotType": 0, "m_Hidden": false, "m_ShaderOutputName": "B", "m_StageCapability": 3, "m_Value": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 0.0}, "m_DefaultValue": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 0.0}}
-
-{"m_SGVersion": 0, "m_Type": "UnityEditor.ShaderGraph.DynamicVectorMaterialSlot", "m_ObjectId": "slot_subtract_fresnel_out", "m_Id": 2, "m_DisplayName": "Out", "m_SlotType": 1, "m_Hidden": false, "m_ShaderOutputName": "Out", "m_StageCapability": 3, "m_Value": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 0.0}, "m_DefaultValue": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 0.0}}
+{"m_SGVersion": 0, "m_Type": "UnityEditor.ShaderGraph.DynamicVectorMaterialSlot", "m_ObjectId": "slot_lerp_fresnel_out", "m_Id": 3, "m_DisplayName": "Out", "m_SlotType": 1, "m_Hidden": false, "m_ShaderOutputName": "Out", "m_StageCapability": 3, "m_Value": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 0.0}, "m_DefaultValue": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 0.0}}
 
 {"m_SGVersion": 0, "m_Type": "UnityEditor.ShaderGraph.MultiplyNode", "m_ObjectId": "node_multiply_emission", "m_Group": {"m_Id": ""}, "m_Name": "Multiply", "m_DrawState": {"m_Expanded": false, "m_Position": {"serializedVersion": "2", "x": 1150.0, "y": 100.0, "width": 130.0, "height": 94.0}}, "m_Slots": [{"m_Id": "slot_multiply_emission_a"}, {"m_Id": "slot_multiply_emission_b"}, {"m_Id": "slot_multiply_emission_out"}], "synonyms": [], "m_Precision": 0, "m_PreviewExpanded": false, "m_PreviewMode": 0, "m_CustomColors": {"m_SerializableColors": []}}
 
@@ -341,4 +337,12 @@
 {"m_SGVersion": 0, "m_Type": "UnityEditor.ShaderGraph.PropertyNode", "m_ObjectId": "node_prop_fresnelpower", "m_Group": {"m_Id": ""}, "m_Name": "Property", "m_DrawState": {"m_Expanded": true, "m_Position": {"serializedVersion": "2", "x": -800.0, "y": 540.0, "width": 140.0, "height": 34.0}}, "m_Slots": [{"m_Id": "slot_prop_fresnelpower_out"}], "synonyms": [], "m_Precision": 0, "m_PreviewExpanded": true, "m_PreviewMode": 0, "m_CustomColors": {"m_SerializableColors": []}, "m_Property": {"m_Id": "prop_fresnelpower"}}
 
 {"m_SGVersion": 0, "m_Type": "UnityEditor.ShaderGraph.Vector1MaterialSlot", "m_ObjectId": "slot_prop_fresnelpower_out", "m_Id": 0, "m_DisplayName": "FresnelPower", "m_SlotType": 1, "m_Hidden": false, "m_ShaderOutputName": "Out", "m_StageCapability": 3, "m_Value": 0.0, "m_DefaultValue": 0.0, "m_Labels": []}
+
+{"m_SGVersion": 0, "m_Type": "UnityEditor.ShaderGraph.NormalVectorNode", "m_ObjectId": "node_normal_vector", "m_Group": {"m_Id": ""}, "m_Name": "Normal Vector", "m_DrawState": {"m_Expanded": true, "m_Position": {"serializedVersion": "2", "x": -1000.0, "y": 350.0, "width": 160.0, "height": 130.0}}, "m_Slots": [{"m_Id": "slot_normal_vector_out"}], "synonyms": [], "m_Precision": 0, "m_PreviewExpanded": true, "m_PreviewMode": 2, "m_CustomColors": {"m_SerializableColors": []}, "m_Space": 2}
+
+{"m_SGVersion": 0, "m_Type": "UnityEditor.ShaderGraph.Vector3MaterialSlot", "m_ObjectId": "slot_normal_vector_out", "m_Id": 0, "m_DisplayName": "Out", "m_SlotType": 1, "m_Hidden": false, "m_ShaderOutputName": "Out", "m_StageCapability": 3, "m_Value": {"x": 0.0, "y": 0.0, "z": 1.0}, "m_DefaultValue": {"x": 0.0, "y": 0.0, "z": 1.0}, "m_Labels": []}
+
+{"m_SGVersion": 0, "m_Type": "UnityEditor.ShaderGraph.ViewDirectionNode", "m_ObjectId": "node_view_direction", "m_Group": {"m_Id": ""}, "m_Name": "View Direction", "m_DrawState": {"m_Expanded": true, "m_Position": {"serializedVersion": "2", "x": -1000.0, "y": 500.0, "width": 160.0, "height": 130.0}}, "m_Slots": [{"m_Id": "slot_view_direction_out"}], "synonyms": [], "m_Precision": 0, "m_PreviewExpanded": true, "m_PreviewMode": 2, "m_CustomColors": {"m_SerializableColors": []}, "m_Space": 2}
+
+{"m_SGVersion": 0, "m_Type": "UnityEditor.ShaderGraph.Vector3MaterialSlot", "m_ObjectId": "slot_view_direction_out", "m_Id": 0, "m_DisplayName": "Out", "m_SlotType": 1, "m_Hidden": false, "m_ShaderOutputName": "Out", "m_StageCapability": 3, "m_Value": {"x": 0.0, "y": 0.0, "z": 1.0}, "m_DefaultValue": {"x": 0.0, "y": 0.0, "z": 1.0}, "m_Labels": []}
 
