@@ -10,13 +10,20 @@
       }
     },
     "com.unity.ai.navigation": {
-      "version": "2.0.9",
+      "version": "file:com.unity.ai.navigation",
       "depth": 0,
-      "source": "registry",
+      "source": "embedded",
       "dependencies": {
         "com.unity.modules.ai": "1.0.0"
-      },
-      "url": "https://packages.unity.com"
+      }
+    },
+    "com.unity.ai.toolkit": {
+      "version": "file:com.unity.ai.toolkit",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {
+        "com.unity.nuget.newtonsoft-json": "3.2.1"
+      }
     },
     "com.unity.burst": {
       "version": "1.8.27",
@@ -108,6 +115,13 @@
     "com.unity.nuget.mono-cecil": {
       "version": "1.11.6",
       "depth": 0,
+      "source": "registry",
+      "dependencies": {},
+      "url": "https://packages.unity.com"
+    },
+    "com.unity.nuget.newtonsoft-json": {
+      "version": "3.2.2",
+      "depth": 1,
       "source": "registry",
       "dependencies": {},
       "url": "https://packages.unity.com"

@@ -636,6 +636,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   <NearestPoint>k__BackingField: {fileID: 8681355471258623764}
+  _directionThreshold: 0.001
 --- !u!120 &3035990280648171334
 LineRenderer:
   serializedVersion: 3
@@ -1564,9 +1565,25 @@ MonoBehaviour:
       m_Groups: 
       m_Action: Grind Input
       m_Flags: 0
+    - m_Name: 
+      m_Id: 7a2f3c54-2896-4112-b6e8-b84cc4d87b77
+      m_Path: <Gamepad>/buttonEast
+      m_Interactions: 
+      m_Processors: 
+      m_Groups: 
+      m_Action: Grind Input
+      m_Flags: 0
+    - m_Name: 
+      m_Id: 03cc0940-d7d1-47f5-ba96-9c656d239225
+      m_Path: <Gamepad>/buttonWest
+      m_Interactions: 
+      m_Processors: 
+      m_Groups: 
+      m_Action: Grind Input
+      m_Flags: 0
     m_Flags: 0
-  MoveSpeed: 2
-  SprintSpeed: 5.335
+  MoveSpeed: 8
+  SprintSpeed: 8
   RotationSmoothTime: 0.12
   SpeedChangeRate: 10
   LandingAudioClip: {fileID: 8300000, guid: ff697d3070687ce4583faa0561a145a2, type: 3}
@@ -1593,9 +1610,10 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 1
   GrindSpline: {fileID: 0}
-  GrindSpeed: 8
+  GrindSpeed: 16
   GrindAcceleration: 12
   GrindRotationSmoothTime: 0.08
+  DirectionDetectionThreshold: 0.001
   CinemachineCameraTarget: {fileID: 8338988566280778634}
   TopClamp: 70
   BottomClamp: -30
