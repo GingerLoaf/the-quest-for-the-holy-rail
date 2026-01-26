@@ -50,6 +50,7 @@ namespace Unity.Splines.Examples
         private float _previousSplineParameter = -1f;
         private SplineContainer _previousContainer = null;
         private bool _hasValidPreviousState = false;
+        private float3 _previousWorldPosition;
         
         /// <summary>
         /// Finds the nearest point on any spline in the scene to the given world position.
@@ -92,11 +93,12 @@ namespace Unity.Splines.Examples
 
         /// <summary>
         /// Gets the nearest point on splines with travel direction based on previous position.
-        /// This method tracks the change in spline parameter over time to determine direction.
+        /// This method tracks the change in spline parameter and world position to determine direction.
         /// </summary>
         /// <param name="worldPosition">The world position to query from</param>
         /// <param name="previousT">The previous spline parameter value</param>
         /// <param name="previousContainer">The previous spline container</param>
+        /// <param name="previousWorldPosition">The previous world position</param>
         /// <param name="directionThreshold">Minimum change in parameter to detect direction (prevents noise)</param>
         /// <param name="splineContainers">Optional array of spline containers to search</param>
         /// <returns>Result containing position, distance, parameter, container, and travel direction</returns>
@@ -104,6 +106,7 @@ namespace Unity.Splines.Examples
             float3 worldPosition,
             float previousT,
             SplineContainer previousContainer,
+            float3 previousWorldPosition,
             float directionThreshold = 0.001f,
             SplineContainer[] splineContainers = null)
         {
@@ -115,33 +118,45 @@ namespace Unity.Splines.Examples
             // Only calculate direction if we're on the same spline container as before
             if (previousContainer != null && result.Container == previousContainer && previousT >= 0)
             {
-                float tDelta = result.SplineParameter - previousT;
+                // Calculate movement vector in world space
+                float3 movementVector = worldPosition - previousWorldPosition;
+                float movementDistance = math.length(movementVector);
 
-                // Handle wrapping for closed splines
-                if (result.Container.Spline.Closed)
-                {
-                    // Check if we wrapped around
-                    if (math.abs(tDelta) > 0.5f)
-                    {
-                        // We likely wrapped, adjust the delta
-                        if (tDelta > 0)
-                            tDelta -= 1f;
-                        else
-                            tDelta += 1f;
-                    }
-                }
-
-                if (math.abs(tDelta) < directionThreshold)
+                // If barely moved, mark as stationary
+                if (movementDistance < directionThreshold)
                 {
                     direction = SplineTravelDirection.Stationary;
                 }
-                else if (tDelta > 0)
-                {
-                    direction = SplineTravelDirection.StartToEnd;
-                }
                 else
                 {
-                    direction = SplineTravelDirection.EndToStart;
+                    // Get tangent at current position to determine direction along spline
+                    using var native = new NativeSpline(result.Container.Spline, result.Container.transform.localToWorldMatrix);
+                    float3 tangent = native.EvaluateTangent(result.SplineParameter);
+                    tangent = math.normalize(tangent);
+
+                    // Dot product tells us if movement aligns with tangent direction
+                    float dotProduct = math.dot(math.normalize(movementVector), tangent);
+
+                    if (dotProduct > 0.1f) // Threshold to avoid noise
+                    {
+                        direction = SplineTravelDirection.StartToEnd;
+                    }
+                    else if (dotProduct < -0.1f)
+                    {
+                        direction = SplineTravelDirection.EndToStart;
+                    }
+                    else
+                    {
+                        // Fallback to parameter delta if movement is perpendicular
+                        float tDelta = result.SplineParameter - previousT;
+
+                        if (result.Container.Spline.Closed && math.abs(tDelta) > 0.5f)
+                        {
+                            tDelta = tDelta > 0 ? tDelta - 1f : tDelta + 1f;
+                        }
+
+                        direction = tDelta > 0 ? SplineTravelDirection.StartToEnd : SplineTravelDirection.EndToStart;
+                    }
                 }
             }
 
@@ -168,6 +183,7 @@ namespace Unity.Splines.Examples
                     transform.position,
                     _previousSplineParameter,
                     _previousContainer,
+                    _previousWorldPosition,
                     _directionThreshold,
                     _splineContainers);
             }
@@ -184,6 +200,7 @@ namespace Unity.Splines.Examples
             // Store current state for next frame
             _previousSplineParameter = result.SplineParameter;
             _previousContainer = result.Container;
+            _previousWorldPosition = transform.position;
         }
     }
 }

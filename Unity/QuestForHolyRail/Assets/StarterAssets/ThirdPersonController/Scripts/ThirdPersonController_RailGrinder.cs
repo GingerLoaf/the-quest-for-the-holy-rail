@@ -71,11 +71,20 @@ namespace StarterAssets
         public float GrindSpeed = 8f;
         public float GrindAcceleration = 12f;
         public float GrindRotationSmoothTime = 0.08f;
+        [Tooltip("Minimum change in spline parameter to detect direction when starting grind")]
+        public float DirectionDetectionThreshold = 0.001f;
 
         private bool _isGrinding;
         private float _grindT;                 // Normalized spline position (0–1)
         private float _grindSpeedCurrent;
         private float _grindRotationVelocity;
+        private SplineTravelDirection _grindDirection;
+
+        // For tracking direction before grinding starts (used by GetNearestPointWithDirection)
+        private float _previousSplineT = -1f;
+        private SplineContainer _previousSplineContainer;
+        private bool _hasPositionHistory;
+        private float3 _previousWorldPosition;
 
         [Header("Cinemachine")]
         [Tooltip("The follow target set in the Cinemachine Virtual Camera that the camera will follow")]
@@ -244,17 +253,30 @@ namespace StarterAssets
         {
             if (!_isGrinding)
             {
-                // Find the nearest spline point to the player's current position
-                var result = ShowNearestPoint.GetNearestPointOnSplines(transform.position, _splineContainers);
+                // Always use direction-aware query - it handles the case when there's no previous state
+                var result = ShowNearestPoint.GetNearestPointWithDirection(
+                    transform.position,
+                    _previousSplineT,
+                    _previousSplineContainer,
+                    _previousWorldPosition,
+                    DirectionDetectionThreshold,
+                    _splineContainers);
 
                 if (result.Container != null)
                 {
-                    StartGrind(result.Container, result.SplineParameter);
+                    StartGrind(result.Container, result.SplineParameter, result.TravelDirection);
+                    Debug.Log($"Started grinding with direction: {result.TravelDirection}");
                 }
                 else
                 {
                     Debug.LogWarning("No spline found to grind on.");
                 }
+
+                // Update tracking for next call
+                _previousSplineT = result.SplineParameter;
+                _previousSplineContainer = result.Container;
+                _previousWorldPosition = transform.position;
+                _hasPositionHistory = true;
             }
             else
             {
@@ -263,13 +285,18 @@ namespace StarterAssets
             }
         }
 
-        public void StartGrind(SplineContainer spline, float startT)
+        public void StartGrind(SplineContainer spline, float startT, SplineTravelDirection direction = SplineTravelDirection.StartToEnd)
         {
             GrindSpline = spline;
             _grindT = Mathf.Clamp01(startT);
             _grindSpeedCurrent = 0f;
             _verticalVelocity = 0f;
             _isGrinding = true;
+
+            // Store the direction, defaulting to StartToEnd if Unknown or Stationary
+            _grindDirection = (direction == SplineTravelDirection.EndToStart) 
+                ? SplineTravelDirection.EndToStart 
+                : SplineTravelDirection.StartToEnd;
 
             _controller.enabled = false; // important: spline drives position
         }
@@ -321,13 +348,20 @@ namespace StarterAssets
                 Time.deltaTime * GrindAcceleration
             );
 
-            // Advance along spline
+            // Advance along spline in the detected direction
             float splineLength = GrindSpline.Spline.GetLength();
             float deltaT = (_grindSpeedCurrent / splineLength) * Time.deltaTime;
+
+            // Apply direction: negative deltaT for EndToStart
+            if (_grindDirection == SplineTravelDirection.EndToStart)
+            {
+                deltaT = -deltaT;
+            }
+
             _grindT += deltaT;
 
-            // Optional: auto-exit at end
-            if (_grindT >= 1f)
+            // Optional: auto-exit at end or start
+            if (_grindT >= 1f || _grindT <= 0f)
             {
                 StopGrind();
                 return;
