@@ -158,6 +158,7 @@ namespace StarterAssets
         private int _animIDFreeFall;
         private int _animIDMotionSpeed;
         private int _animIDGrinding;
+        private int _animIDParry;
 
 #if ENABLE_INPUT_SYSTEM 
         private PlayerInput _playerInput;
@@ -267,7 +268,13 @@ namespace StarterAssets
                 GroundedCheck();
                 Move();
             }
-            
+
+            // Handle parry input
+            if (_input.parry && _hasAnimator)
+            {
+                _animator.SetTrigger(_animIDParry);
+                _input.parry = false;
+            }
         }
 
         private void LateUpdate()
@@ -284,7 +291,7 @@ namespace StarterAssets
             _animIDFreeFall = Animator.StringToHash("FreeFall");
             _animIDMotionSpeed = Animator.StringToHash("MotionSpeed");
             _animIDGrinding = Animator.StringToHash("Grinding");
-            
+            _animIDParry = Animator.StringToHash("Parry");
         }
 
         private void GroundedCheck()
