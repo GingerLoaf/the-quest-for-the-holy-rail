@@ -6,68 +6,99 @@ public class EnemySpawner : MonoBehaviour
     public static EnemySpawner Instance { get; private set; }
 
     [Header("Prefab References")]
+    [field: Tooltip("The enemy bot prefab to spawn")]
     [field: SerializeField]
     public GameObject BotPrefab { get; private set; }
 
+    [field: Tooltip("The bullet prefab that bots fire")]
     [field: SerializeField]
     public GameObject BulletPrefab { get; private set; }
 
     [Header("Player Reference")]
+    [field: Tooltip("The player transform to track for spawning and targeting")]
     [field: SerializeField]
     public Transform Player { get; private set; }
 
     [Header("Spawn Volume")]
+    [field: Tooltip("How far ahead of the player (in Z) to spawn enemies")]
     [field: SerializeField]
     public float SpawnOffsetZ { get; private set; } = 30f;
 
+    [field: Tooltip("Width of the spawn area (X axis)")]
     [field: SerializeField]
     public float SpawnWidth { get; private set; } = 20f;
 
+    [field: Tooltip("Height of the spawn area (Y axis, above player)")]
     [field: SerializeField]
     public float SpawnHeight { get; private set; } = 5f;
 
+    [field: Tooltip("Depth of the spawn area (Z axis)")]
     [field: SerializeField]
     public float SpawnDepth { get; private set; } = 10f;
 
     [Header("Spawn Rate")]
+    [field: Tooltip("Seconds between each enemy spawn")]
     [field: SerializeField]
     public float SpawnInterval { get; private set; } = 2f;
 
+    [field: Tooltip("Maximum number of enemies active at once")]
     [field: SerializeField]
     public int MaxActiveEnemies { get; private set; } = 10;
 
     [Header("Pool Sizes")]
+    [field: Tooltip("Total bot instances to pre-allocate in the pool")]
     [field: SerializeField]
     public int BotPoolSize { get; private set; } = 20;
 
+    [field: Tooltip("Total bullet instances to pre-allocate in the pool")]
     [field: SerializeField]
     public int BulletPoolSize { get; private set; } = 50;
 
     [Header("Bot Settings")]
+    [field: Tooltip("Bots stop approaching when within this distance of the player")]
     [field: SerializeField]
     public float BotExclusionRadius { get; private set; } = 5f;
 
+    [field: Tooltip("How quickly bots accelerate toward the player")]
     [field: SerializeField]
     public float BotAcceleration { get; private set; } = 8f;
 
+    [field: Tooltip("Maximum movement speed of bots")]
     [field: SerializeField]
     public float BotMaxSpeed { get; private set; } = 6f;
 
+    [field: Tooltip("Perlin noise magnitude for organic drift movement")]
     [field: SerializeField]
     public float BotNoiseAmount { get; private set; } = 1.5f;
 
+    [field: Tooltip("Perlin noise frequency - higher = faster drift")]
     [field: SerializeField]
     public float BotNoiseSpeed { get; private set; } = 2f;
 
+    [field: Tooltip("Bots within this distance will push away from each other")]
+    [field: SerializeField]
+    public float BotAvoidanceRadius { get; private set; } = 3f;
+
+    [field: Tooltip("How strongly bots repel each other when too close")]
+    [field: SerializeField]
+    public float BotAvoidanceStrength { get; private set; } = 5f;
+
     [Header("Bullet Settings")]
+    [field: Tooltip("Travel speed of bullets")]
     [field: SerializeField]
     public float BulletSpeed { get; private set; } = 15f;
 
+    [field: Tooltip("Seconds between each shot fired by a bot")]
     [field: SerializeField]
     public float BotFireRate { get; private set; } = 1.5f;
 
+    [field: Tooltip("Bots only fire when player is within this distance")]
     [field: SerializeField]
     public float BotFiringRange { get; private set; } = 15f;
+
+    [field: Tooltip("If true, bullets will knock the player off rails when hit")]
+    [field: SerializeField]
+    public bool BulletsKnockOffRail { get; private set; } = true;
 
     private Queue<EnemyBot> _botPool;
     private Queue<EnemyBullet> _bulletPool;
@@ -195,6 +226,11 @@ public class EnemySpawner : MonoBehaviour
         bullet.OnRecycle();
         bullet.gameObject.SetActive(false);
         _bulletPool.Enqueue(bullet);
+    }
+
+    public IReadOnlyList<EnemyBot> GetActiveBots()
+    {
+        return _activeBots;
     }
 
     private void OnDrawGizmosSelected()
