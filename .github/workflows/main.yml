@@ -47,6 +47,7 @@ jobs:
           unityVersion: 6000.3.5f1  # Pin Unity Editor version to match ProjectSettings/ProjectVersion.txt and avoid CI breakage from Unity updates
           targetPlatform: ${{ matrix.targetPlatform }}
           buildMethod: ${{ matrix.buildMethod }}
+          versioning: None
 
       - uses: actions/upload-artifact@v4
         id: upload-build
