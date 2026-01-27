@@ -83,6 +83,10 @@ public class EnemySpawner : MonoBehaviour
     [field: SerializeField]
     public float BotAvoidanceStrength { get; private set; } = 5f;
 
+    [field: Tooltip("Collision radius of the bot for physics queries")]
+    [field: SerializeField]
+    public float BotCollisionRadius { get; private set; } = 1.5f;
+
     [Header("Bullet Settings")]
     [field: Tooltip("Travel speed of bullets")]
     [field: SerializeField]
