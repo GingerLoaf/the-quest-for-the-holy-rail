@@ -1610,7 +1610,7 @@ MonoBehaviour:
   - {fileID: 8300000, guid: 274649b0e221539409070ebf6c18918b, type: 3}
   - {fileID: 8300000, guid: a3194b8bbc96ef84fab1f98f4b7dae3e, type: 3}
   FootstepAudioVolume: 0.5
-  JumpHeight: 1.2
+  JumpHeight: 2
   Gravity: -10
   JumpTimeout: 0.5
   FallTimeout: 0.15
@@ -1628,6 +1628,9 @@ MonoBehaviour:
   AutoGrind: 1
   GrindExitCooldown: 0.75
   GrindTriggerOffset: -0.5
+  GrindJumpMomentumMultiplier: 5
+  GrindStartBoost: 5
+  GrindBoostDecayRate: 2
   VirtualCamera: {fileID: 0}
   GrindFOVBoost: 15
   FOVLerpSpeed: 5

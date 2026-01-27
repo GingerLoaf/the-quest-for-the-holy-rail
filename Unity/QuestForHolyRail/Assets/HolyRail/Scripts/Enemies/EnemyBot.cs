@@ -9,6 +9,10 @@ public class EnemyBot : MonoBehaviour
     private float _noiseOffsetY;
     private float _noiseOffsetZ;
 
+    private static readonly Collider[] _overlapResults = new Collider[16];
+
+    private float BotRadius => _spawner != null ? _spawner.BotCollisionRadius : 1.5f;
+
     public void Initialize(EnemySpawner spawner)
     {
         _spawner = spawner;
@@ -60,9 +64,10 @@ public class EnemyBot : MonoBehaviour
             _velocity *= 0.95f;
         }
 
-        // Apply avoidance from other bots
-        var avoidance = CalculateAvoidance();
-        _velocity += avoidance * Time.deltaTime;
+        // Apply avoidance from other bots and world
+        var botAvoidance = CalculateBotAvoidance();
+        var worldAvoidance = CalculateWorldAvoidance();
+        _velocity += (botAvoidance + worldAvoidance) * Time.deltaTime;
 
         float time = Time.time * _spawner.BotNoiseSpeed;
         var noise = new Vector3(
@@ -71,10 +76,55 @@ public class EnemyBot : MonoBehaviour
             Mathf.PerlinNoise(_noiseOffsetZ + time, 0f) - 0.5f
         ) * _spawner.BotNoiseAmount * 2f;
 
-        transform.position += (_velocity + noise) * Time.deltaTime;
+        // Calculate desired movement
+        var desiredMove = (_velocity + noise) * Time.deltaTime;
+
+        // Apply movement with collision prevention
+        transform.position = MoveWithCollision(transform.position, desiredMove);
     }
 
-    private Vector3 CalculateAvoidance()
+    private Vector3 MoveWithCollision(Vector3 currentPos, Vector3 movement)
+    {
+        float moveDistance = movement.magnitude;
+        if (moveDistance < 0.001f)
+        {
+            return currentPos;
+        }
+
+        var moveDir = movement.normalized;
+
+        // SphereCast to check for obstacles
+        if (Physics.SphereCast(currentPos, BotRadius, moveDir, out RaycastHit hit, moveDistance, ~0, QueryTriggerInteraction.Ignore))
+        {
+            // Check if we hit something we should avoid
+            if (!hit.collider.CompareTag("Player") &&
+                hit.collider.GetComponent<EnemyBot>() == null &&
+                hit.collider.GetComponent<EnemyBullet>() == null)
+            {
+                // Move up to the hit point minus some buffer
+                float safeDistance = Mathf.Max(0f, hit.distance - 0.05f);
+                var safePos = currentPos + moveDir * safeDistance;
+
+                // Slide along the surface
+                var remainder = moveDistance - safeDistance;
+                if (remainder > 0.01f)
+                {
+                    var slideDir = Vector3.ProjectOnPlane(moveDir, hit.normal).normalized;
+                    if (slideDir.sqrMagnitude > 0.01f)
+                    {
+                        // Recursive slide with reduced distance
+                        return MoveWithCollision(safePos, slideDir * remainder * 0.5f);
+                    }
+                }
+
+                return safePos;
+            }
+        }
+
+        return currentPos + movement;
+    }
+
+    private Vector3 CalculateBotAvoidance()
     {
         var avoidance = Vector3.zero;
         float avoidRadius = _spawner.BotAvoidanceRadius;
@@ -98,13 +148,95 @@ public class EnemyBot : MonoBehaviour
 
             if (distance < avoidRadius && distance > 0.01f)
             {
-                // Push away from other bot, stronger when closer
                 float strength = (avoidRadius - distance) / avoidRadius;
                 avoidance -= toOther.normalized * strength * avoidStrength;
             }
         }
 
         return avoidance;
+    }
+
+    private Vector3 CalculateWorldAvoidance()
+    {
+        var avoidance = Vector3.zero;
+        float avoidRadius = _spawner.BotAvoidanceRadius;
+        float avoidStrength = _spawner.BotAvoidanceStrength;
+
+        if (avoidRadius <= 0f)
+        {
+            return avoidance;
+        }
+
+        int hitCount = Physics.OverlapSphereNonAlloc(
+            transform.position,
+            avoidRadius,
+            _overlapResults,
+            ~0,
+            QueryTriggerInteraction.Ignore
+        );
+
+        for (int i = 0; i < hitCount; i++)
+        {
+            var col = _overlapResults[i];
+
+            // Skip self, other bots, bullets, and player
+            if (col.transform == transform ||
+                col.GetComponent<EnemyBot>() != null ||
+                col.GetComponent<EnemyBullet>() != null ||
+                col.CompareTag("Player"))
+            {
+                continue;
+            }
+
+            // Find closest point on collider
+            var closestPoint = col.ClosestPoint(transform.position);
+            var toObstacle = closestPoint - transform.position;
+            float distance = toObstacle.magnitude;
+
+            if (distance < avoidRadius && distance > 0.01f)
+            {
+                float strength = (avoidRadius - distance) / avoidRadius;
+                avoidance -= toObstacle.normalized * strength * avoidStrength * 3f;
+            }
+        }
+
+        // Push out if inside a collider
+        PushOutOfColliders();
+
+        return avoidance;
+    }
+
+    private void PushOutOfColliders()
+    {
+        int hitCount = Physics.OverlapSphereNonAlloc(
+            transform.position,
+            BotRadius,
+            _overlapResults,
+            ~0,
+            QueryTriggerInteraction.Ignore
+        );
+
+        for (int i = 0; i < hitCount; i++)
+        {
+            var col = _overlapResults[i];
+
+            if (col.transform == transform ||
+                col.GetComponent<EnemyBot>() != null ||
+                col.GetComponent<EnemyBullet>() != null ||
+                col.CompareTag("Player"))
+            {
+                continue;
+            }
+
+            // Compute penetration and push out
+            if (Physics.ComputePenetration(
+                GetComponent<Collider>(), transform.position, transform.rotation,
+                col, col.transform.position, col.transform.rotation,
+                out Vector3 pushDir, out float pushDist))
+            {
+                transform.position += pushDir * (pushDist + 0.01f);
+            }
+        }
     }
 
     private void UpdateFiring()

@@ -79,6 +79,15 @@ namespace StarterAssets
         [Tooltip("Vertical offset for grind detection. 0 = on rail, negative = below rail allowed")]
         public float GrindTriggerOffset = -0.5f;
 
+        [Tooltip("Multiplier for momentum when jumping off a rail (1.0 = full momentum)")]
+        public float GrindJumpMomentumMultiplier = 1.0f;
+
+        [Tooltip("Speed boost applied when starting a grind")]
+        public float GrindStartBoost = 4f;
+
+        [Tooltip("How quickly the start boost decays toward base grind speed")]
+        public float GrindBoostDecayRate = 8f;
+
         private bool _isGrinding;
         private float _grindExitCooldownTimer;
         private float _grindT;                 // Normalized spline position (0–1)
@@ -380,7 +389,7 @@ namespace StarterAssets
         {
             GrindSpline = spline;
             _grindT = Mathf.Clamp01(startT);
-            _grindSpeedCurrent = 0f;
+            _grindSpeedCurrent = GrindSpeed + GrindStartBoost;
             _verticalVelocity = 0f;
             _isGrinding = true;
             if (_hasAnimator)
@@ -422,7 +431,7 @@ namespace StarterAssets
             _controller.enabled = true;
 
             // Preserve horizontal momentum from grind
-            _speed = _grindSpeedCurrent;
+            _speed = _grindSpeedCurrent * GrindJumpMomentumMultiplier;
             _targetRotation = Mathf.Atan2(exitDirection.x, exitDirection.z) * Mathf.Rad2Deg;
         }
 
@@ -458,7 +467,7 @@ namespace StarterAssets
             _verticalVelocity = Mathf.Sqrt(JumpHeight * -2f * Gravity);
 
             // Preserve horizontal momentum from grind
-            _speed = _grindSpeedCurrent;
+            _speed = _grindSpeedCurrent * GrindJumpMomentumMultiplier;
             _targetRotation = Mathf.Atan2(exitDirection.x, exitDirection.z) * Mathf.Rad2Deg;
 
             // Update animator if using character
@@ -487,11 +496,14 @@ namespace StarterAssets
             // Determine target speed (apply same sprint ratio as ground movement)
             float targetSpeed = _input.sprint ? GrindSpeed * (SprintSpeed / MoveSpeed) : GrindSpeed;
 
-            // Accelerate / decelerate like Move()
+            // Use boost decay rate when above target speed (decaying boost), otherwise use normal acceleration
+            float lerpRate = _grindSpeedCurrent > targetSpeed ? GrindBoostDecayRate : GrindAcceleration;
+
+            // Accelerate / decelerate toward target
             _grindSpeedCurrent = Mathf.Lerp(
                 _grindSpeedCurrent,
                 targetSpeed,
-                Time.deltaTime * GrindAcceleration
+                Time.deltaTime * lerpRate
             );
 
             // Advance along spline in the detected direction
