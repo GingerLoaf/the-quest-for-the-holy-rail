@@ -6,17 +6,11 @@ public class LevelChunk : MonoBehaviour
 {
     public event Action<LevelChunk> PlayerEnteredFirstTime;
 
-    [Header("Attachment Points - Near End (at pivot)")]
-    [Tooltip("Ground attachment points at the near end (2 expected)")]
-    public AttachmentPoint[] NearEndGround = new AttachmentPoint[2];
-    [Tooltip("Air attachment points at the near end (2 expected)")]
-    public AttachmentPoint[] NearEndAir = new AttachmentPoint[2];
-
-    [Header("Attachment Points - Far End (away from pivot)")]
-    [Tooltip("Ground attachment points at the far end (2 expected)")]
-    public AttachmentPoint[] FarEndGround = new AttachmentPoint[2];
-    [Tooltip("Air attachment points at the far end (2 expected)")]
-    public AttachmentPoint[] FarEndAir = new AttachmentPoint[2];
+    [Header("Attachment Points")]
+    [Tooltip("Attachment points at the near end (at pivot)")]
+    public AttachmentPoint[] NearEnd = new AttachmentPoint[2];
+    [Tooltip("Attachment points at the far end (away from pivot)")]
+    public AttachmentPoint[] FarEnd = new AttachmentPoint[2];
 
     public bool PlayerIsInside { get; private set; }
     public bool HasBeenVisited { get; private set; }
@@ -57,73 +51,52 @@ public class LevelChunk : MonoBehaviour
     /// Gets the attachment points at the end facing the next chunk in progression.
     /// Accounts for whether the chunk was spawned flipped.
     /// </summary>
-    public void GetProgressionFarEnd(out AttachmentPoint[] ground, out AttachmentPoint[] air)
+    public AttachmentPoint[] GetProgressionFarEnd()
     {
-        if (IsFlipped)
-        {
-            ground = NearEndGround;
-            air = NearEndAir;
-        }
-        else
-        {
-            ground = FarEndGround;
-            air = FarEndAir;
-        }
+        return IsFlipped ? NearEnd : FarEnd;
     }
 
     /// <summary>
-    /// Checks if all ground points at the progression far end are populated.
+    /// Gets the attachment points at the end facing the previous chunk in progression.
+    /// Accounts for whether the chunk was spawned flipped.
     /// </summary>
-    public bool FarEndGroundPopulated()
+    public AttachmentPoint[] GetProgressionNearEnd()
     {
-        GetProgressionFarEnd(out var ground, out _);
-        foreach (var point in ground)
-        {
-            if (point == null || !point.IsPopulated)
-                return false;
-        }
-        return true;
+        return IsFlipped ? FarEnd : NearEnd;
     }
 
     /// <summary>
-    /// Checks if all air points at the progression far end are populated.
+    /// Gets the average world position of populated points at the progression far end.
+    /// Returns null if no populated points exist.
     /// </summary>
-    public bool FarEndAirPopulated()
+    public Vector3? GetProgressionFarEndAveragePosition()
     {
-        GetProgressionFarEnd(out _, out var air);
-        foreach (var point in air)
-        {
-            if (point == null || !point.IsPopulated)
-                return false;
-        }
-        return true;
+        return GetAveragePosition(GetProgressionFarEnd());
     }
 
     /// <summary>
-    /// Checks if all ground points at the progression far end are NOT populated.
+    /// Gets the average world position of populated points at the progression near end.
+    /// Returns null if no populated points exist.
     /// </summary>
-    public bool FarEndGroundEmpty()
+    public Vector3? GetProgressionNearEndAveragePosition()
     {
-        GetProgressionFarEnd(out var ground, out _);
-        foreach (var point in ground)
-        {
-            if (point != null && point.IsPopulated)
-                return false;
-        }
-        return true;
+        return GetAveragePosition(GetProgressionNearEnd());
     }
 
-    /// <summary>
-    /// Checks if all air points at the progression far end are NOT populated.
-    /// </summary>
-    public bool FarEndAirEmpty()
+    private Vector3? GetAveragePosition(AttachmentPoint[] points)
     {
-        GetProgressionFarEnd(out _, out var air);
-        foreach (var point in air)
+        Vector3 sum = Vector3.zero;
+        int count = 0;
+
+        foreach (var point in points)
         {
-            if (point != null && point.IsPopulated)
-                return false;
+            if (point != null)
+            {
+                sum += point.transform.position;
+                count++;
+            }
         }
-        return true;
+
+        return count > 0 ? sum / count : null;
     }
 }

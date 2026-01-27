@@ -181,18 +181,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1c2d51e84a71de64697205e7a787f010, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::LevelChunk
-  NearEndGround:
+  NearEnd:
   - {fileID: 7009632114772875857}
   - {fileID: 3540947947895885218}
-  NearEndAir:
-  - {fileID: 6372758289940385899}
-  - {fileID: 7454829498128020351}
-  FarEndGround:
+  FarEnd:
   - {fileID: 3603062581736504094}
   - {fileID: 532308966458834520}
-  FarEndAir:
-  - {fileID: 2096455906689369980}
-  - {fileID: 7030045288443862950}
 --- !u!1 &1669235955374417424
 GameObject:
   m_ObjectHideFlags: 0
@@ -838,17 +832,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: deda8c9bfb735cb49a24465e44d184d5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AttachmentPoint
---- !u!114 &2096455906689369980 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 3078566574360865817, guid: f57d8e328d4301049a7903c95469d0f2, type: 3}
-  m_PrefabInstance: {fileID: 4008582412255030117}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: deda8c9bfb735cb49a24465e44d184d5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::AttachmentPoint
 --- !u!114 &3540947947895885218 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 469114413994829511, guid: f57d8e328d4301049a7903c95469d0f2, type: 3}
@@ -876,42 +859,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: deda8c9bfb735cb49a24465e44d184d5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AttachmentPoint
---- !u!114 &6372758289940385899 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 8057447232338950926, guid: f57d8e328d4301049a7903c95469d0f2, type: 3}
-  m_PrefabInstance: {fileID: 4008582412255030117}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: deda8c9bfb735cb49a24465e44d184d5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::AttachmentPoint
 --- !u!114 &7009632114772875857 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 6261814592987722036, guid: f57d8e328d4301049a7903c95469d0f2, type: 3}
-  m_PrefabInstance: {fileID: 4008582412255030117}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: deda8c9bfb735cb49a24465e44d184d5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::AttachmentPoint
---- !u!114 &7030045288443862950 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 6210152201504699587, guid: f57d8e328d4301049a7903c95469d0f2, type: 3}
-  m_PrefabInstance: {fileID: 4008582412255030117}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: deda8c9bfb735cb49a24465e44d184d5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::AttachmentPoint
---- !u!114 &7454829498128020351 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 5824710785587271706, guid: f57d8e328d4301049a7903c95469d0f2, type: 3}
   m_PrefabInstance: {fileID: 4008582412255030117}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 0}
