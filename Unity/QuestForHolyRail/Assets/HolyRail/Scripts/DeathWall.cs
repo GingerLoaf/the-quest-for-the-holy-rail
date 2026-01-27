@@ -7,6 +7,19 @@ using UnityEngine.SceneManagement;
 namespace HolyRail.Scripts
 {
     [Serializable]
+    public class VelocityDataPoint
+    {
+        public float timeFromStart;
+        public float velocity;
+
+        public VelocityDataPoint(float time, float vel)
+        {
+            timeFromStart = time;
+            velocity = vel;
+        }
+    }
+
+    [Serializable]
     public class SpeedAnalytics
     {
         public float playerCurrentSpeed;
@@ -14,13 +27,16 @@ namespace HolyRail.Scripts
         public float playerAvgSpeed;
         public float deathWallSpeed;
         public string timestamp;
-        public SpeedAnalytics(float playerCurrent, float playerMax, float playerAvg, float wallSpeed)
+        public List<VelocityDataPoint> velocityTimeline = new List<VelocityDataPoint>();
+
+        public SpeedAnalytics(float playerCurrent, float playerMax, float playerAvg, float wallSpeed, List<VelocityDataPoint> timeline)
         {
             playerCurrentSpeed = playerCurrent;
             playerMaxSpeed = playerMax;
             playerAvgSpeed = playerAvg;
             deathWallSpeed = wallSpeed;
             timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            velocityTimeline = timeline ?? new List<VelocityDataPoint>();
         }
     }
 
@@ -54,11 +70,27 @@ namespace HolyRail.Scripts
         private Vector3 _playerStartPosition;
         private bool _isActivated;
         private bool _hasReachedMaxSpeed;
+        private float _velocityCaptureTimer;
+        private float _sessionStartTime;
+        private List<VelocityDataPoint> _velocityTimeline = new();
+        private const float VELOCITY_CAPTURE_INTERVAL = 0.5f; // Capture every 1 second
+
+        // Catch-up mechanic fields
+        private bool _isCatchingUp;
+        private float _normalMaxSpeed;
+        private const float CATCHUP_DISTANCE_TRIGGER = 15f;
+        private const float CATCHUP_DISTANCE_RESTORE = 14f;
+        private const float CATCHUP_SPEED_MULTIPLIER = 1.5f;
 
         private void Awake()
         {
             CurrentSpeed = StartSpeed;
             _isActivated = false;
+            _sessionStartTime = Time.time;
+            _velocityCaptureTimer = 0f;
+            _velocityTimeline.Clear();
+            _normalMaxSpeed = MaxSpeed;
+            _isCatchingUp = false;
         }
 
         /// <summary>
@@ -68,11 +100,16 @@ namespace HolyRail.Scripts
         {
             var analytics = LoadAnalytics();
             float playerAvgSpeed = _playerSpeedSamples > 0 ? _playerSpeedSum / _playerSpeedSamples : 0f;
-            var record = new SpeedAnalytics(_playerCurrentSpeed, _playerMaxSpeed, playerAvgSpeed, CurrentSpeed);
+
+            // Add final data point at death
+            float finalTime = Time.time - _sessionStartTime;
+            _velocityTimeline.Add(new VelocityDataPoint(finalTime, _playerCurrentSpeed));
+
+            var record = new SpeedAnalytics(_playerCurrentSpeed, _playerMaxSpeed, playerAvgSpeed, CurrentSpeed, _velocityTimeline);
             analytics.records.Add(record);
             SaveAnalytics(analytics);
 
-            Debug.Log($"<color=cyan>[Analytics Recorded]</color> Total Deaths: {analytics.records.Count}", gameObject);
+            Debug.Log($"<color=cyan>[Analytics Recorded]</color> Total Deaths: {analytics.records.Count} | Velocity samples: {_velocityTimeline.Count}", gameObject);
         }
 
         /// <summary>
@@ -138,6 +175,15 @@ namespace HolyRail.Scripts
                     {
                         _playerMaxSpeed = _playerCurrentSpeed;
                     }
+
+                    // Capture velocity data point every second
+                    _velocityCaptureTimer += Time.deltaTime;
+                    if (_velocityCaptureTimer >= VELOCITY_CAPTURE_INTERVAL)
+                    {
+                        float timeFromStart = Time.time - _sessionStartTime;
+                        _velocityTimeline.Add(new VelocityDataPoint(timeFromStart, _playerCurrentSpeed));
+                        _velocityCaptureTimer = 0f;
+                    }
                 }
 
                 // Check if player has traveled 30 meters to activate the wall
@@ -155,6 +201,30 @@ namespace HolyRail.Scripts
             // Only move the wall if it has been activated
             if (_isActivated)
             {
+                // Catch-up mechanic: check distance to player
+                if (StarterAssets.ThirdPersonController_RailGrinder.Instance != null)
+                {
+                    float distanceToPlayer = Vector3.Distance(
+                        transform.position,
+                        StarterAssets.ThirdPersonController_RailGrinder.Instance.transform.position
+                    );
+
+                    // Enable catch-up if player is more than 15m away
+                    if (!_isCatchingUp && distanceToPlayer > CATCHUP_DISTANCE_TRIGGER)
+                    {
+                        _isCatchingUp = true;
+                        MaxSpeed = _normalMaxSpeed * CATCHUP_SPEED_MULTIPLIER;
+                        Debug.Log($"<color=yellow>[Death Wall Catch-Up]</color> Player is {distanceToPlayer:F2}m away! Boosting max speed to {MaxSpeed:F2} m/s", gameObject);
+                    }
+                    // Restore normal speed if player is within 14m
+                    else if (_isCatchingUp && distanceToPlayer <= CATCHUP_DISTANCE_RESTORE)
+                    {
+                        _isCatchingUp = false;
+                        MaxSpeed = _normalMaxSpeed;
+                        Debug.Log($"<color=green>[Death Wall Normal Speed]</color> Player is {distanceToPlayer:F2}m away. Restoring max speed to {MaxSpeed:F2} m/s", gameObject);
+                    }
+                }
+
                 CurrentSpeed += Acceleration * Time.deltaTime;
                 CurrentSpeed = Mathf.Min(CurrentSpeed, MaxSpeed);
 
