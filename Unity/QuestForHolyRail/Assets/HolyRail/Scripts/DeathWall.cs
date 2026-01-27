@@ -78,9 +78,12 @@ namespace HolyRail.Scripts
         // Catch-up mechanic fields
         private bool _isCatchingUp;
         private float _normalMaxSpeed;
-        private const float CATCHUP_DISTANCE_TRIGGER = 15f;
-        private const float CATCHUP_DISTANCE_RESTORE = 14f;
-        private const float CATCHUP_SPEED_MULTIPLIER = 1.5f;
+        private const float CATCHUP_DISTANCE_TRIGGER = 12f; // Start catching up earlier
+        private const float CATCHUP_DISTANCE_RESTORE = 10f; // Stay in catch-up longer
+        private const float CATCHUP_SPEED_MULTIPLIER = 2.5f; // Base aggressive multiplier
+        private const float CATCHUP_MAX_MULTIPLIER = 4.5f; // Maximum multiplier for extreme distances
+        private const float CATCHUP_ACCELERATION_BOOST = 2.0f; // Acceleration multiplier during catch-up
+        private float _normalAcceleration;
 
         private void Awake()
         {
@@ -90,6 +93,7 @@ namespace HolyRail.Scripts
             _velocityCaptureTimer = 0f;
             _velocityTimeline.Clear();
             _normalMaxSpeed = MaxSpeed;
+            _normalAcceleration = Acceleration;
             _isCatchingUp = false;
         }
 
@@ -209,19 +213,34 @@ namespace HolyRail.Scripts
                         StarterAssets.ThirdPersonController_RailGrinder.Instance.transform.position
                     );
 
-                    // Enable catch-up if player is more than 15m away
+                    // Enable aggressive catch-up if player is more than trigger distance away
                     if (!_isCatchingUp && distanceToPlayer > CATCHUP_DISTANCE_TRIGGER)
                     {
                         _isCatchingUp = true;
-                        MaxSpeed = _normalMaxSpeed * CATCHUP_SPEED_MULTIPLIER;
-                        Debug.Log($"<color=yellow>[Death Wall Catch-Up]</color> Player is {distanceToPlayer:F2}m away! Boosting max speed to {MaxSpeed:F2} m/s", gameObject);
+
+                        // Dynamic scaling: the further away, the more aggressive
+                        float distanceRatio = Mathf.Clamp01((distanceToPlayer - CATCHUP_DISTANCE_TRIGGER) / 20f);
+                        float dynamicMultiplier = Mathf.Lerp(CATCHUP_SPEED_MULTIPLIER, CATCHUP_MAX_MULTIPLIER, distanceRatio);
+
+                        MaxSpeed = _normalMaxSpeed * dynamicMultiplier;
+                        Acceleration = _normalAcceleration * CATCHUP_ACCELERATION_BOOST;
+
+                        Debug.Log($"<color=yellow>[Death Wall AGGRESSIVE Catch-Up]</color> Player is {distanceToPlayer:F2}m away! Boosting max speed to {MaxSpeed:F2} m/s (x{dynamicMultiplier:F2}) and acceleration to {Acceleration:F2} m/s²", gameObject);
                     }
-                    // Restore normal speed if player is within 14m
+                    // Dynamically adjust catch-up intensity while active
+                    else if (_isCatchingUp && distanceToPlayer > CATCHUP_DISTANCE_RESTORE)
+                    {
+                        float distanceRatio = Mathf.Clamp01((distanceToPlayer - CATCHUP_DISTANCE_TRIGGER) / 20f);
+                        float dynamicMultiplier = Mathf.Lerp(CATCHUP_SPEED_MULTIPLIER, CATCHUP_MAX_MULTIPLIER, distanceRatio);
+                        MaxSpeed = _normalMaxSpeed * dynamicMultiplier;
+                    }
+                    // Restore normal speed if player is within restore distance
                     else if (_isCatchingUp && distanceToPlayer <= CATCHUP_DISTANCE_RESTORE)
                     {
                         _isCatchingUp = false;
                         MaxSpeed = _normalMaxSpeed;
-                        Debug.Log($"<color=green>[Death Wall Normal Speed]</color> Player is {distanceToPlayer:F2}m away. Restoring max speed to {MaxSpeed:F2} m/s", gameObject);
+                        Acceleration = _normalAcceleration;
+                        Debug.Log($"<color=green>[Death Wall Normal Speed]</color> Player is {distanceToPlayer:F2}m away. Restoring max speed to {MaxSpeed:F2} m/s and acceleration to {Acceleration:F2} m/s²", gameObject);
                     }
                 }
 

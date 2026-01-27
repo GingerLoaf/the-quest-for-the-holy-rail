@@ -799,5 +799,18 @@ namespace StarterAssets
                 AudioSource.PlayClipAtPoint(LandingAudioClip, transform.TransformPoint(_controller.center), FootstepAudioVolume);
             }
         }
+
+        /// <summary>
+        /// Increases the player's maximum movement speeds.
+        /// </summary>
+        /// <param name="amount">Amount to increase speed by</param>
+        public void IncreaseMaxSpeed(float amount)
+        {
+            MoveSpeed += amount;
+            SprintSpeed += amount;
+            GrindSpeed += amount;
+
+            Debug.Log($"Speed increased! New speeds - Move: {MoveSpeed}, Sprint: {SprintSpeed}, Grind: {GrindSpeed}");
+        }
     }
 }

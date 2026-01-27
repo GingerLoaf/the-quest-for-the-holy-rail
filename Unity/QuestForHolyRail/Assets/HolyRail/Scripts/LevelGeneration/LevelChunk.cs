@@ -1,6 +1,9 @@
 using System;
 using StarterAssets;
+using Unity.Mathematics;
 using UnityEngine;
+using UnityEngine.Splines;
+using Random = UnityEngine.Random;
 
 namespace HolyRail.Scripts.LevelGeneration
 {
@@ -17,6 +20,19 @@ namespace HolyRail.Scripts.LevelGeneration
         [Header("Flip-Dependent Objects")]
         [Tooltip("Objects that should only be enabled if the chunk is not flipped")]
         public GameObject[] EnabledOnlyWhenNotFlipped;
+
+        [Header("Pickup Spawning")]
+        [Tooltip("Prefab of the pickup to spawn")]
+        public GameObject PickUpPrefab;
+
+        [Tooltip("Number of pickups to spawn in this chunk")]
+        public int PickUpCount = 3;
+
+        [Tooltip("Minimum distance along spline between pickups (0-1)")]
+        public float MinPickUpSpacing = 0.1f;
+
+        [Tooltip("Vertical offset above the spline path")]
+        public float PickUpHeightOffset = 1.0f;
 
         public bool PlayerIsInside { get; private set; }
         public bool HasBeenVisited { get; private set; }
@@ -39,6 +55,8 @@ namespace HolyRail.Scripts.LevelGeneration
 
             _previousIsFlipped = IsFlipped;
             UpdateFlipDependentObjects();
+
+            SpawnPickUps();
         }
 
         private void Update()
@@ -153,6 +171,42 @@ namespace HolyRail.Scripts.LevelGeneration
             }
 
             return count > 0 ? sum / count : null;
+        }
+
+        private void SpawnPickUps()
+        {
+            if (PickUpPrefab == null || PickUpCount <= 0)
+                return;
+
+            // Find all SplineContainers in this chunk
+            SplineContainer[] splineContainers = GetComponentsInChildren<SplineContainer>();
+
+            if (splineContainers.Length == 0)
+                return;
+
+            // Randomly select which splines to spawn pickups on
+            for (int i = 0; i < PickUpCount; i++)
+            {
+                // Pick a random spline
+                SplineContainer randomSpline = splineContainers[Random.Range(0, splineContainers.Length)];
+
+                if (randomSpline == null || randomSpline.Spline == null)
+                    continue;
+
+                // Generate random position along the spline with minimum spacing
+                float randomT = Random.Range(MinPickUpSpacing, 1f - MinPickUpSpacing);
+
+                // Evaluate position, tangent, and normal on spline
+                randomSpline.Evaluate(randomT, out float3 position, out float3 tangent, out float3 normal);
+
+                // Calculate rotation aligned with spline
+                Quaternion rotation = math.lengthsq(tangent) < float.Epsilon || math.lengthsq(normal) < float.Epsilon
+                    ? Quaternion.identity
+                    : Quaternion.LookRotation(tangent, normal);
+
+                // Instantiate pickup at exact spline position with proper rotation
+                GameObject pickUp = Instantiate(PickUpPrefab, position, rotation, transform);
+            }
         }
     }
 }
