@@ -26,6 +26,7 @@ namespace HolyRail.Scripts.LevelGeneration
         private Transform _playerTransform;
         private float _chunkStartZ;
         private float _chunkEndZ;
+        private bool _previousIsFlipped;
 
         private void Awake()
         {
@@ -35,6 +36,9 @@ namespace HolyRail.Scripts.LevelGeneration
             }
 
             CalculateChunkBounds();
+
+            _previousIsFlipped = IsFlipped;
+            UpdateFlipDependentObjects();
         }
 
         private void Update()
@@ -52,6 +56,29 @@ namespace HolyRail.Scripts.LevelGeneration
                 {
                     HasBeenVisited = true;
                     PlayerEnteredFirstTime?.Invoke(this);
+                }
+            }
+
+            // Check if flip state has changed
+            if (IsFlipped != _previousIsFlipped)
+            {
+                _previousIsFlipped = IsFlipped;
+                UpdateFlipDependentObjects();
+            }
+        }
+
+        private void UpdateFlipDependentObjects()
+        {
+            if (EnabledOnlyWhenNotFlipped == null)
+                return;
+
+            bool shouldBeEnabled = !IsFlipped;
+
+            foreach (var obj in EnabledOnlyWhenNotFlipped)
+            {
+                if (obj != null)
+                {
+                    obj.SetActive(shouldBeEnabled);
                 }
             }
         }
