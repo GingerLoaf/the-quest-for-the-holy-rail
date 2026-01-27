@@ -17,6 +17,7 @@ namespace StarterAssets
 #if ENABLE_INPUT_SYSTEM 
     [RequireComponent(typeof(PlayerInput))]
 #endif
+    [DefaultExecutionOrder(-1)]
     public class ThirdPersonController_RailGrinder : MonoBehaviour
     {
         public InputAction grindInput;
