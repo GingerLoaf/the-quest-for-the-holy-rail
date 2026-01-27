@@ -1,0 +1,248 @@
+// Space Colonization Vine Generator - Deterministic GPU Implementation
+// Uses fixed-point atomic operations to ensure reproducible results
+
+#pragma kernel ClearVotes
+#pragma kernel Vote
+#pragma kernel Grow
+#pragma kernel Prune
+
+// Data structures (must match C# side)
+struct VineNode
+{
+    float3 Position;
+    int ParentIndex;
+    int IsTip;
+    int LastGrowIteration;  // Track when this node last grew for branching cooldown
+};
+
+struct VineAttractor
+{
+    float3 Position;
+    int Active;
+};
+
+// Buffers
+RWStructuredBuffer<VineNode> _Nodes;
+RWStructuredBuffer<VineAttractor> _Attractors;
+RWStructuredBuffer<int> _VoteX;
+RWStructuredBuffer<int> _VoteY;
+RWStructuredBuffer<int> _VoteZ;
+RWStructuredBuffer<int> _VoteCount;
+RWStructuredBuffer<int> _Counter; // [0] = current node count, [1] = new nodes this iteration
+
+// Parameters
+int _NodeCount;
+int _AttractorCount;
+int _MaxNodes;
+int _Seed;
+int _FixedPointScale;
+int _CurrentIteration;
+int _BranchCooldown;
+float _StepSize;
+float _AttractionRadius;
+float _KillRadius;
+float _NoiseStrength;
+float _NoiseScale;
+
+// PCG hash for deterministic random
+uint pcgHash(uint input)
+{
+    uint state = input * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+// Convert hash to float in [0, 1]
+float hashToFloat(uint hash)
+{
+    return float(hash) / 4294967295.0;
+}
+
+// 3D noise based on position and seed
+float3 noiseFromPosition(float3 pos, int seed)
+{
+    uint hx = pcgHash(asuint(pos.x * _NoiseScale) ^ uint(seed));
+    uint hy = pcgHash(asuint(pos.y * _NoiseScale) ^ uint(seed + 1));
+    uint hz = pcgHash(asuint(pos.z * _NoiseScale) ^ uint(seed + 2));
+
+    return float3(
+        hashToFloat(hx) * 2.0 - 1.0,
+        hashToFloat(hy) * 2.0 - 1.0,
+        hashToFloat(hz) * 2.0 - 1.0
+    );
+}
+
+// Kernel 0: Clear vote accumulators
+[numthreads(64, 1, 1)]
+void ClearVotes(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_MaxNodes)
+        return;
+
+    _VoteX[id.x] = 0;
+    _VoteY[id.x] = 0;
+    _VoteZ[id.x] = 0;
+    _VoteCount[id.x] = 0;
+}
+
+// Kernel 1: Attractors vote for nearest tip
+[numthreads(64, 1, 1)]
+void Vote(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_AttractorCount)
+        return;
+
+    VineAttractor attractor = _Attractors[id.x];
+
+    // Skip inactive attractors
+    if (attractor.Active == 0)
+        return;
+
+    // Find nearest active tip within attraction radius
+    int nearestTip = -1;
+    float nearestDist = _AttractionRadius;
+
+    int nodeCount = _Counter[0];
+
+    for (int i = 0; i < nodeCount; i++)
+    {
+        VineNode node = _Nodes[i];
+
+        // Only consider active tips
+        if (node.IsTip == 0)
+            continue;
+
+        float dist = distance(attractor.Position, node.Position);
+
+        if (dist < nearestDist)
+        {
+            nearestDist = dist;
+            nearestTip = i;
+        }
+    }
+
+    // If we found a tip, vote with direction
+    if (nearestTip >= 0)
+    {
+        float3 direction = normalize(attractor.Position - _Nodes[nearestTip].Position);
+
+        // Convert to fixed-point for deterministic accumulation
+        int voteX = int(direction.x * _FixedPointScale);
+        int voteY = int(direction.y * _FixedPointScale);
+        int voteZ = int(direction.z * _FixedPointScale);
+
+        // Atomic add ensures A+B = B+A (order-independent)
+        InterlockedAdd(_VoteX[nearestTip], voteX);
+        InterlockedAdd(_VoteY[nearestTip], voteY);
+        InterlockedAdd(_VoteZ[nearestTip], voteZ);
+        InterlockedAdd(_VoteCount[nearestTip], 1);
+    }
+}
+
+// Kernel 2: Tips with votes spawn new nodes
+[numthreads(64, 1, 1)]
+void Grow(uint3 id : SV_DispatchThreadID)
+{
+    int nodeCount = _Counter[0];
+
+    if (id.x >= (uint)nodeCount)
+        return;
+
+    VineNode node = _Nodes[id.x];
+
+    // Only process active tips
+    if (node.IsTip == 0)
+        return;
+
+    // Check if this tip received votes
+    int voteCount = _VoteCount[id.x];
+
+    // CRITICAL FIX: If no votes, this tip has no nearby attractors - mark as non-tip
+    if (voteCount == 0)
+    {
+        _Nodes[id.x].IsTip = 0;
+        return;
+    }
+
+    // Check branch cooldown - node can only grow if enough iterations have passed
+    int iterationsSinceGrowth = _CurrentIteration - node.LastGrowIteration;
+    if (iterationsSinceGrowth < _BranchCooldown)
+        return;
+
+    // Compute average direction from votes (convert back from fixed-point)
+    float3 avgDirection = float3(
+        float(_VoteX[id.x]) / float(_FixedPointScale * voteCount),
+        float(_VoteY[id.x]) / float(_FixedPointScale * voteCount),
+        float(_VoteZ[id.x]) / float(_FixedPointScale * voteCount)
+    );
+
+    avgDirection = normalize(avgDirection);
+
+    // Add deterministic noise
+    float3 noise = noiseFromPosition(node.Position, _Seed + int(id.x) + _CurrentIteration);
+    avgDirection = normalize(avgDirection + noise * _NoiseStrength);
+
+    // Compute new position
+    float3 newPosition = node.Position + avgDirection * _StepSize;
+
+    // Allocate new node index atomically
+    int newIndex;
+    InterlockedAdd(_Counter[0], 1, newIndex);
+
+    // Check bounds
+    if (newIndex >= _MaxNodes)
+    {
+        // Rollback allocation
+        InterlockedAdd(_Counter[0], -1);
+        return;
+    }
+
+    // Create new node as a tip
+    // New nodes can grow immediately on next iteration - only parent needs cooldown for branching
+    VineNode newNode;
+    newNode.Position = newPosition;
+    newNode.ParentIndex = int(id.x);
+    newNode.IsTip = 1;
+    newNode.LastGrowIteration = _CurrentIteration - _BranchCooldown;  // Can grow next iteration
+
+    _Nodes[newIndex] = newNode;
+
+    // CRITICAL FIX: Update parent's LastGrowIteration but keep it as a tip!
+    // Parent stays a tip so it can spawn more branches in future iterations
+    // It will naturally become non-tip when all its nearby attractors are consumed
+    _Nodes[id.x].LastGrowIteration = _CurrentIteration;
+
+    // Track new nodes this iteration
+    InterlockedAdd(_Counter[1], 1);
+}
+
+// Kernel 3: Deactivate attractors near nodes
+[numthreads(64, 1, 1)]
+void Prune(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_AttractorCount)
+        return;
+
+    VineAttractor attractor = _Attractors[id.x];
+
+    // Skip already inactive attractors
+    if (attractor.Active == 0)
+        return;
+
+    int nodeCount = _Counter[0];
+    float killRadiusSq = _KillRadius * _KillRadius;
+
+    // Check distance to all nodes
+    for (int i = 0; i < nodeCount; i++)
+    {
+        float3 delta = attractor.Position - _Nodes[i].Position;
+        float distSq = dot(delta, delta);
+
+        if (distSq < killRadiusSq)
+        {
+            // Deactivate attractor
+            _Attractors[id.x].Active = 0;
+            return;
+        }
+    }
+}

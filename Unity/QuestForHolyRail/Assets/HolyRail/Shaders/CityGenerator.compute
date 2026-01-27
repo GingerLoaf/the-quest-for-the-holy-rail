@@ -1,0 +1,156 @@
+// Procedural City Generator - GPU Implementation
+// Generates building placement data for instanced rendering
+
+#pragma kernel GenerateCity
+
+// Building data structure (must match C# BuildingData)
+struct BuildingData
+{
+    float3 Position;
+    float3 Scale;
+    float4 Rotation;  // Quaternion
+    int ZoneType;     // 0 = Downtown, 1 = Industrial
+    int StyleIndex;   // Variation index
+};
+
+// Output buffer
+RWStructuredBuffer<BuildingData> _BuildingBuffer;
+RWStructuredBuffer<int> _Counter; // [0] = actual building count
+
+// Parameters
+int _Seed;
+float _MapSize;
+int _BuildingCount;
+float _DowntownRadius;
+float _DowntownDensity;
+float _IndustrialDensity;
+float _DowntownHeightMin;
+float _DowntownHeightMax;
+float _IndustrialHeightMin;
+float _IndustrialHeightMax;
+float _StreetWidth;
+float3 _CityCenter;
+
+// PCG hash for deterministic random (matches VineGenerator pattern)
+uint pcgHash(uint input)
+{
+    uint state = input * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+// Convert hash to float in [0, 1]
+float hashToFloat(uint hash)
+{
+    return float(hash) / 4294967295.0;
+}
+
+// Get random float in range using building index as seed component
+float randomInRange(uint buildingIndex, uint component, float minVal, float maxVal)
+{
+    uint hash = pcgHash(uint(_Seed) ^ (buildingIndex * 7919u + component * 6971u));
+    return minVal + hashToFloat(hash) * (maxVal - minVal);
+}
+
+// Get random int in range
+int randomInt(uint buildingIndex, uint component, int minVal, int maxVal)
+{
+    uint hash = pcgHash(uint(_Seed) ^ (buildingIndex * 7919u + component * 6971u));
+    return minVal + int(hash % uint(maxVal - minVal + 1));
+}
+
+// Create Y-axis rotation quaternion from angle in radians
+float4 quaternionFromYRotation(float angle)
+{
+    float halfAngle = angle * 0.5;
+    return float4(0, sin(halfAngle), 0, cos(halfAngle));
+}
+
+[numthreads(64, 1, 1)]
+void GenerateCity(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= uint(_BuildingCount))
+        return;
+
+    uint buildingIndex = id.x;
+
+    // Generate candidate position within map bounds
+    float halfMap = _MapSize * 0.5;
+    float x = randomInRange(buildingIndex, 0u, -halfMap, halfMap);
+    float z = randomInRange(buildingIndex, 1u, -halfMap, halfMap);
+
+    // Apply city center offset
+    x += _CityCenter.x;
+    z += _CityCenter.z;
+
+    // Calculate distance from city center (horizontal only)
+    float distFromCenter = sqrt((x - _CityCenter.x) * (x - _CityCenter.x) +
+                                 (z - _CityCenter.z) * (z - _CityCenter.z));
+
+    // Determine zone type based on distance
+    int zoneType = distFromCenter < _DowntownRadius ? 0 : 1;
+
+    // Apply density check - reject some buildings based on zone density
+    float densityThreshold = zoneType == 0 ? _DowntownDensity : _IndustrialDensity;
+    float densityRoll = randomInRange(buildingIndex, 2u, 0.0, 1.0);
+
+    if (densityRoll > densityThreshold)
+    {
+        // Building rejected by density check - don't add it
+        return;
+    }
+
+    // Snap to street grid to create roads
+    float gridSize = _StreetWidth * 2.0; // Building + street
+    float gridX = floor(x / gridSize) * gridSize + gridSize * 0.25;
+    float gridZ = floor(z / gridSize) * gridSize + gridSize * 0.25;
+
+    // Calculate building dimensions based on zone
+    float height, widthX, widthZ;
+
+    if (zoneType == 0)
+    {
+        // Downtown: tall, narrow buildings
+        height = randomInRange(buildingIndex, 3u, _DowntownHeightMin, _DowntownHeightMax);
+        float baseWidth = randomInRange(buildingIndex, 4u, 8.0, 15.0);
+        widthX = baseWidth;
+        widthZ = baseWidth;
+    }
+    else
+    {
+        // Industrial: short, wide buildings
+        height = randomInRange(buildingIndex, 3u, _IndustrialHeightMin, _IndustrialHeightMax);
+        widthX = randomInRange(buildingIndex, 4u, 15.0, 40.0);
+        widthZ = randomInRange(buildingIndex, 5u, 15.0, 40.0);
+    }
+
+    // Random Y rotation (0, 90, 180, or 270 degrees for grid alignment)
+    int rotationIndex = randomInt(buildingIndex, 6u, 0, 3);
+    float rotationAngle = rotationIndex * 1.5707963; // PI/2
+    float4 rotation = quaternionFromYRotation(rotationAngle);
+
+    // Style variation
+    int styleIndex = randomInt(buildingIndex, 7u, 0, 7);
+
+    // Allocate output slot atomically
+    int outputIndex;
+    InterlockedAdd(_Counter[0], 1, outputIndex);
+
+    // Sanity check
+    if (outputIndex >= _BuildingCount)
+    {
+        InterlockedAdd(_Counter[0], -1);
+        return;
+    }
+
+    // Write building data
+    // Position Y is at half height so cube mesh sits on ground
+    BuildingData building;
+    building.Position = float3(gridX, _CityCenter.y + height * 0.5, gridZ);
+    building.Scale = float3(widthX, height, widthZ);
+    building.Rotation = rotation;
+    building.ZoneType = zoneType;
+    building.StyleIndex = styleIndex;
+
+    _BuildingBuffer[outputIndex] = building;
+}
