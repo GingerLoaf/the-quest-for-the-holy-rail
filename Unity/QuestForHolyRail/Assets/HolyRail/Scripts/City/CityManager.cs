@@ -13,9 +13,22 @@ namespace HolyRail.City
         [Header("Compute Shader")]
         [field: SerializeField] public ComputeShader CityGeneratorShader { get; private set; }
 
-        [Header("Rendering")]
+        [Header("Building Rendering")]
         [field: SerializeField] public Mesh BuildingMesh { get; set; }
         [field: SerializeField] public Material BuildingMaterial { get; set; }
+
+        [Header("Ramp Settings")]
+        [field: SerializeField] public bool EnableRamps { get; set; } = true;
+        [field: SerializeField] public Mesh RampMesh { get; set; }
+        [field: SerializeField] public Material RampMaterial { get; set; }
+        [field: SerializeField] public int RampCount { get; set; } = 500;
+        [field: SerializeField] public float RampRadius { get; set; } = 500f;
+        [field: SerializeField] public float RampLengthMin { get; set; } = 5f;
+        [field: SerializeField] public float RampLengthMax { get; set; } = 15f;
+        [field: SerializeField] public float RampWidthMin { get; set; } = 3f;
+        [field: SerializeField] public float RampWidthMax { get; set; } = 8f;
+        [field: SerializeField] public float RampAngleMin { get; set; } = 10f;
+        [field: SerializeField] public float RampAngleMax { get; set; } = 35f;
 
         [Header("Generation Parameters")]
         [field: SerializeField] public int Seed { get; set; } = 12345;
@@ -44,10 +57,19 @@ namespace HolyRail.City
         [SerializeField, HideInInspector]
         private List<BuildingData> _generatedBuildings = new List<BuildingData>();
 
+        [SerializeField, HideInInspector]
+        private List<RampData> _generatedRamps = new List<RampData>();
+
         // Runtime GPU buffers (recreated from serialized data as needed)
         private GraphicsBuffer _buildingBuffer;
         private GraphicsBuffer _counterBuffer;
         private GraphicsBuffer _argsBuffer;
+
+        // Ramp GPU buffers
+        private GraphicsBuffer _rampBuffer;
+        private GraphicsBuffer _rampArgsBuffer;
+        private MaterialPropertyBlock _rampPropertyBlock;
+        private bool _rampBuffersInitialized;
 
         // Render state
         private Bounds _renderBounds;
@@ -58,9 +80,12 @@ namespace HolyRail.City
         private int _generateKernel;
 
         public int ActualBuildingCount => _generatedBuildings.Count;
+        public int ActualRampCount => _generatedRamps.Count;
         public bool HasData => _generatedBuildings.Count > 0;
+        public bool HasRampData => _generatedRamps.Count > 0;
         public bool IsGenerated => HasData;
         public IReadOnlyList<BuildingData> Buildings => _generatedBuildings;
+        public IReadOnlyList<RampData> Ramps => _generatedRamps;
 
         private void OnEnable()
         {
@@ -68,6 +93,10 @@ namespace HolyRail.City
             if (HasData && !_buffersInitialized)
             {
                 InitializeBuffersFromSerializedData();
+            }
+            if (HasRampData && !_rampBuffersInitialized)
+            {
+                InitializeRampBuffersFromSerializedData();
             }
         }
 
@@ -87,9 +116,19 @@ namespace HolyRail.City
                 InitializeBuffersFromSerializedData();
             }
 
+            if (HasRampData && !_rampBuffersInitialized)
+            {
+                InitializeRampBuffersFromSerializedData();
+            }
+
             if (HasData && BuildingMesh != null && BuildingMaterial != null && _buffersInitialized)
             {
                 RenderBuildings();
+            }
+
+            if (HasRampData && RampMesh != null && RampMaterial != null && _rampBuffersInitialized)
+            {
+                RenderRamps();
             }
         }
 
@@ -169,7 +208,24 @@ namespace HolyRail.City
             // Now initialize the rendering buffers from serialized data
             InitializeBuffersFromSerializedData();
 
-            Debug.Log($"CityManager: Generated {_generatedBuildings.Count} buildings (from {BuildingCount} attempts)");
+            // Generate ramps if enabled
+            if (EnableRamps)
+            {
+                if (RampMesh == null)
+                {
+                    Debug.LogWarning("CityManager: Ramps enabled but RampMesh is not assigned! Assign a cube mesh.");
+                }
+                if (RampMaterial == null)
+                {
+                    Debug.LogWarning("CityManager: Ramps enabled but RampMaterial is not assigned! Assign the RampMaterial from Assets/HolyRail/Materials/");
+                }
+
+                GenerateRamps();
+                InitializeRampBuffersFromSerializedData();
+            }
+
+            var rampInfo = EnableRamps ? $", {_generatedRamps.Count} ramps" : "";
+            Debug.Log($"CityManager: Generated {_generatedBuildings.Count} buildings (from {BuildingCount} attempts){rampInfo}");
         }
 
         private void InitializeBuffersFromSerializedData()
@@ -235,6 +291,225 @@ namespace HolyRail.City
             Graphics.RenderMeshIndirect(renderParams, BuildingMesh, _argsBuffer);
         }
 
+        private void GenerateRamps()
+        {
+            _generatedRamps.Clear();
+
+            var random = new System.Random(Seed + 12345); // Different seed offset for ramps
+            var centerPos = transform.position;
+
+            // Street grid parameters (must match CityGenerator.compute)
+            float gridSize = StreetWidth * 2.0f; // Building + street
+
+            // Buildings are at gridSize * 0.25 offset within each cell
+            // North-South streets run between building columns at X = cellX * gridSize + gridSize * 0.75
+            // We want ramps ONLY on North-South streets, avoiding intersections with E-W streets
+
+            float streetCenterOffset = gridSize * 0.75f; // Center of N-S street within a cell
+
+            // Calculate grid cells within the ramp radius
+            int cellsInRadius = Mathf.CeilToInt(RampRadius / gridSize);
+
+            int attempts = 0;
+            int maxAttempts = RampCount * 10; // Limit attempts to avoid infinite loop
+
+            while (_generatedRamps.Count < RampCount && attempts < maxAttempts)
+            {
+                attempts++;
+
+                // Random dimensions
+                float length = RampLengthMin + (float)random.NextDouble() * (RampLengthMax - RampLengthMin);
+                float width = RampWidthMin + (float)random.NextDouble() * (RampWidthMax - RampWidthMin);
+                float angle = RampAngleMin + (float)random.NextDouble() * (RampAngleMax - RampAngleMin);
+                float depth = 0.5f; // Thickness of the ramp
+
+                // Pick a random grid cell within the ramp radius (centered on city center)
+                int cellOffsetX = random.Next(-cellsInRadius, cellsInRadius + 1);
+                int cellOffsetZ = random.Next(-cellsInRadius, cellsInRadius + 1);
+
+                // X position: Center of North-South street (between building columns)
+                // The street runs at x = cellOffsetX * gridSize + streetCenterOffset from center
+                float streetX = centerPos.x + cellOffsetX * gridSize + streetCenterOffset;
+
+                // Z position: Place within the cell but avoid E-W street intersections
+                // Stay in the first half of the cell (building row area, 0.0 to 0.5 of gridSize)
+                float zPadding = length * 0.5f + 2f; // Padding for ramp length plus margin
+                float zMin = zPadding;
+                float zMax = gridSize * 0.5f - zPadding;
+
+                if (zMax <= zMin)
+                {
+                    // Cell too small for this ramp, skip
+                    continue;
+                }
+
+                float localZ = zMin + (float)random.NextDouble() * (zMax - zMin);
+                float streetZ = centerPos.z + cellOffsetZ * gridSize + localZ;
+
+                // Check if within ramp radius
+                float distFromCenter = Mathf.Sqrt(
+                    (streetX - centerPos.x) * (streetX - centerPos.x) +
+                    (streetZ - centerPos.z) * (streetZ - centerPos.z)
+                );
+
+                if (distFromCenter > RampRadius)
+                {
+                    continue;
+                }
+
+                // Calculate vertical rise based on angle and length
+                float angleRad = angle * Mathf.Deg2Rad;
+                float rampRise = length * Mathf.Sin(angleRad);
+                float rampRun = length * Mathf.Cos(angleRad);
+
+                // Align ramp with Z axis - facing forward (+Z direction)
+                // Tilt the ramp up by rotating around X axis (negative angle tilts front up)
+                var finalRotation = Quaternion.Euler(-angle, 0f, 0f);
+
+                // Position Y: center of the tilted ramp
+                float yOffset = rampRise * 0.5f;
+
+                var rampPosition = new Vector3(streetX, yOffset + centerPos.y, streetZ);
+
+                // Check if ramp intersects any buildings using a generous bounding box
+                bool intersectsBuilding = false;
+
+                // Create bounds that encompass the full ramp footprint
+                var rampMin = new Vector3(
+                    rampPosition.x - width * 0.5f - 1f,
+                    0f,
+                    rampPosition.z - rampRun * 0.5f - 1f
+                );
+                var rampMax = new Vector3(
+                    rampPosition.x + width * 0.5f + 1f,
+                    rampRise + 2f,
+                    rampPosition.z + rampRun * 0.5f + 1f
+                );
+
+                foreach (var building in _generatedBuildings)
+                {
+                    var buildingMin = new Vector3(
+                        building.Position.x - building.Scale.x * 0.5f,
+                        0f,
+                        building.Position.z - building.Scale.z * 0.5f
+                    );
+                    var buildingMax = new Vector3(
+                        building.Position.x + building.Scale.x * 0.5f,
+                        building.Position.y + building.Scale.y * 0.5f,
+                        building.Position.z + building.Scale.z * 0.5f
+                    );
+
+                    // AABB intersection test
+                    if (rampMin.x < buildingMax.x && rampMax.x > buildingMin.x &&
+                        rampMin.z < buildingMax.z && rampMax.z > buildingMin.z)
+                    {
+                        intersectsBuilding = true;
+                        break;
+                    }
+                }
+
+                if (intersectsBuilding)
+                    continue;
+
+                // Scale: X = width, Y = thickness (small), Z = length along slope
+                var ramp = new RampData
+                {
+                    Position = rampPosition,
+                    Scale = new Vector3(width, depth, length),
+                    Rotation = finalRotation,
+                    Angle = angle
+                };
+
+                _generatedRamps.Add(ramp);
+            }
+
+            if (_generatedRamps.Count < RampCount)
+            {
+                Debug.LogWarning($"CityManager: Only placed {_generatedRamps.Count} ramps out of {RampCount} requested (couldn't find valid positions for the rest)");
+            }
+        }
+
+        private void InitializeRampBuffersFromSerializedData()
+        {
+            if (_generatedRamps.Count == 0)
+            {
+                Debug.Log("CityManager: No ramps to initialize buffers for.");
+                return;
+            }
+
+            if (RampMesh == null)
+            {
+                Debug.LogWarning("CityManager: Cannot initialize ramp buffers - RampMesh is null. Assign a cube mesh.");
+                return;
+            }
+
+            if (RampMaterial == null)
+            {
+                Debug.LogWarning("CityManager: Cannot initialize ramp buffers - RampMaterial is null. Assign RampMaterial from Assets/HolyRail/Materials/");
+                return;
+            }
+
+            Debug.Log($"CityManager: Initializing ramp buffers for {_generatedRamps.Count} ramps...");
+
+            // Release any existing ramp buffers
+            ReleaseRampBuffers();
+
+            int rampStride = Marshal.SizeOf<RampData>();
+
+            // Create and populate ramp buffer from serialized data
+            _rampBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, _generatedRamps.Count, rampStride);
+            _rampBuffer.SetData(_generatedRamps.ToArray());
+
+            // Create indirect args buffer for RenderMeshIndirect
+            _rampArgsBuffer = new GraphicsBuffer(GraphicsBuffer.Target.IndirectArguments, 1, 5 * sizeof(uint));
+            uint[] args = new uint[]
+            {
+                RampMesh.GetIndexCount(0),
+                (uint)_generatedRamps.Count,
+                RampMesh.GetIndexStart(0),
+                RampMesh.GetBaseVertex(0),
+                0
+            };
+            _rampArgsBuffer.SetData(args);
+
+            // Create property block for ramp material
+            _rampPropertyBlock = new MaterialPropertyBlock();
+            _rampPropertyBlock.SetBuffer("_RampBuffer", _rampBuffer);
+
+            _rampBuffersInitialized = true;
+            Debug.Log($"CityManager: Ramp buffers initialized successfully. Mesh: {RampMesh.name}, Material: {RampMaterial.name}");
+        }
+
+        private void RenderRamps()
+        {
+            if (_rampArgsBuffer == null || _rampPropertyBlock == null)
+                return;
+
+            // Update material buffer reference
+            _rampPropertyBlock.SetBuffer("_RampBuffer", _rampBuffer);
+
+            var renderParams = new RenderParams(RampMaterial)
+            {
+                worldBounds = _renderBounds,
+                matProps = _rampPropertyBlock,
+                shadowCastingMode = ShadowCastingMode.On,
+                receiveShadows = true
+            };
+
+            Graphics.RenderMeshIndirect(renderParams, RampMesh, _rampArgsBuffer);
+        }
+
+        private void ReleaseRampBuffers()
+        {
+            _rampBuffer?.Release();
+            _rampArgsBuffer?.Release();
+
+            _rampBuffer = null;
+            _rampArgsBuffer = null;
+
+            _rampBuffersInitialized = false;
+        }
+
         private void ReleaseBuffers()
         {
             _buildingBuffer?.Release();
@@ -252,18 +527,32 @@ namespace HolyRail.City
         public void Clear()
         {
             ReleaseBuffers();
+            ReleaseRampBuffers();
             _generatedBuildings.Clear();
+            _generatedRamps.Clear();
+
+            // Find and clear any BuildingColliderPools that reference this CityManager
+            var colliderPools = FindObjectsByType<BuildingColliderPool>(FindObjectsSortMode.None);
+            foreach (var pool in colliderPools)
+            {
+                if (pool.CityManager == this)
+                {
+                    pool.Clear();
+                }
+            }
         }
 
         private void OnDisable()
         {
             // Only release GPU buffers, keep serialized data for persistence
             ReleaseBuffers();
+            ReleaseRampBuffers();
         }
 
         private void OnDestroy()
         {
             ReleaseBuffers();
+            ReleaseRampBuffers();
         }
 
         private void OnDrawGizmosSelected()
@@ -279,6 +568,13 @@ namespace HolyRail.City
             // Draw downtown radius
             Gizmos.color = new Color(1f, 0.5f, 0f, 0.5f);
             DrawCircle(transform.position + Vector3.up * 5f, DowntownRadius, 32);
+
+            // Draw ramp radius (if enabled)
+            if (EnableRamps)
+            {
+                Gizmos.color = new Color(0.2f, 0.4f, 0.8f, 0.5f);
+                DrawCircle(transform.position + Vector3.up * 6f, RampRadius, 48);
+            }
 
             // Draw center marker
             Gizmos.color = Color.red;

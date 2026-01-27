@@ -1,11 +1,9 @@
-Shader "HolyRail/BuildingInstanced"
+Shader "HolyRail/RampInstanced"
 {
     Properties
     {
-        _DowntownColor ("Downtown Color", Color) = (0.5, 0.5, 0.55, 1)
-        _IndustrialColor ("Industrial Color", Color) = (0.55, 0.4, 0.35, 1)
-        _WindowEmission ("Window Emission", Range(0, 2)) = 0.5
-        _WindowDensity ("Window Density", Range(1, 20)) = 10
+        _BaseColor ("Base Color", Color) = (0.2, 0.4, 0.8, 1)
+        _ColorVariation ("Color Variation", Range(0, 0.2)) = 0.05
     }
 
     SubShader
@@ -32,31 +30,27 @@ Shader "HolyRail/BuildingInstanced"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
 
-            struct BuildingData
+            struct RampData
             {
                 float3 Position;
                 float3 Scale;
                 float4 Rotation;
-                int ZoneType;
-                int StyleIndex;
+                float Angle;
             };
 
             #ifdef UNITY_PROCEDURAL_INSTANCING_ENABLED
-            StructuredBuffer<BuildingData> _BuildingBuffer;
+            StructuredBuffer<RampData> _RampBuffer;
             #endif
 
             CBUFFER_START(UnityPerMaterial)
-                float4 _DowntownColor;
-                float4 _IndustrialColor;
-                float _WindowEmission;
-                float _WindowDensity;
+                float4 _BaseColor;
+                float _ColorVariation;
             CBUFFER_END
 
             struct Attributes
             {
                 float4 positionOS : POSITION;
                 float3 normalOS : NORMAL;
-                float2 uv : TEXCOORD0;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
@@ -65,11 +59,8 @@ Shader "HolyRail/BuildingInstanced"
                 float4 positionCS : SV_POSITION;
                 float3 normalWS : TEXCOORD0;
                 float3 positionWS : TEXCOORD1;
-                float2 uv : TEXCOORD2;
-                float3 scale : TEXCOORD3;
-                nointerpolation int zoneType : TEXCOORD4;
-                nointerpolation int styleIndex : TEXCOORD5;
-                float fogCoord : TEXCOORD6;
+                nointerpolation uint instanceID : TEXCOORD2;
+                float fogCoord : TEXCOORD3;
             };
 
             // Rotate vector by quaternion
@@ -86,12 +77,12 @@ Shader "HolyRail/BuildingInstanced"
             {
                 #ifdef UNITY_PROCEDURAL_INSTANCING_ENABLED
                 uint instanceID = unity_InstanceID;
-                BuildingData building = _BuildingBuffer[instanceID];
+                RampData ramp = _RampBuffer[instanceID];
 
                 // Build object-to-world matrix from position, rotation, scale
-                float3 pos = building.Position;
-                float3 scale = building.Scale;
-                float4 rot = building.Rotation;
+                float3 pos = ramp.Position;
+                float3 scale = ramp.Scale;
+                float4 rot = ramp.Rotation;
 
                 // Create rotation matrix from quaternion
                 float3 right = rotateByQuaternion(float3(1, 0, 0), rot) * scale.x;
@@ -105,8 +96,7 @@ Shader "HolyRail/BuildingInstanced"
                     float4(0, 0, 0, 1)
                 );
 
-                // Compute inverse for normals (transpose of inverse for rotation/scale)
-                // For uniform scale we can simplify, but for non-uniform we need proper inverse
+                // Compute inverse for normals
                 float3 invScale = 1.0 / scale;
                 float4 invRot = float4(-rot.xyz, rot.w); // Conjugate for inverse
 
@@ -129,14 +119,9 @@ Shader "HolyRail/BuildingInstanced"
                 UNITY_SETUP_INSTANCE_ID(input);
 
                 #ifdef UNITY_PROCEDURAL_INSTANCING_ENABLED
-                BuildingData building = _BuildingBuffer[unity_InstanceID];
-                output.zoneType = building.ZoneType;
-                output.styleIndex = building.StyleIndex;
-                output.scale = building.Scale;
+                output.instanceID = unity_InstanceID;
                 #else
-                output.zoneType = 0;
-                output.styleIndex = 0;
-                output.scale = float3(1, 1, 1);
+                output.instanceID = 0;
                 #endif
 
                 VertexPositionInputs vertexInput = GetVertexPositionInputs(input.positionOS.xyz);
@@ -145,7 +130,6 @@ Shader "HolyRail/BuildingInstanced"
                 output.positionCS = vertexInput.positionCS;
                 output.positionWS = vertexInput.positionWS;
                 output.normalWS = normalInput.normalWS;
-                output.uv = input.uv;
                 output.fogCoord = ComputeFogFactor(vertexInput.positionCS.z);
 
                 return output;
@@ -153,54 +137,16 @@ Shader "HolyRail/BuildingInstanced"
 
             half4 frag(Varyings input) : SV_Target
             {
-                // Base color based on zone type
-                half4 baseColor = input.zoneType == 0 ? _DowntownColor : _IndustrialColor;
-
-                // Add style variation
-                float styleOffset = input.styleIndex * 0.05;
-                baseColor.rgb += styleOffset - 0.175;
-
-                // Simple window pattern on vertical faces
-                float3 absNormal = abs(input.normalWS);
-                bool isVerticalFace = absNormal.y < 0.5;
-
-                half3 emission = half3(0, 0, 0);
-
-                if (isVerticalFace)
-                {
-                    // Scale UVs based on building dimensions for consistent window sizes
-                    float2 windowUV;
-                    if (absNormal.x > absNormal.z)
-                    {
-                        windowUV = float2(input.positionWS.z, input.positionWS.y);
-                    }
-                    else
-                    {
-                        windowUV = float2(input.positionWS.x, input.positionWS.y);
-                    }
-
-                    // Window grid
-                    float2 windowGrid = frac(windowUV * _WindowDensity * 0.1);
-                    float windowMask = step(0.2, windowGrid.x) * step(windowGrid.x, 0.8) *
-                                       step(0.15, windowGrid.y) * step(windowGrid.y, 0.7);
-
-                    // Random window lit state based on position
-                    float windowHash = frac(sin(dot(floor(windowUV * _WindowDensity * 0.1), float2(12.9898, 78.233))) * 43758.5453);
-                    float windowLit = step(0.4, windowHash);
-
-                    // Yellow/warm window glow for downtown, dimmer for industrial
-                    half3 windowColor = input.zoneType == 0 ?
-                        half3(1.0, 0.9, 0.6) : half3(0.8, 0.7, 0.5);
-
-                    emission = windowColor * windowMask * windowLit * _WindowEmission;
-                }
+                // Base color with subtle variation per instance
+                float hash = frac(sin(input.instanceID * 12.9898) * 43758.5453);
+                half3 baseColor = _BaseColor.rgb + (hash - 0.5) * _ColorVariation * 2.0;
 
                 // Simple lighting
                 Light mainLight = GetMainLight();
                 half NdotL = saturate(dot(input.normalWS, mainLight.direction));
-                half3 ambient = half3(0.15, 0.15, 0.2);
+                half3 ambient = half3(0.2, 0.2, 0.25);
 
-                half3 finalColor = baseColor.rgb * (ambient + mainLight.color * NdotL * 0.85) + emission;
+                half3 finalColor = baseColor * (ambient + mainLight.color * NdotL * 0.8);
 
                 // Apply fog
                 finalColor = MixFog(finalColor, input.fogCoord);
@@ -230,17 +176,16 @@ Shader "HolyRail/BuildingInstanced"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Shadows.hlsl"
 
-            struct BuildingData
+            struct RampData
             {
                 float3 Position;
                 float3 Scale;
                 float4 Rotation;
-                int ZoneType;
-                int StyleIndex;
+                float Angle;
             };
 
             #ifdef UNITY_PROCEDURAL_INSTANCING_ENABLED
-            StructuredBuffer<BuildingData> _BuildingBuffer;
+            StructuredBuffer<RampData> _RampBuffer;
             #endif
 
             float3 _LightDirection;
@@ -259,11 +204,11 @@ Shader "HolyRail/BuildingInstanced"
             {
                 #ifdef UNITY_PROCEDURAL_INSTANCING_ENABLED
                 uint instanceID = unity_InstanceID;
-                BuildingData building = _BuildingBuffer[instanceID];
+                RampData ramp = _RampBuffer[instanceID];
 
-                float3 pos = building.Position;
-                float3 scale = building.Scale;
-                float4 rot = building.Rotation;
+                float3 pos = ramp.Position;
+                float3 scale = ramp.Scale;
+                float4 rot = ramp.Rotation;
 
                 float3 right = rotateByQuaternion(float3(1, 0, 0), rot) * scale.x;
                 float3 up = rotateByQuaternion(float3(0, 1, 0), rot) * scale.y;
@@ -354,17 +299,16 @@ Shader "HolyRail/BuildingInstanced"
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
-            struct BuildingData
+            struct RampData
             {
                 float3 Position;
                 float3 Scale;
                 float4 Rotation;
-                int ZoneType;
-                int StyleIndex;
+                float Angle;
             };
 
             #ifdef UNITY_PROCEDURAL_INSTANCING_ENABLED
-            StructuredBuffer<BuildingData> _BuildingBuffer;
+            StructuredBuffer<RampData> _RampBuffer;
             #endif
 
             // Rotate vector by quaternion
@@ -381,11 +325,11 @@ Shader "HolyRail/BuildingInstanced"
             {
                 #ifdef UNITY_PROCEDURAL_INSTANCING_ENABLED
                 uint instanceID = unity_InstanceID;
-                BuildingData building = _BuildingBuffer[instanceID];
+                RampData ramp = _RampBuffer[instanceID];
 
-                float3 pos = building.Position;
-                float3 scale = building.Scale;
-                float4 rot = building.Rotation;
+                float3 pos = ramp.Position;
+                float3 scale = ramp.Scale;
+                float4 rot = ramp.Rotation;
 
                 float3 right = rotateByQuaternion(float3(1, 0, 0), rot) * scale.x;
                 float3 up = rotateByQuaternion(float3(0, 1, 0), rot) * scale.y;

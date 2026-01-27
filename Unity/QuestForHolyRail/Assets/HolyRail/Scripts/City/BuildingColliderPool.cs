@@ -3,6 +3,7 @@ using UnityEngine;
 
 namespace HolyRail.City
 {
+    [ExecuteInEditMode]
     public class BuildingColliderPool : MonoBehaviour
     {
         private const float DefaultCellSize = 50f;
@@ -11,25 +12,45 @@ namespace HolyRail.City
         [field: SerializeField] public CityManager CityManager { get; private set; }
         [field: SerializeField] public Transform TrackingTarget { get; private set; }
 
-        [Header("Pool Settings")]
+        [Header("Building Pool Settings")]
         [field: SerializeField] public int PoolSize { get; private set; } = 200;
         [field: SerializeField] public float ActivationRadius { get; private set; } = 150f;
         [field: SerializeField] public float UpdateDistanceThreshold { get; private set; } = 25f;
 
+        [Header("Ramp Pool Settings")]
+        [field: SerializeField] public int RampPoolSize { get; private set; } = 100;
+
         [Header("Debug")]
         [field: SerializeField] public bool ShowDebugGizmos { get; private set; }
+
+        private static readonly Vector3 InactivePosition = new(0, -1000f, 0);
 
         private BuildingSpatialGrid _spatialGrid;
         private readonly List<BoxCollider> _colliderPool = new();
         private readonly List<int> _activeIndices = new();
         private readonly List<int> _queryResults = new();
+        private readonly HashSet<int> _assignedBuildingIndices = new();
+        private GameObject _buildingPoolContainer;
         private Vector3 _lastUpdatePosition;
         private int _buildingsLayer;
         private bool _initialized;
 
+        // Ramp collider pool
+        private RampSpatialGrid _rampSpatialGrid;
+        private readonly List<BoxCollider> _rampColliderPool = new();
+        private readonly List<int> _activeRampIndices = new();
+        private readonly List<int> _rampQueryResults = new();
+        private readonly HashSet<int> _assignedRampIndices = new();
+        private GameObject _rampPoolContainer;
+        private bool _rampInitialized;
+
         public int ActiveColliderCount { get; private set; }
         public int TotalPoolSize => _colliderPool.Count;
         public bool Initialized => _initialized;
+
+        public int ActiveRampColliderCount { get; private set; }
+        public int TotalRampPoolSize => _rampColliderPool.Count;
+        public bool RampInitialized => _rampInitialized;
 
         private void Start()
         {
@@ -37,22 +58,39 @@ namespace HolyRail.City
             {
                 Initialize();
             }
+            if (CityManager != null && CityManager.HasRampData)
+            {
+                InitializeRamps();
+            }
         }
 
         private void Update()
         {
+            // Initialize buildings if needed
             if (!_initialized)
             {
                 if (CityManager != null && CityManager.HasData)
                     Initialize();
-                return;
             }
 
-            // Detect when city data has been cleared
-            if (CityManager == null || !CityManager.HasData)
+            // Initialize ramps if needed
+            if (!_rampInitialized)
+            {
+                if (CityManager != null && CityManager.HasRampData)
+                    InitializeRamps();
+            }
+
+            // Detect when city data has been cleared (only clear if we were initialized)
+            if (_initialized && (CityManager == null || !CityManager.HasData))
             {
                 Clear();
                 return;
+            }
+
+            // Detect when ramp data has been cleared
+            if (_rampInitialized && (CityManager == null || !CityManager.HasRampData))
+            {
+                ClearRamps();
             }
 
             if (TrackingTarget == null)
@@ -63,7 +101,10 @@ namespace HolyRail.City
 
             if (distanceMoved >= UpdateDistanceThreshold)
             {
-                UpdateActiveColliders(currentPosition);
+                if (_initialized)
+                    UpdateActiveColliders(currentPosition);
+                if (_rampInitialized)
+                    UpdateActiveRampColliders(currentPosition);
                 _lastUpdatePosition = currentPosition;
             }
         }
@@ -96,7 +137,29 @@ namespace HolyRail.City
                 UpdateActiveColliders(_lastUpdatePosition);
             }
 
-            Debug.Log($"BuildingColliderPool: Initialized with {_colliderPool.Count} colliders, spatial grid has {_spatialGrid.CellCount} cells.");
+            Debug.Log($"BuildingColliderPool: Initialized with {_colliderPool.Count} building colliders, spatial grid has {_spatialGrid.CellCount} cells.");
+        }
+
+        public void InitializeRamps()
+        {
+            if (CityManager == null || !CityManager.HasRampData)
+            {
+                return;
+            }
+
+            _rampSpatialGrid = new RampSpatialGrid(DefaultCellSize, CityManager.transform.position);
+            _rampSpatialGrid.Initialize(CityManager.Ramps);
+
+            CreateRampColliderPool();
+
+            _rampInitialized = true;
+
+            if (TrackingTarget != null)
+            {
+                UpdateActiveRampColliders(TrackingTarget.position);
+            }
+
+            Debug.Log($"BuildingColliderPool: Initialized with {_rampColliderPool.Count} ramp colliders, spatial grid has {_rampSpatialGrid.CellCount} cells.");
         }
 
         public void RefreshColliders()
@@ -126,18 +189,71 @@ namespace HolyRail.City
 
         public void Clear()
         {
-            // Deactivate all colliders
+            // Destroy all building colliders
             foreach (var collider in _colliderPool)
             {
                 if (collider != null)
-                    collider.enabled = false;
+                {
+                    if (Application.isPlaying)
+                        Destroy(collider.gameObject);
+                    else
+                        DestroyImmediate(collider.gameObject);
+                }
+            }
+            _colliderPool.Clear();
+
+            // Destroy the pool container
+            if (_buildingPoolContainer != null)
+            {
+                if (Application.isPlaying)
+                    Destroy(_buildingPoolContainer);
+                else
+                    DestroyImmediate(_buildingPoolContainer);
+                _buildingPoolContainer = null;
             }
 
             _activeIndices.Clear();
             _queryResults.Clear();
+            _assignedBuildingIndices.Clear();
             _spatialGrid = null;
             _initialized = false;
             ActiveColliderCount = 0;
+
+            // Also clear ramps
+            ClearRamps();
+        }
+
+        public void ClearRamps()
+        {
+            // Destroy all ramp colliders
+            foreach (var collider in _rampColliderPool)
+            {
+                if (collider != null)
+                {
+                    if (Application.isPlaying)
+                        Destroy(collider.gameObject);
+                    else
+                        DestroyImmediate(collider.gameObject);
+                }
+            }
+            _rampColliderPool.Clear();
+
+            // Destroy the ramp pool container
+            if (_rampPoolContainer != null)
+            {
+                if (Application.isPlaying)
+                    Destroy(_rampPoolContainer);
+                else
+                    DestroyImmediate(_rampPoolContainer);
+                _rampPoolContainer = null;
+            }
+
+            _activeRampIndices.Clear();
+            _rampQueryResults.Clear();
+            _assignedRampIndices.Clear();
+            _rampSpatialGrid = null;
+            _rampInitialized = false;
+            ActiveRampColliderCount = 0;
         }
 
         private void CreateColliderPool()
@@ -151,21 +267,64 @@ namespace HolyRail.City
             _colliderPool.Clear();
             _activeIndices.Clear();
 
+            // Destroy old container if it exists
+            if (_buildingPoolContainer != null)
+            {
+                DestroyImmediate(_buildingPoolContainer);
+            }
+
             // Create pool container
-            var poolContainer = new GameObject("BuildingColliders_Pool");
-            poolContainer.transform.SetParent(transform);
-            poolContainer.transform.localPosition = Vector3.zero;
+            _buildingPoolContainer = new GameObject("BuildingColliders_Pool");
+            _buildingPoolContainer.transform.SetParent(transform);
+            _buildingPoolContainer.transform.localPosition = Vector3.zero;
 
             for (int i = 0; i < PoolSize; i++)
             {
                 var go = new GameObject($"BuildingCollider_{i}");
-                go.transform.SetParent(poolContainer.transform);
+                go.transform.SetParent(_buildingPoolContainer.transform);
+                go.transform.position = InactivePosition;
                 go.layer = _buildingsLayer;
 
                 var boxCollider = go.AddComponent<BoxCollider>();
                 boxCollider.enabled = false;
 
                 _colliderPool.Add(boxCollider);
+            }
+        }
+
+        private void CreateRampColliderPool()
+        {
+            // Clear existing ramp pool
+            foreach (var collider in _rampColliderPool)
+            {
+                if (collider != null)
+                    DestroyImmediate(collider.gameObject);
+            }
+            _rampColliderPool.Clear();
+            _activeRampIndices.Clear();
+
+            // Destroy old container if it exists
+            if (_rampPoolContainer != null)
+            {
+                DestroyImmediate(_rampPoolContainer);
+            }
+
+            // Create pool container
+            _rampPoolContainer = new GameObject("RampColliders_Pool");
+            _rampPoolContainer.transform.SetParent(transform);
+            _rampPoolContainer.transform.localPosition = Vector3.zero;
+
+            for (int i = 0; i < RampPoolSize; i++)
+            {
+                var go = new GameObject($"RampCollider_{i}");
+                go.transform.SetParent(_rampPoolContainer.transform);
+                go.transform.position = InactivePosition;
+                go.layer = _buildingsLayer; // Use same layer as buildings
+
+                var boxCollider = go.AddComponent<BoxCollider>();
+                boxCollider.enabled = false;
+
+                _rampColliderPool.Add(boxCollider);
             }
         }
 
@@ -181,24 +340,36 @@ namespace HolyRail.City
         private void ActivateCollidersForBuildings(List<int> buildingIndices)
         {
             var buildings = CityManager.Buildings;
-            var activateCount = Mathf.Min(buildingIndices.Count, _colliderPool.Count);
 
-            // Deactivate all colliders first
+            // Deactivate all colliders first and move them out of the way
             for (int i = 0; i < _colliderPool.Count; i++)
             {
                 if (_colliderPool[i] != null)
+                {
                     _colliderPool[i].enabled = false;
+                    _colliderPool[i].transform.position = InactivePosition;
+                }
             }
             _activeIndices.Clear();
+            _assignedBuildingIndices.Clear();
 
-            // Activate colliders for nearby buildings
-            for (int i = 0; i < activateCount; i++)
+            // Activate colliders for nearby buildings (skip duplicates)
+            int colliderIndex = 0;
+            for (int i = 0; i < buildingIndices.Count && colliderIndex < _colliderPool.Count; i++)
             {
-                var collider = _colliderPool[i];
-                if (collider == null)
+                var buildingIndex = buildingIndices[i];
+
+                // Skip if this building already has a collider assigned
+                if (_assignedBuildingIndices.Contains(buildingIndex))
                     continue;
 
-                var buildingIndex = buildingIndices[i];
+                var collider = _colliderPool[colliderIndex];
+                if (collider == null)
+                {
+                    colliderIndex++;
+                    continue;
+                }
+
                 var building = buildings[buildingIndex];
 
                 collider.transform.position = building.Position;
@@ -207,9 +378,68 @@ namespace HolyRail.City
                 collider.enabled = true;
 
                 _activeIndices.Add(buildingIndex);
+                _assignedBuildingIndices.Add(buildingIndex);
+                colliderIndex++;
             }
 
-            ActiveColliderCount = activateCount;
+            ActiveColliderCount = colliderIndex;
+        }
+
+        private void UpdateActiveRampColliders(Vector3 center)
+        {
+            if (_rampSpatialGrid == null)
+                return;
+
+            _rampSpatialGrid.GetRampsInRadius(center, ActivationRadius, _rampQueryResults);
+            ActivateCollidersForRamps(_rampQueryResults);
+        }
+
+        private void ActivateCollidersForRamps(List<int> rampIndices)
+        {
+            var ramps = CityManager.Ramps;
+
+            // Deactivate all ramp colliders first and move them out of the way
+            for (int i = 0; i < _rampColliderPool.Count; i++)
+            {
+                if (_rampColliderPool[i] != null)
+                {
+                    _rampColliderPool[i].enabled = false;
+                    _rampColliderPool[i].transform.position = InactivePosition;
+                }
+            }
+            _activeRampIndices.Clear();
+            _assignedRampIndices.Clear();
+
+            // Activate colliders for nearby ramps (skip duplicates)
+            int colliderIndex = 0;
+            for (int i = 0; i < rampIndices.Count && colliderIndex < _rampColliderPool.Count; i++)
+            {
+                var rampIndex = rampIndices[i];
+
+                // Skip if this ramp already has a collider assigned
+                if (_assignedRampIndices.Contains(rampIndex))
+                    continue;
+
+                var collider = _rampColliderPool[colliderIndex];
+                if (collider == null)
+                {
+                    colliderIndex++;
+                    continue;
+                }
+
+                var ramp = ramps[rampIndex];
+
+                collider.transform.position = ramp.Position;
+                collider.transform.rotation = ramp.Rotation;
+                collider.size = ramp.Scale;
+                collider.enabled = true;
+
+                _activeRampIndices.Add(rampIndex);
+                _assignedRampIndices.Add(rampIndex);
+                colliderIndex++;
+            }
+
+            ActiveRampColliderCount = colliderIndex;
         }
 
         private void OnDrawGizmosSelected()
@@ -227,9 +457,21 @@ namespace HolyRail.City
                 DrawCircle(TrackingTarget.position + Vector3.up * 5f, UpdateDistanceThreshold, 16);
             }
 
-            // Draw active colliders
+            // Draw active building colliders
             Gizmos.color = new Color(0f, 0.5f, 1f, 0.5f);
             foreach (var collider in _colliderPool)
+            {
+                if (collider != null && collider.enabled)
+                {
+                    var matrix = Matrix4x4.TRS(collider.transform.position, collider.transform.rotation, Vector3.one);
+                    Gizmos.matrix = matrix;
+                    Gizmos.DrawWireCube(Vector3.zero, collider.size);
+                }
+            }
+
+            // Draw active ramp colliders (in different color)
+            Gizmos.color = new Color(0.2f, 0.4f, 0.8f, 0.5f);
+            foreach (var collider in _rampColliderPool)
             {
                 if (collider != null && collider.enabled)
                 {
@@ -257,12 +499,33 @@ namespace HolyRail.City
 
         private void OnDestroy()
         {
+            // Destroy building colliders and container
             foreach (var collider in _colliderPool)
             {
                 if (collider != null)
                     DestroyImmediate(collider.gameObject);
             }
             _colliderPool.Clear();
+
+            if (_buildingPoolContainer != null)
+            {
+                DestroyImmediate(_buildingPoolContainer);
+                _buildingPoolContainer = null;
+            }
+
+            // Destroy ramp colliders and container
+            foreach (var collider in _rampColliderPool)
+            {
+                if (collider != null)
+                    DestroyImmediate(collider.gameObject);
+            }
+            _rampColliderPool.Clear();
+
+            if (_rampPoolContainer != null)
+            {
+                DestroyImmediate(_rampPoolContainer);
+                _rampPoolContainer = null;
+            }
         }
     }
 }

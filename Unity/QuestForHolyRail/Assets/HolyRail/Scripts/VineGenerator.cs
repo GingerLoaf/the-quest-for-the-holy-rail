@@ -1,7 +1,9 @@
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.Splines;
 using Unity.Mathematics;
+using StarterAssets;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -84,7 +86,11 @@ namespace HolyRail.Vines
         [Header("Spline Conversion")]
         [field: SerializeField, Range(2, 100)] public int MinSplineLength { get; set; } = 5;
         [field: SerializeField, Range(10, 1000)] public int MaxSplineCount { get; set; } = 200;
-        [field: SerializeField, Range(0f, 10f)] public float MinSplineWorldLength { get; set; } = 1f;
+        [field: SerializeField, Range(0f, 10f)] public float MinSplineWorldLength { get; set; } = 0.5f;
+
+        [Header("Path Smoothing")]
+        [field: SerializeField] public bool EnablePathSmoothing { get; set; } = true;
+        [field: SerializeField, Range(0f, 1f)] public float SmoothingTolerance { get; set; } = 0.15f;
 
         [Header("Mesh Rendering")]
         [field: SerializeField] public Material VineMaterial { get; set; }
@@ -419,6 +425,8 @@ namespace HolyRail.Vines
 
         public List<SplineContainer> ConvertToSplines()
         {
+            Debug.Log($"[VineSpline] ConvertToSplines called. Application.isPlaying: {Application.isPlaying}");
+
             if (_generatedNodes.Count == 0)
             {
                 Debug.LogWarning("VineGenerator: No nodes to convert. Run Regenerate first.");
@@ -457,6 +465,8 @@ namespace HolyRail.Vines
 
             // Collect all valid paths with their world lengths for filtering
             var pathsWithLengths = new List<(List<int> path, float worldLength)>();
+            int filteredByNodeCount = 0;
+            int filteredByWorldLength = 0;
 
             foreach (int leaf in leafNodes)
             {
@@ -474,7 +484,10 @@ namespace HolyRail.Vines
 
                 // Skip paths with too few nodes
                 if (path.Count < MinSplineLength)
+                {
+                    filteredByNodeCount++;
                     continue;
+                }
 
                 // Calculate world-space length
                 float worldLength = 0f;
@@ -487,9 +500,18 @@ namespace HolyRail.Vines
 
                 // Skip paths that are too short in world space
                 if (worldLength < MinSplineWorldLength)
+                {
+                    filteredByWorldLength++;
                     continue;
+                }
 
                 pathsWithLengths.Add((path, worldLength));
+            }
+
+            // Log filtering statistics
+            if (filteredByNodeCount > 0 || filteredByWorldLength > 0)
+            {
+                Debug.Log($"VineGenerator: Filtered {filteredByNodeCount} paths (< {MinSplineLength} nodes), {filteredByWorldLength} paths (< {MinSplineWorldLength}m world length)");
             }
 
             // Sort by world length (longest first) and take top MaxSplineCount
@@ -513,6 +535,8 @@ namespace HolyRail.Vines
 
             int processedCount = 0;
             int totalPaths = pathsWithLengths.Count;
+            int totalOriginalPoints = 0;
+            int totalSmoothedPoints = 0;
 
             // Create splines for the filtered paths
             foreach (var (path, worldLength) in pathsWithLengths)
@@ -533,15 +557,40 @@ namespace HolyRail.Vines
                 splineGO.transform.rotation = Quaternion.identity;
 
                 var splineContainer = splineGO.AddComponent<SplineContainer>();
+                // Clear the default empty spline that Unity creates when adding SplineContainer
+                if (splineContainer.Splines.Count > 0)
+                {
+                    splineContainer.RemoveSplineAt(0);
+                }
                 var spline = splineContainer.AddSpline();
 
-                // Add knots (positions are world space, spline is at origin so they match)
-                foreach (int nodeIndex in path)
+                // Convert node indices to positions
+                var positions = path.Select(i => (float3)_generatedNodes[i].Position).ToList();
+                totalOriginalPoints += positions.Count;
+
+                // Apply smoothing if enabled
+                if (EnablePathSmoothing && SmoothingTolerance > 0)
                 {
-                    var node = _generatedNodes[nodeIndex];
-                    var knot = new BezierKnot(node.Position);
+                    var smoothed = new List<float3>();
+                    SplineUtility.ReducePoints(positions, smoothed, SmoothingTolerance);
+                    positions = smoothed;
+                }
+                totalSmoothedPoints += positions.Count;
+
+                // Add knots from (possibly smoothed) positions
+                foreach (var pos in positions)
+                {
+                    var knot = new BezierKnot(pos);
                     spline.Add(knot, TangentMode.AutoSmooth);
                 }
+
+#if UNITY_EDITOR
+                // Mark as dirty so Unity saves the spline data
+                if (!Application.isPlaying)
+                {
+                    EditorUtility.SetDirty(splineContainer);
+                }
+#endif
 
                 // Generate mesh for batching
                 if (GenerateMeshes)
@@ -583,7 +632,38 @@ namespace HolyRail.Vines
                 CombineVineMeshes(meshesToCombine, materialToUse, tempSplineObjects);
             }
 
-            Debug.Log($"VineGenerator: Created {_generatedSplines.Count} splines from {leafNodes.Count} leaf nodes ({validPathCount} valid paths, max {MaxSplineCount}, batched into 1 mesh)");
+            // Log creation and smoothing statistics
+            var smoothingInfo = EnablePathSmoothing && SmoothingTolerance > 0
+                ? $", smoothed {totalOriginalPoints} -> {totalSmoothedPoints} points ({100 - (totalSmoothedPoints * 100 / Mathf.Max(1, totalOriginalPoints))}% reduction)"
+                : "";
+            Debug.Log($"VineGenerator: Created {_generatedSplines.Count} splines from {leafNodes.Count} leaf nodes ({validPathCount} valid paths, max {MaxSplineCount}, batched into 1 mesh{smoothingInfo})");
+
+            // Validate generated splines before notifying rail grinder
+            int validSplines = 0;
+            foreach (var splineContainer in _generatedSplines)
+            {
+                if (splineContainer != null && splineContainer.Spline != null && splineContainer.Spline.Count > 0)
+                {
+                    validSplines++;
+                    Debug.Log($"[VineSpline] '{splineContainer.name}' has {splineContainer.Spline.Count} knots, length: {splineContainer.Spline.GetLength():F2}m");
+                }
+                else
+                {
+                    Debug.LogWarning($"[VineSpline] Invalid spline: container={splineContainer != null}, spline={splineContainer?.Spline != null}, knots={splineContainer?.Spline?.Count ?? 0}");
+                }
+            }
+            Debug.Log($"[VineSpline] {validSplines}/{_generatedSplines.Count} splines are valid for grinding");
+
+            // Notify rail grinder to refresh its spline cache
+            var railGrinder = ThirdPersonController_RailGrinder.Instance;
+            if (railGrinder != null)
+            {
+                railGrinder.RefreshSplineContainers();
+            }
+            else
+            {
+                Debug.LogWarning("[VineSpline] ThirdPersonController_RailGrinder.Instance is null - splines won't be grindable until player spawns");
+            }
 
             return _generatedSplines;
         }

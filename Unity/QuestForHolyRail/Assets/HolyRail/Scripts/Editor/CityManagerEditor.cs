@@ -35,6 +35,10 @@ namespace HolyRail.City.Editor
                                     manager.BuildingMesh != null &&
                                     manager.BuildingMaterial != null;
 
+            // Check ramp references if ramps are enabled
+            bool hasMissingRampReferences = manager.EnableRamps &&
+                                            (manager.RampMesh == null || manager.RampMaterial == null);
+
             if (!hasAllReferences)
             {
                 EditorGUILayout.HelpBox(
@@ -42,6 +46,16 @@ namespace HolyRail.City.Editor
                     (manager.CityGeneratorShader == null ? "- City Generator Shader (compute)\n" : "") +
                     (manager.BuildingMesh == null ? "- Building Mesh\n" : "") +
                     (manager.BuildingMaterial == null ? "- Building Material" : ""),
+                    MessageType.Warning);
+                EditorGUILayout.Space(5);
+            }
+
+            if (hasMissingRampReferences)
+            {
+                EditorGUILayout.HelpBox(
+                    "Ramps enabled but missing references:\n" +
+                    (manager.RampMesh == null ? "- Ramp Mesh (cube)\n" : "") +
+                    (manager.RampMaterial == null ? "- Ramp Material" : ""),
                     MessageType.Warning);
                 EditorGUILayout.Space(5);
             }
@@ -149,6 +163,24 @@ namespace HolyRail.City.Editor
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.Space(5);
+
+            // Ramp statistics
+            if (manager.EnableRamps)
+            {
+                EditorGUILayout.LabelField("Ramps", EditorStyles.boldLabel);
+
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("Ramps Generated:", labelStyle, GUILayout.Width(140));
+                EditorGUILayout.LabelField(manager.ActualRampCount.ToString("N0"), valueStyle);
+                EditorGUILayout.EndHorizontal();
+
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("Ramp Target:", labelStyle, GUILayout.Width(140));
+                EditorGUILayout.LabelField(manager.RampCount.ToString("N0"), valueStyle);
+                EditorGUILayout.EndHorizontal();
+
+                EditorGUILayout.Space(5);
+            }
 
             // Seed info for reproducibility
             EditorGUILayout.BeginHorizontal();

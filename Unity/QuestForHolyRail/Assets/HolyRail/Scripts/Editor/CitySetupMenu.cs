@@ -9,6 +9,8 @@ namespace HolyRail.City.Editor
         private const string MaterialPath = "Assets/HolyRail/Materials/CityBuildings.mat";
         private const string ShaderPath = "Assets/HolyRail/Shaders/BuildingInstanced.shader";
         private const string ComputePath = "Assets/HolyRail/Shaders/CityGenerator.compute";
+        private const string RampMaterialPath = "Assets/HolyRail/Materials/RampMaterial.mat";
+        private const string RampShaderPath = "Assets/HolyRail/Shaders/RampInstanced.shader";
 
         [MenuItem("HolyRail/Setup City Generator")]
         public static void SetupCityGenerator()
@@ -44,7 +46,30 @@ namespace HolyRail.City.Editor
                 Debug.Log($"CitySetup: Created material at {MaterialPath}");
             }
 
-            // 2. Load compute shader
+            // 2. Load or create ramp material
+            var rampMaterial = AssetDatabase.LoadAssetAtPath<Material>(RampMaterialPath);
+            if (rampMaterial == null)
+            {
+                var rampShader = AssetDatabase.LoadAssetAtPath<Shader>(RampShaderPath);
+                if (rampShader == null)
+                {
+                    Debug.LogError($"CitySetup: Could not find RampInstanced shader at {RampShaderPath}");
+                    return;
+                }
+
+                rampMaterial = new Material(rampShader);
+                rampMaterial.name = "RampMaterial";
+
+                // Set default ramp material properties
+                rampMaterial.SetColor("_BaseColor", new Color(0.2f, 0.4f, 0.8f, 1f));
+                rampMaterial.SetFloat("_ColorVariation", 0.05f);
+
+                AssetDatabase.CreateAsset(rampMaterial, RampMaterialPath);
+                AssetDatabase.SaveAssets();
+                Debug.Log($"CitySetup: Created ramp material at {RampMaterialPath}");
+            }
+
+            // 3. Load compute shader
             var computeShader = AssetDatabase.LoadAssetAtPath<ComputeShader>(ComputePath);
             if (computeShader == null)
             {
@@ -52,7 +77,7 @@ namespace HolyRail.City.Editor
                 return;
             }
 
-            // 3. Get default cube mesh
+            // 4. Get default cube mesh
             var cubeMesh = GetDefaultCubeMesh();
             if (cubeMesh == null)
             {
@@ -60,7 +85,7 @@ namespace HolyRail.City.Editor
                 return;
             }
 
-            // 4. Create CityGenerator GameObject
+            // 5. Create CityGenerator GameObject
             var cityGO = new GameObject("CityGenerator");
             var cityManager = cityGO.AddComponent<CityManager>();
 
@@ -85,9 +110,28 @@ namespace HolyRail.City.Editor
                 materialProp.objectReferenceValue = material;
             }
 
+            // Set ramp properties
+            var enableRampsProp = serializedObject.FindProperty("<EnableRamps>k__BackingField");
+            if (enableRampsProp != null)
+            {
+                enableRampsProp.boolValue = true;
+            }
+
+            var rampMeshProp = serializedObject.FindProperty("<RampMesh>k__BackingField");
+            if (rampMeshProp != null)
+            {
+                rampMeshProp.objectReferenceValue = cubeMesh;
+            }
+
+            var rampMaterialProp = serializedObject.FindProperty("<RampMaterial>k__BackingField");
+            if (rampMaterialProp != null)
+            {
+                rampMaterialProp.objectReferenceValue = rampMaterial;
+            }
+
             serializedObject.ApplyModifiedPropertiesWithoutUndo();
 
-            // 5. Add BuildingColliderPool component
+            // 6. Add BuildingColliderPool component
             var colliderPool = cityGO.AddComponent<BuildingColliderPool>();
             var poolSerializedObject = new SerializedObject(colliderPool);
 
@@ -132,11 +176,11 @@ namespace HolyRail.City.Editor
 
             poolSerializedObject.ApplyModifiedPropertiesWithoutUndo();
 
-            // 6. Register undo and select
+            // 7. Register undo and select
             Undo.RegisterCreatedObjectUndo(cityGO, "Create City Generator");
             Selection.activeGameObject = cityGO;
 
-            // 7. Log success
+            // 8. Log success
             var trackingInfo = trackingTarget != null
                 ? $"  - Tracking Target: {trackingTarget.name}\n"
                 : "  - Tracking Target: Not found (assign manually)\n";
@@ -144,7 +188,10 @@ namespace HolyRail.City.Editor
             Debug.Log($"CitySetup: Created CityGenerator GameObject\n" +
                       $"  - Compute Shader: {computeShader.name}\n" +
                       $"  - Building Mesh: {cubeMesh.name}\n" +
-                      $"  - Material: {material.name}\n" +
+                      $"  - Building Material: {material.name}\n" +
+                      $"  - Ramps: Enabled\n" +
+                      $"  - Ramp Mesh: {cubeMesh.name}\n" +
+                      $"  - Ramp Material: {rampMaterial.name}\n" +
                       $"  - BuildingColliderPool: Added\n" +
                       trackingInfo +
                       $"\nEnter Play mode to generate the city, or use the context menu 'Generate City'.");

@@ -114,6 +114,8 @@ namespace StarterAssets
         private AudioSource _grindLoopAudioSource;
         private AudioSource _skateLoopAudioSource;
         private bool _isGrinding;
+        private bool _hasLoggedSplineDetails;
+        private bool _hasLoggedSplineSearchStats;
         private float _grindExitCooldownTimer;
         private float _momentumPreservationTimer;
         private float _grindT;                 // Normalized spline position (0–1)
@@ -221,6 +223,42 @@ namespace StarterAssets
                 _mainCamera = GameObject.FindGameObjectWithTag("MainCamera");
             }
             _splineContainers = FindObjectsByType<SplineContainer>(FindObjectsSortMode.None);
+        }
+
+        public void RefreshSplineContainers()
+        {
+            _splineContainers = FindObjectsByType<SplineContainer>(FindObjectsSortMode.None);
+            Debug.Log($"RailGrinder: Refreshed spline cache, found {_splineContainers.Length} splines");
+
+            int validCount = 0;
+            int nullSplineCount = 0;
+            int emptySplineCount = 0;
+
+            foreach (var container in _splineContainers)
+            {
+                if (container == null) continue;
+
+                if (container.Spline == null)
+                {
+                    nullSplineCount++;
+                    // Check if Splines collection has entries but Spline property is null
+                    var splinesCount = container.Splines?.Count ?? 0;
+                    if (splinesCount > 0)
+                    {
+                        Debug.LogWarning($"  - '{container.name}': Spline is null but Splines.Count={splinesCount}");
+                    }
+                }
+                else if (container.Spline.Count == 0)
+                {
+                    emptySplineCount++;
+                }
+                else
+                {
+                    validCount++;
+                }
+            }
+
+            Debug.Log($"RailGrinder: Valid: {validCount}, NullSpline: {nullSplineCount}, EmptySpline: {emptySplineCount}");
         }
 
         private void OnEnable()
@@ -402,24 +440,165 @@ namespace StarterAssets
         {
             if (_isGrinding) return false;
 
-            var result = ShowNearestPoint.GetNearestPointOnSplines(
-                transform.position,
-                _splineContainers);
+            // One-time detailed spline inspection
+            if (_splineContainers != null && !_hasLoggedSplineDetails)
+            {
+                _hasLoggedSplineDetails = true;
+                int validCount = 0, nullSplineProp = 0, emptySplines = 0, hasSplinesList = 0;
+                foreach (var c in _splineContainers)
+                {
+                    if (c == null) continue;
+                    int splinesListCount = c.Splines?.Count ?? 0;
+                    bool splinePropNull = c.Spline == null;
 
-            if (result.Container == null) return false;
+                    if (splinesListCount > 0) hasSplinesList++;
+                    if (splinePropNull) nullSplineProp++;
+
+                    // Check if any spline in the list has knots
+                    bool anyValid = false;
+                    if (c.Splines != null)
+                    {
+                        foreach (var s in c.Splines)
+                        {
+                            if (s != null && s.Count >= 2)
+                            {
+                                anyValid = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (anyValid) validCount++;
+                    else if (splinesListCount == 0) emptySplines++;
+                }
+                Debug.Log($"[Grind] Spline inspection: ValidWithKnots={validCount}, HasSplinesList={hasSplinesList}, NullSplineProp={nullSplineProp}, EmptySplinesList={emptySplines}, Total={_splineContainers.Length}");
+
+                // Log details of first 5 containers
+                for (int i = 0; i < Mathf.Min(5, _splineContainers.Length); i++)
+                {
+                    var c = _splineContainers[i];
+                    if (c == null) continue;
+                    int splinesCount = c.Splines?.Count ?? -1;
+                    int knotCount = c.Spline?.Count ?? -1;
+                    int firstSplineKnots = (c.Splines != null && c.Splines.Count > 0 && c.Splines[0] != null) ? c.Splines[0].Count : -1;
+                    Debug.Log($"[Grind] Container[{i}] '{c.name}': Splines.Count={splinesCount}, Spline.Count={knotCount}, Splines[0].Count={firstSplineKnots}");
+                }
+            }
+
+            Debug.Log($"[Grind] TryStartGrind called. Cached spline count: {(_splineContainers != null ? _splineContainers.Length : 0)}");
+
+            // Use custom search that handles containers with Splines but null Spline property
+            var result = GetNearestPointCustom(transform.position);
+
+            if (result.Container == null)
+            {
+                Debug.LogWarning("[Grind] No spline container found (result.Container is null)");
+                return false;
+            }
+
+            // Log first knot position to verify spline data
+            string knotInfo = "no knots";
+            if (result.Container.Splines.Count > 0)
+            {
+                var firstSpline = result.Container.Splines[0];
+                if (firstSpline != null && firstSpline.Count > 0)
+                {
+                    var firstKnotLocal = (Vector3)firstSpline[0].Position;
+                    var firstKnotWorld = result.Container.transform.TransformPoint(firstKnotLocal);
+                    knotInfo = $"FirstKnot: {firstKnotWorld}";
+                }
+                else
+                {
+                    knotInfo = $"spline exists but count={firstSpline?.Count ?? -1}";
+                }
+            }
+            Debug.Log($"[Grind] Nearest: '{result.Container.name}', Dist: {result.Distance:F2}m (threshold {GrindDistanceThreshold:F2}m), NearestPt: {result.Position}, Player: {transform.position}, {knotInfo}, ContainerPos: {result.Container.transform.position}");
 
             // Hemisphere check: only grind if player is above the rail (with offset)
             float playerY = transform.position.y;
             float railY = result.Position.y;
-            if (playerY < railY + GrindTriggerOffset) return false;
+            if (playerY < railY + GrindTriggerOffset)
+            {
+                Debug.Log($"[Grind] Failed hemisphere check. PlayerY: {playerY:F2}, RailY: {railY:F2}, Offset: {GrindTriggerOffset:F2} (need playerY >= {railY + GrindTriggerOffset:F2})");
+                return false;
+            }
 
             if (result.Distance <= GrindDistanceThreshold)
             {
+                Debug.Log($"[Grind] Starting grind on '{result.Container.name}'");
                 var direction = GetZForwardGrindDirection(result.Container, result.SplineParameter);
                 StartGrind(result.Container, result.SplineParameter, direction);
                 return true;
             }
+
+            Debug.Log($"[Grind] Distance check failed. Distance {result.Distance:F2}m > Threshold {GrindDistanceThreshold:F2}m");
             return false;
+        }
+
+        private NearestPointResult GetNearestPointCustom(Vector3 worldPosition)
+        {
+            var nearestPosition = float3.zero;
+            var nearestDistance = float.PositiveInfinity;
+            var nearestT = 0f;
+            SplineContainer nearestContainer = null;
+
+            int checkedContainers = 0;
+            int validSplines = 0;
+
+            foreach (var container in _splineContainers)
+            {
+                if (container == null) continue;
+
+                // Check Splines collection directly, not just Spline property
+                var splines = container.Splines;
+                if (splines == null || splines.Count == 0) continue;
+
+                checkedContainers++;
+
+                foreach (var spline in splines)
+                {
+                    if (spline == null || spline.Count < 2) continue;
+
+                    validSplines++;
+
+                    using var native = new NativeSpline(spline, container.transform.localToWorldMatrix);
+                    float distance = SplineUtility.GetNearestPoint(native, worldPosition, out float3 point, out float t);
+
+                    if (distance < nearestDistance)
+                    {
+                        nearestDistance = distance;
+                        nearestPosition = point;
+                        nearestT = t;
+                        nearestContainer = container;
+                    }
+                }
+            }
+
+            // One-time log of how many valid splines were checked
+            if (!_hasLoggedSplineSearchStats)
+            {
+                _hasLoggedSplineSearchStats = true;
+                int emptySplineContainers = 0;
+                foreach (var c in _splineContainers)
+                {
+                    if (c == null) continue;
+                    bool hasValidSpline = false;
+                    if (c.Splines != null)
+                    {
+                        foreach (var s in c.Splines)
+                        {
+                            if (s != null && s.Count >= 2)
+                            {
+                                hasValidSpline = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!hasValidSpline && c.name.Contains("Vine")) emptySplineContainers++;
+                }
+                Debug.Log($"[Grind] Spline search: {checkedContainers} containers with {validSplines} valid splines (>=2 knots) out of {_splineContainers.Length} total. Empty VINE containers: {emptySplineContainers}");
+            }
+
+            return new NearestPointResult(nearestPosition, nearestDistance, nearestT, nearestContainer);
         }
 
         private SplineTravelDirection GetZForwardGrindDirection(SplineContainer container, float t)
@@ -444,11 +623,12 @@ namespace StarterAssets
 
         void OnGrindRequested(InputAction.CallbackContext context)
         {
+            Debug.Log($"[Grind] OnGrindRequested - IsGrinding: {_isGrinding}, Position: {transform.position}");
             if (!_isGrinding)
             {
                 if (!TryStartGrind())
                 {
-                    Debug.LogWarning("No spline within grind distance threshold.");
+                    Debug.LogWarning("[Grind] Failed to start grind - no valid spline found within distance/checks");
                 }
             }
             else
