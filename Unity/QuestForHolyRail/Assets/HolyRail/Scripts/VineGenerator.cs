@@ -840,7 +840,7 @@ namespace HolyRail.Vines
             var railGrinder = ThirdPersonController_RailGrinder.Instance;
             if (railGrinder != null)
             {
-                railGrinder.RefreshSplineContainers();
+                //railGrinder.RefreshSplineContainers();
             }
             else
             {
