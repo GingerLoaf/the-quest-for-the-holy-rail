@@ -80,8 +80,8 @@ namespace HolyRail.Scripts
         private float _normalMaxSpeed;
         private const float CATCHUP_DISTANCE_TRIGGER = 12f; // Start catching up earlier
         private const float CATCHUP_DISTANCE_RESTORE = 10f; // Stay in catch-up longer
-        private const float CATCHUP_SPEED_MULTIPLIER = 2.5f; // Base aggressive multiplier
-        private const float CATCHUP_MAX_MULTIPLIER = 4.5f; // Maximum multiplier for extreme distances
+        private const float CATCHUP_SPEED_MULTIPLIER = 1.5f; // Base aggressive multiplier
+        private const float CATCHUP_MAX_MULTIPLIER = 3f; // Maximum multiplier for extreme distances
         private const float CATCHUP_ACCELERATION_BOOST = 2.0f; // Acceleration multiplier during catch-up
         private float _normalAcceleration;
 
