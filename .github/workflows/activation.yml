@@ -1,6 +1,9 @@
 name: Acquire Activation File
 on:
   workflow_dispatch: {}
+  push:
+    paths:
+      - .github/workflows/activation.yml
 jobs:
   activation:
     name: Request Manual Activation File
