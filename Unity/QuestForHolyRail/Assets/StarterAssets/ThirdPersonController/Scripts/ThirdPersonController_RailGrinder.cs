@@ -18,6 +18,8 @@ namespace StarterAssets
     public class ThirdPersonController_RailGrinder : MonoBehaviour
     {
         public InputAction grindInput;
+        public InputAction lookBackInput;
+        public bool lookBack;
         private SplineContainer[] _splineContainers;
 
         [Header("Player")]
@@ -180,12 +182,16 @@ namespace StarterAssets
         {
             grindInput.Enable();
             grindInput.performed += OnGrindRequested;
+
+            lookBackInput.Enable();
         }
 
         private void OnDisable()
         {
             grindInput.performed -= OnGrindRequested;
             grindInput.Disable();
+
+            lookBackInput.Disable();
         }
 
         private void Start()
@@ -218,6 +224,8 @@ namespace StarterAssets
         private void Update()
         {
             _hasAnimator = TryGetComponent(out _animator);
+            bool gamepadLookBack = Gamepad.current != null && Gamepad.current.leftShoulder.isPressed;
+            lookBack = gamepadLookBack || Input.GetKey(KeyCode.Q);
 
             if (_isGrinding)
             {
@@ -289,9 +297,12 @@ namespace StarterAssets
             _smoothYaw = Mathf.SmoothDampAngle(_smoothYaw, _cinemachineTargetYaw, ref _yawVelocity, LookSmoothTime);
             _smoothPitch = Mathf.SmoothDamp(_smoothPitch, _cinemachineTargetPitch, ref _pitchVelocity, LookSmoothTime);
 
+            // Apply 180 degree offset when looking back
+            float finalYaw = lookBack ? _smoothYaw + 180f : _smoothYaw;
+
             // Cinemachine will follow this target
             CinemachineCameraTarget.transform.rotation = Quaternion.Euler(_smoothPitch + CameraAngleOverride,
-                _smoothYaw, 0.0f);
+                finalYaw, 0.0f);
         }
 
         private void UpdateGrindFOV()
@@ -551,8 +562,8 @@ namespace StarterAssets
             // if there is a move input rotate player when the player is moving
             if (_input.move != Vector2.zero)
             {
-                _targetRotation = Mathf.Atan2(inputDirection.x, inputDirection.z) * Mathf.Rad2Deg +
-                                  _mainCamera.transform.eulerAngles.y;
+                // Use _smoothYaw instead of camera transform to ignore look-back flip
+                _targetRotation = Mathf.Atan2(inputDirection.x, inputDirection.z) * Mathf.Rad2Deg + _smoothYaw;
                 float rotation = Mathf.SmoothDampAngle(transform.eulerAngles.y, _targetRotation, ref _rotationVelocity,
                     RotationSmoothTime);
 
