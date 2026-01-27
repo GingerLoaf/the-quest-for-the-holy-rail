@@ -62,15 +62,10 @@ namespace HolyRail.Vines.Editor
             GUI.backgroundColor = new Color(1f, 0.3f, 0.3f);
             if (GUILayout.Button("Clear Generated Data", GUILayout.Height(25)))
             {
-                if (EditorUtility.DisplayDialog("Clear Vine Data",
-                    "Are you sure you want to clear all generated vine data?\n\nThis will remove all nodes, attractors, and generated splines.\n\nThis action cannot be undone!",
-                    "Clear", "Cancel"))
-                {
-                    Undo.RecordObject(generator, "Clear Vine Data");
-                    generator.Clear();
-                    EditorUtility.SetDirty(generator);
-                    SceneView.RepaintAll();
-                }
+                Undo.RecordObject(generator, "Clear Vine Data");
+                generator.Clear();
+                EditorUtility.SetDirty(generator);
+                SceneView.RepaintAll();
             }
             GUI.backgroundColor = Color.white;
             EditorGUI.EndDisabledGroup();

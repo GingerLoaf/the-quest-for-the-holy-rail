@@ -66,15 +66,10 @@ namespace HolyRail.City.Editor
             GUI.backgroundColor = new Color(1f, 0.3f, 0.3f);
             if (GUILayout.Button("Clear Generated Data", GUILayout.Height(25)))
             {
-                if (EditorUtility.DisplayDialog("Clear City Data",
-                    "Are you sure you want to clear all generated city data?\n\nThis action cannot be undone!",
-                    "Clear", "Cancel"))
-                {
-                    Undo.RecordObject(manager, "Clear City Data");
-                    manager.Clear();
-                    EditorUtility.SetDirty(manager);
-                    SceneView.RepaintAll();
-                }
+                Undo.RecordObject(manager, "Clear City Data");
+                manager.Clear();
+                EditorUtility.SetDirty(manager);
+                SceneView.RepaintAll();
             }
             GUI.backgroundColor = Color.white;
             EditorGUI.EndDisabledGroup();

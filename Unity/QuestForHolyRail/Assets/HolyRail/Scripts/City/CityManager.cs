@@ -60,6 +60,7 @@ namespace HolyRail.City
         public int ActualBuildingCount => _generatedBuildings.Count;
         public bool HasData => _generatedBuildings.Count > 0;
         public bool IsGenerated => HasData;
+        public IReadOnlyList<BuildingData> Buildings => _generatedBuildings;
 
         private void OnEnable()
         {

@@ -43,6 +43,8 @@ float _AttractionRadius;
 float _KillRadius;
 float _NoiseStrength;
 float _NoiseScale;
+float3 _ForwardDirection;
+float _ForwardBias;
 
 // PCG hash for deterministic random
 uint pcgHash(uint input)
@@ -176,6 +178,8 @@ void Grow(uint3 id : SV_DispatchThreadID)
         float(_VoteZ[id.x]) / float(_FixedPointScale * voteCount)
     );
 
+    // Blend in forward direction bias before normalizing
+    avgDirection = avgDirection + _ForwardDirection * _ForwardBias;
     avgDirection = normalize(avgDirection);
 
     // Add deterministic noise

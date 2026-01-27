@@ -2,9 +2,19 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Splines;
 using Unity.Mathematics;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 namespace HolyRail.Vines
 {
+    public enum AttractorMode
+    {
+        Surface,
+        Volume,
+        Mixed
+    }
+
     [ExecuteInEditMode]
     public class VineGenerator : MonoBehaviour
     {
@@ -44,6 +54,7 @@ namespace HolyRail.Vines
         [field: SerializeField] public Bounds AttractorBounds { get; set; } = new Bounds(Vector3.zero, Vector3.one * 10f);
         [field: SerializeField, Range(0f, 2f)] public float AttractorSurfaceOffset { get; set; } = 0.1f;
         [field: SerializeField] public bool UseMultiDirectionRaycasts { get; set; } = true;
+        [field: SerializeField] public AttractorMode AttractorGenerationMode { get; set; } = AttractorMode.Surface;
 
         [Header("Root Points")]
         [field: SerializeField] public List<Transform> RootPoints { get; private set; } = new List<Transform>();
@@ -53,7 +64,12 @@ namespace HolyRail.Vines
         [field: SerializeField] public float NoiseScale { get; set; } = 1f;
 
         [Header("Branching")]
-        [field: SerializeField, Range(1, 20)] public int BranchCooldown { get; set; } = 3;
+        [field: SerializeField, Range(0f, 1f)] public float BranchDensity { get; set; } = 0.3f;
+        public int EffectiveBranchCooldown => Mathf.RoundToInt(Mathf.Lerp(15, 1, BranchDensity));
+
+        [Header("Direction Bias")]
+        [field: SerializeField] public Vector3 ForwardDirection { get; set; } = Vector3.forward;
+        [field: SerializeField, Range(0f, 2f)] public float ForwardBias { get; set; } = 0.5f;
 
         [Header("Visualization")]
         [field: SerializeField] public bool ShowAttractors { get; set; } = true;
@@ -66,13 +82,15 @@ namespace HolyRail.Vines
         [field: SerializeField, Range(0.05f, 1f)] public float AttractorGizmoSize { get; set; } = 0.15f;
 
         [Header("Spline Conversion")]
-        [field: SerializeField, Range(2, 100)] public int MinSplineLength { get; set; } = 3;
+        [field: SerializeField, Range(2, 100)] public int MinSplineLength { get; set; } = 5;
+        [field: SerializeField, Range(10, 1000)] public int MaxSplineCount { get; set; } = 200;
+        [field: SerializeField, Range(0f, 10f)] public float MinSplineWorldLength { get; set; } = 1f;
 
         [Header("Mesh Rendering")]
         [field: SerializeField] public Material VineMaterial { get; set; }
         [field: SerializeField, Range(0.01f, 0.5f)] public float VineRadius { get; set; } = 0.05f;
-        [field: SerializeField, Range(3, 16)] public int VineSegments { get; set; } = 6;
-        [field: SerializeField, Range(4, 64)] public int VineSegmentsPerUnit { get; set; } = 8;
+        [field: SerializeField, Range(3, 16)] public int VineSegments { get; set; } = 4;
+        [field: SerializeField, Range(4, 64)] public int VineSegmentsPerUnit { get; set; } = 4;
         [field: SerializeField] public bool GenerateMeshes { get; set; } = true;
 
         // Generated data (serialized to persist through Play mode)
@@ -155,6 +173,26 @@ namespace HolyRail.Vines
 
         private void GenerateAttractorsFromScene()
         {
+            var random = new System.Random(Seed);
+            _generatedAttractors = new List<VineAttractor>();
+
+            switch (AttractorGenerationMode)
+            {
+                case AttractorMode.Surface:
+                    GenerateSurfaceAttractors(random, AttractorCount);
+                    break;
+                case AttractorMode.Volume:
+                    GenerateVolumeAttractors(random, AttractorCount);
+                    break;
+                case AttractorMode.Mixed:
+                    GenerateSurfaceAttractors(random, AttractorCount / 2);
+                    GenerateVolumeAttractors(random, AttractorCount / 2);
+                    break;
+            }
+        }
+
+        private void GenerateSurfaceAttractors(System.Random random, int count)
+        {
             var directions = UseMultiDirectionRaycasts
                 ? new[]
                 {
@@ -164,12 +202,9 @@ namespace HolyRail.Vines
                 }
                 : new[] { Vector3.down };
 
-            var random = new System.Random(Seed);
-            _generatedAttractors = new List<VineAttractor>();
-
             float maxRayDist = Mathf.Max(AttractorBounds.size.x, AttractorBounds.size.y, AttractorBounds.size.z);
 
-            for (int i = 0; i < AttractorCount; i++)
+            for (int i = 0; i < count; i++)
             {
                 var point = RandomPointInBounds(random, AttractorBounds);
                 var dir = directions[i % directions.Length];
@@ -182,6 +217,19 @@ namespace HolyRail.Vines
                         Active = 1
                     });
                 }
+            }
+        }
+
+        private void GenerateVolumeAttractors(System.Random random, int count)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                var point = RandomPointInBounds(random, AttractorBounds);
+                _generatedAttractors.Add(new VineAttractor
+                {
+                    Position = point,
+                    Active = 1
+                });
             }
         }
 
@@ -207,7 +255,7 @@ namespace HolyRail.Vines
                     Position = root.position,
                     ParentIndex = -1,
                     IsTip = 1,
-                    LastGrowIteration = -BranchCooldown  // Allow immediate growth on first iteration
+                    LastGrowIteration = -EffectiveBranchCooldown  // Allow immediate growth on first iteration
                 });
             }
         }
@@ -260,12 +308,14 @@ namespace HolyRail.Vines
                 VineComputeShader.SetInt("_AttractorCount", _generatedAttractors.Count);
                 VineComputeShader.SetInt("_Seed", Seed);
                 VineComputeShader.SetInt("_FixedPointScale", FixedPointScale);
-                VineComputeShader.SetInt("_BranchCooldown", BranchCooldown);
+                VineComputeShader.SetInt("_BranchCooldown", EffectiveBranchCooldown);
                 VineComputeShader.SetFloat("_StepSize", StepSize);
                 VineComputeShader.SetFloat("_AttractionRadius", AttractionRadius);
                 VineComputeShader.SetFloat("_KillRadius", KillRadius);
                 VineComputeShader.SetFloat("_NoiseStrength", NoiseStrength);
                 VineComputeShader.SetFloat("_NoiseScale", NoiseScale);
+                VineComputeShader.SetVector("_ForwardDirection", ForwardDirection.normalized);
+                VineComputeShader.SetFloat("_ForwardBias", ForwardBias);
 
                 // Run algorithm iterations
                 int nodeGroupCount = Mathf.CeilToInt(MaxNodes / (float)ThreadGroupSize);
@@ -377,6 +427,7 @@ namespace HolyRail.Vines
 
             // Clear existing splines
             ClearSplines();
+            ClearCombinedMesh();
 
             // Build child lookup: nodeIndex -> list of children
             var childLookup = new Dictionary<int, List<int>>();
@@ -404,14 +455,9 @@ namespace HolyRail.Vines
                 }
             }
 
-            // Ensure we have a material for mesh rendering
-            var materialToUse = VineMaterial;
-            if (materialToUse == null && GenerateMeshes)
-            {
-                materialToUse = CreateDefaultVineMaterial();
-            }
+            // Collect all valid paths with their world lengths for filtering
+            var pathsWithLengths = new List<(List<int> path, float worldLength)>();
 
-            // For each leaf, trace back to root and create spline
             foreach (int leaf in leafNodes)
             {
                 var path = new List<int>();
@@ -426,9 +472,59 @@ namespace HolyRail.Vines
                 // Path is leaf-to-root, reverse to get root-to-leaf
                 path.Reverse();
 
-                // Skip short paths
+                // Skip paths with too few nodes
                 if (path.Count < MinSplineLength)
                     continue;
+
+                // Calculate world-space length
+                float worldLength = 0f;
+                for (int i = 1; i < path.Count; i++)
+                {
+                    worldLength += Vector3.Distance(
+                        _generatedNodes[path[i - 1]].Position,
+                        _generatedNodes[path[i]].Position);
+                }
+
+                // Skip paths that are too short in world space
+                if (worldLength < MinSplineWorldLength)
+                    continue;
+
+                pathsWithLengths.Add((path, worldLength));
+            }
+
+            // Sort by world length (longest first) and take top MaxSplineCount
+            pathsWithLengths.Sort((a, b) => b.worldLength.CompareTo(a.worldLength));
+            int validPathCount = pathsWithLengths.Count;
+            if (pathsWithLengths.Count > MaxSplineCount)
+            {
+                pathsWithLengths = pathsWithLengths.GetRange(0, MaxSplineCount);
+            }
+
+            // Ensure we have a material for mesh rendering
+            var materialToUse = VineMaterial;
+            if (materialToUse == null && GenerateMeshes)
+            {
+                materialToUse = CreateDefaultVineMaterial();
+            }
+
+            // Collect meshes for batching
+            var meshesToCombine = new List<CombineInstance>();
+            var tempSplineObjects = new List<GameObject>();
+
+            int processedCount = 0;
+            int totalPaths = pathsWithLengths.Count;
+
+            // Create splines for the filtered paths
+            foreach (var (path, worldLength) in pathsWithLengths)
+            {
+#if UNITY_EDITOR
+                if (totalPaths > 50)
+                {
+                    float progress = (float)processedCount / totalPaths;
+                    EditorUtility.DisplayProgressBar("Converting Vines to Splines",
+                        $"Processing spline {processedCount + 1} of {totalPaths}...", progress);
+                }
+#endif
 
                 // Create SplineContainer at world origin so knot positions work correctly
                 var splineGO = new GameObject($"VineSpline_{_generatedSplines.Count}");
@@ -447,30 +543,110 @@ namespace HolyRail.Vines
                     spline.Add(knot, TangentMode.AutoSmooth);
                 }
 
-                // Add mesh rendering via SplineExtrude
+                // Generate mesh for batching
                 if (GenerateMeshes)
                 {
                     var meshFilter = splineGO.AddComponent<MeshFilter>();
-                    var meshRenderer = splineGO.AddComponent<MeshRenderer>();
-                    meshRenderer.sharedMaterial = materialToUse;
-
                     var splineExtrude = splineGO.AddComponent<SplineExtrude>();
                     splineExtrude.Container = splineContainer;
                     splineExtrude.Radius = VineRadius;
                     splineExtrude.Sides = VineSegments;
                     splineExtrude.SegmentsPerUnit = VineSegmentsPerUnit;
                     splineExtrude.Capped = true;
-
-                    // Rebuild the mesh
                     splineExtrude.Rebuild();
+
+                    // Collect mesh for combining
+                    if (meshFilter.sharedMesh != null && meshFilter.sharedMesh.vertexCount > 0)
+                    {
+                        meshesToCombine.Add(new CombineInstance
+                        {
+                            mesh = meshFilter.sharedMesh,
+                            transform = splineGO.transform.localToWorldMatrix
+                        });
+                    }
+
+                    // Mark for cleanup after combining
+                    tempSplineObjects.Add(splineGO);
                 }
 
                 _generatedSplines.Add(splineContainer);
+                processedCount++;
             }
 
-            Debug.Log($"VineGenerator: Created {_generatedSplines.Count} splines from {leafNodes.Count} leaf nodes");
+#if UNITY_EDITOR
+            EditorUtility.ClearProgressBar();
+#endif
+
+            // Combine all meshes into one for single draw call
+            if (GenerateMeshes && meshesToCombine.Count > 0)
+            {
+                CombineVineMeshes(meshesToCombine, materialToUse, tempSplineObjects);
+            }
+
+            Debug.Log($"VineGenerator: Created {_generatedSplines.Count} splines from {leafNodes.Count} leaf nodes ({validPathCount} valid paths, max {MaxSplineCount}, batched into 1 mesh)");
 
             return _generatedSplines;
+        }
+
+        [SerializeField, HideInInspector]
+        private GameObject _combinedMeshObject;
+
+        private void CombineVineMeshes(List<CombineInstance> meshesToCombine, Material material, List<GameObject> tempObjects)
+        {
+            // Create combined mesh
+            var combinedMesh = new Mesh();
+            combinedMesh.name = "CombinedVineMesh";
+            combinedMesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32; // Support large meshes
+            combinedMesh.CombineMeshes(meshesToCombine.ToArray(), true, true);
+            combinedMesh.RecalculateBounds();
+
+            // Create single GameObject for all vines
+            _combinedMeshObject = new GameObject("VineMesh_Combined");
+            _combinedMeshObject.transform.SetParent(transform, false);
+            _combinedMeshObject.transform.position = Vector3.zero;
+            _combinedMeshObject.transform.rotation = Quaternion.identity;
+
+            var meshFilter = _combinedMeshObject.AddComponent<MeshFilter>();
+            meshFilter.sharedMesh = combinedMesh;
+
+            var meshRenderer = _combinedMeshObject.AddComponent<MeshRenderer>();
+            meshRenderer.sharedMaterial = material;
+
+            // Remove individual mesh components from spline objects (keep SplineContainers for grinding)
+            foreach (var splineGO in tempObjects)
+            {
+                var filter = splineGO.GetComponent<MeshFilter>();
+                var extrude = splineGO.GetComponent<SplineExtrude>();
+                var renderer = splineGO.GetComponent<MeshRenderer>();
+
+                if (Application.isPlaying)
+                {
+                    if (extrude != null) Destroy(extrude);
+                    if (renderer != null) Destroy(renderer);
+                    if (filter != null) Destroy(filter);
+                }
+                else
+                {
+                    if (extrude != null) DestroyImmediate(extrude);
+                    if (renderer != null) DestroyImmediate(renderer);
+                    if (filter != null) DestroyImmediate(filter);
+                }
+            }
+
+            Debug.Log($"VineGenerator: Combined {meshesToCombine.Count} meshes into 1 (verts: {combinedMesh.vertexCount}, tris: {combinedMesh.triangles.Length / 3})");
+        }
+
+        private void ClearCombinedMesh()
+        {
+            if (_combinedMeshObject != null)
+            {
+                if (Application.isPlaying)
+                    Destroy(_combinedMeshObject);
+                else
+                    DestroyImmediate(_combinedMeshObject);
+
+                _combinedMeshObject = null;
+            }
         }
 
         private Material CreateDefaultVineMaterial()
@@ -495,6 +671,7 @@ namespace HolyRail.Vines
             _generatedNodes.Clear();
             _generatedAttractors.Clear();
             ClearSplines();
+            ClearCombinedMesh();
             ReleaseBuffers();
         }
 

@@ -87,15 +87,66 @@ namespace HolyRail.City.Editor
 
             serializedObject.ApplyModifiedPropertiesWithoutUndo();
 
-            // 5. Register undo and select
+            // 5. Add BuildingColliderPool component
+            var colliderPool = cityGO.AddComponent<BuildingColliderPool>();
+            var poolSerializedObject = new SerializedObject(colliderPool);
+
+            var cityManagerProp = poolSerializedObject.FindProperty("<CityManager>k__BackingField");
+            if (cityManagerProp != null)
+            {
+                cityManagerProp.objectReferenceValue = cityManager;
+            }
+
+            // Try to find a player in the scene for tracking target
+            Transform trackingTarget = null;
+            var playerArmature = GameObject.Find("PlayerArmature");
+            if (playerArmature != null)
+            {
+                trackingTarget = playerArmature.transform;
+            }
+            else
+            {
+                // Try finding by tag (wrapped in try-catch in case tag doesn't exist)
+                try
+                {
+                    var player = GameObject.FindGameObjectWithTag("Player");
+                    if (player != null)
+                    {
+                        trackingTarget = player.transform;
+                    }
+                }
+                catch (UnityException)
+                {
+                    // Player tag doesn't exist, that's fine
+                }
+            }
+
+            if (trackingTarget != null)
+            {
+                var trackingTargetProp = poolSerializedObject.FindProperty("<TrackingTarget>k__BackingField");
+                if (trackingTargetProp != null)
+                {
+                    trackingTargetProp.objectReferenceValue = trackingTarget;
+                }
+            }
+
+            poolSerializedObject.ApplyModifiedPropertiesWithoutUndo();
+
+            // 6. Register undo and select
             Undo.RegisterCreatedObjectUndo(cityGO, "Create City Generator");
             Selection.activeGameObject = cityGO;
 
-            // 6. Log success
+            // 7. Log success
+            var trackingInfo = trackingTarget != null
+                ? $"  - Tracking Target: {trackingTarget.name}\n"
+                : "  - Tracking Target: Not found (assign manually)\n";
+
             Debug.Log($"CitySetup: Created CityGenerator GameObject\n" +
                       $"  - Compute Shader: {computeShader.name}\n" +
                       $"  - Building Mesh: {cubeMesh.name}\n" +
                       $"  - Material: {material.name}\n" +
+                      $"  - BuildingColliderPool: Added\n" +
+                      trackingInfo +
                       $"\nEnter Play mode to generate the city, or use the context menu 'Generate City'.");
         }
 
