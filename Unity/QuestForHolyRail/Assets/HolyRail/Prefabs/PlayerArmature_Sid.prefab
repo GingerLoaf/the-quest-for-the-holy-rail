@@ -3231,6 +3231,7 @@ MonoBehaviour:
   look: {x: 0, y: 0}
   jump: 0
   sprint: 1
+  parry: 0
   analogMovement: 0
   cursorLocked: 1
   cursorInputForLook: 1
@@ -3388,6 +3389,8 @@ MonoBehaviour:
     m_Flags: 0
   lookBack: 0
   MoveSpeed: 8
+  _airControlMultiplier: 1
+  MomentumPreservationTime: 0.5
   SprintSpeed: 8
   RotationSmoothTime: 0.12
   SpeedChangeRate: 10
@@ -3406,6 +3409,7 @@ MonoBehaviour:
   FootstepAudioVolume: 0.5
   JumpHeight: 2
   Gravity: -10
+  SpeedMultiplier: 1
   JumpTimeout: 0.5
   FallTimeout: 0.15
   Grounded: 1
@@ -3423,6 +3427,7 @@ MonoBehaviour:
   GrindExitCooldown: 0.75
   GrindTriggerOffset: -0.5
   GrindJumpMomentumMultiplier: 5
+  GrindEndJumpHeight: 0.6
   GrindStartBoost: 5
   GrindBoostDecayRate: 2
   VirtualCamera: {fileID: 0}

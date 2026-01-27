@@ -93,6 +93,9 @@ namespace StarterAssets
         [Tooltip("Multiplier for momentum when jumping off a rail (1.0 = full momentum)")]
         public float GrindJumpMomentumMultiplier = 1.0f;
 
+        [Tooltip("Jump height when automatically hopping off the end of a rail")]
+        public float GrindEndJumpHeight = 0.6f;
+
         [Tooltip("Speed boost applied when starting a grind")]
         public float GrindStartBoost = 4f;
 
@@ -376,9 +379,8 @@ namespace StarterAssets
         {
             if (_isGrinding) return false;
 
-            var result = ShowNearestPoint.GetNearestPointWithFacingDirection(
+            var result = ShowNearestPoint.GetNearestPointOnSplines(
                 transform.position,
-                transform.forward,
                 _splineContainers);
 
             if (result.Container == null) return false;
@@ -390,10 +392,31 @@ namespace StarterAssets
 
             if (result.Distance <= GrindDistanceThreshold)
             {
-                StartGrind(result.Container, result.SplineParameter, result.TravelDirection);
+                var direction = GetZForwardGrindDirection(result.Container, result.SplineParameter);
+                StartGrind(result.Container, result.SplineParameter, direction);
                 return true;
             }
             return false;
+        }
+
+        private SplineTravelDirection GetZForwardGrindDirection(SplineContainer container, float t)
+        {
+            if (container == null || container.Spline == null)
+                return SplineTravelDirection.StartToEnd;
+
+            // Get world-space tangent at the given spline parameter
+            Vector3 tangent = container.transform.TransformDirection(
+                (Vector3)container.Spline.EvaluateTangent(t)
+            ).normalized;
+
+            // Flatten to horizontal plane
+            tangent.y = 0f;
+            tangent.Normalize();
+
+            // Check if tangent points in positive Z direction (world forward)
+            // If tangent.z > 0, StartToEnd travels in +Z direction
+            // If tangent.z < 0, EndToStart travels in +Z direction
+            return tangent.z >= 0 ? SplineTravelDirection.StartToEnd : SplineTravelDirection.EndToStart;
         }
 
         void OnGrindRequested(InputAction.CallbackContext context)
@@ -462,8 +485,10 @@ namespace StarterAssets
             _targetRotation = Mathf.Atan2(exitDirection.x, exitDirection.z) * Mathf.Rad2Deg;
         }
 
-        private void ExitGrindWithJump()
+        private void ExitGrindWithJump(float? jumpHeight = null)
         {
+            float actualJumpHeight = jumpHeight ?? JumpHeight;
+
             // Calculate exit direction from spline tangent before stopping
             Vector3 exitDirection = Vector3.forward;
             if (GrindSpline != null && GrindSpline.Spline != null)
@@ -492,7 +517,7 @@ namespace StarterAssets
             _isGrinding = false;
 
             // Apply jump velocity (vertical)
-            _verticalVelocity = Mathf.Sqrt(JumpHeight * -2f * Gravity);
+            _verticalVelocity = Mathf.Sqrt(actualJumpHeight * -2f * Gravity);
 
             // Preserve horizontal momentum from grind
             _speed = _grindSpeedCurrent * GrindJumpMomentumMultiplier;
@@ -546,10 +571,10 @@ namespace StarterAssets
 
             _grindT += deltaT;
 
-            // Optional: auto-exit at end or start
+            // Auto-exit at end of spline with a smaller jump
             if (_grindT >= 1f || _grindT <= 0f)
             {
-                StopGrind();
+                ExitGrindWithJump(GrindEndJumpHeight);
                 return;
             }
 
