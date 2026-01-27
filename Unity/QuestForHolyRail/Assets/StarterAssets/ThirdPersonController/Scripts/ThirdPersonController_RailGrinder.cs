@@ -29,6 +29,12 @@ namespace StarterAssets
         [Tooltip("Move speed of the character in m/s")]
         public float MoveSpeed = 2.0f;
 
+        [Tooltip("Air control multiplier - lower values preserve momentum better (0 = no air control, 1 = full control)")]
+        [SerializeField] private float _airControlMultiplier = 1f;
+
+        [Tooltip("Duration to preserve momentum after exiting a grind (prevents deceleration)")]
+        public float MomentumPreservationTime = 0.5f;
+
         [Tooltip("Sprint speed of the character in m/s")]
         public float SprintSpeed = 5.335f;
 
@@ -95,6 +101,7 @@ namespace StarterAssets
 
         private bool _isGrinding;
         private float _grindExitCooldownTimer;
+        private float _momentumPreservationTimer;
         private float _grindT;                 // Normalized spline position (0–1)
         private float _grindSpeedCurrent;
         private float _grindRotationVelocity;
@@ -260,6 +267,11 @@ namespace StarterAssets
                 if (_grindExitCooldownTimer > 0f)
                 {
                     _grindExitCooldownTimer -= Time.deltaTime;
+                }
+
+                if (_momentumPreservationTimer > 0f)
+                {
+                    _momentumPreservationTimer -= Time.deltaTime;
                 }
 
                 // Auto-grind: cooldown prevents immediate re-attach after jumping off
@@ -440,6 +452,7 @@ namespace StarterAssets
             }
 
             _grindExitCooldownTimer = GrindExitCooldown;
+            _momentumPreservationTimer = MomentumPreservationTime;
             _isGrinding = false;
             _animator.SetBool(_animIDGrinding, false);
             _controller.enabled = true;
@@ -472,6 +485,7 @@ namespace StarterAssets
 
             // Start cooldown timer to prevent immediate re-attach in auto-grind mode
             _grindExitCooldownTimer = GrindExitCooldown;
+            _momentumPreservationTimer = MomentumPreservationTime;
 
             // Re-enable controller
             _controller.enabled = true;
@@ -598,17 +612,31 @@ namespace StarterAssets
             float speedOffset = 0.1f;
             float inputMagnitude = _input.analogMovement ? _input.move.magnitude : 1f;
 
+            // When airborne, preserve momentum better by reducing speed change rate
+            float effectiveSpeedChangeRate = Grounded ? SpeedChangeRate : SpeedChangeRate * _airControlMultiplier;
+
+            // Preserve momentum after exiting grind - only allow acceleration, not deceleration
+            bool preservingMomentum = _momentumPreservationTimer > 0f;
+
             // accelerate or decelerate to target speed
             if (currentHorizontalSpeed < targetSpeed - speedOffset ||
                 currentHorizontalSpeed > targetSpeed + speedOffset)
             {
-                // creates curved result rather than a linear one giving a more organic speed change
-                // note T in Lerp is clamped, so we don't need to clamp our speed
-                _speed = Mathf.Lerp(currentHorizontalSpeed, targetSpeed * inputMagnitude,
-                    Time.deltaTime * SpeedChangeRate);
+                // If preserving momentum and trying to decelerate, skip the speed change
+                if (preservingMomentum && currentHorizontalSpeed > targetSpeed)
+                {
+                    _speed = currentHorizontalSpeed;
+                }
+                else
+                {
+                    // creates curved result rather than a linear one giving a more organic speed change
+                    // note T in Lerp is clamped, so we don't need to clamp our speed
+                    _speed = Mathf.Lerp(currentHorizontalSpeed, targetSpeed * inputMagnitude,
+                        Time.deltaTime * effectiveSpeedChangeRate);
 
-                // round speed to 3 decimal places
-                _speed = Mathf.Round(_speed * 1000f) / 1000f;
+                    // round speed to 3 decimal places
+                    _speed = Mathf.Round(_speed * 1000f) / 1000f;
+                }
             }
             else
             {
