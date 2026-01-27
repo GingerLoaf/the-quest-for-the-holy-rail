@@ -32,7 +32,7 @@ Both methods automatically:
 cd Unity/QuestForHolyRail
 
 # Replace with your Unity installation path
-/Applications/Unity/Hub/Editor/6.3.0f1/Unity.app/Contents/MacOS/Unity \
+/Applications/Unity/Hub/Editor/6000.3.5f1/Unity.app/Contents/MacOS/Unity \
   -quit -batchmode -projectPath . \
   -executeMethod BuildScript.BuildWindows \
   -logFile -
@@ -46,7 +46,7 @@ cd Unity/QuestForHolyRail
 cd Unity/QuestForHolyRail
 
 # Replace with your Unity installation path
-/Applications/Unity/Hub/Editor/6.3.0f1/Unity.app/Contents/MacOS/Unity \
+/Applications/Unity/Hub/Editor/6000.3.5f1/Unity.app/Contents/MacOS/Unity \
   -quit -batchmode -projectPath . \
   -executeMethod BuildScript.BuildMacOS \
   -logFile -
