@@ -1,8 +1,10 @@
+using System;
 using System.Runtime.InteropServices;
 using UnityEngine;
 
 namespace HolyRail.City
 {
+    [Serializable]
     [StructLayout(LayoutKind.Sequential)]
     public struct BuildingData
     {
