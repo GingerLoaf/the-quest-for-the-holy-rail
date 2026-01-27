@@ -8,7 +8,8 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: ScrollingGradient
-  m_Shader: {fileID: -6465566751694194690, guid: f0e1d2c3b4a596780e1f2a3b4c5d6e7f, type: 3}
+  m_Shader: {fileID: 4800000, guid: 0, type: 3}
+  m_ShaderKeywords:
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
@@ -18,50 +19,22 @@ Material:
   m_DoubleSidedGI: 0
   m_CustomRenderQueue: 2000
   stringTagMap: {}
-  disabledShaderPasses:
-  - MOTIONVECTORS
-  m_LockedProperties: 
+  disabledShaderPasses: []
+  m_LockedProperties:
   m_SavedProperties:
     serializedVersion: 3
-    m_TexEnvs:
-    - unity_Lightmaps:
-        m_Texture: {fileID: 0}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    - unity_LightmapsInd:
-        m_Texture: {fileID: 0}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    - unity_ShadowMasks:
-        m_Texture: {fileID: 0}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
+    m_TexEnvs: []
     m_Ints: []
     m_Floats:
     - _EmissionIntensity: 1.93
     - _Frequency: 0.07
-    - _FresnelAmount: 7.05
-    - _FresnelPower: 0.15
+    - _EdgeAmount: 1
+    - _EdgePower: 2
     - _Power: 1.91
-    - _QueueControl: 1
-    - _QueueOffset: 0
     - _ScrollSpeed: -0.61
     m_Colors:
     - _BaseColor: {r: 0.018422928, g: 0.07787621, b: 0.16981131, a: 1}
-    - _FresnelColor: {r: 0, g: 0, b: 0, a: 1}
+    - _EdgeColor: {r: 0, g: 0, b: 0, a: 1}
     - _GradientColor: {r: 0, g: 1, b: 1, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
---- !u!114 &733818693073164934
-MonoBehaviour:
-  m_ObjectHideFlags: 11
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d0353a89b1f911e48b9e16bdc9f2e058, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Editor::UnityEditor.Rendering.Universal.AssetVersion
-  version: 10

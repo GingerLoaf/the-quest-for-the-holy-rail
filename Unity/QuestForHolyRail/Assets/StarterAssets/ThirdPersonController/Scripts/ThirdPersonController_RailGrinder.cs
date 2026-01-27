@@ -104,6 +104,9 @@ namespace StarterAssets
         [Tooltip("Smoothing time for camera look movement")]
         public float LookSmoothTime = 0.1f;
 
+        [Tooltip("Camera look sensitivity")]
+        public float LookSpeed = 1.0f;
+
         // cinemachine
         private float _cinemachineTargetYaw;
         private float _cinemachineTargetPitch;
@@ -171,8 +174,18 @@ namespace StarterAssets
                 _mainCamera = GameObject.FindGameObjectWithTag("MainCamera");
             }
             _splineContainers = FindObjectsByType<SplineContainer>(FindObjectsSortMode.None);
+        }
+
+        private void OnEnable()
+        {
             grindInput.Enable();
             grindInput.performed += OnGrindRequested;
+        }
+
+        private void OnDisable()
+        {
+            grindInput.performed -= OnGrindRequested;
+            grindInput.Disable();
         }
 
         private void Start()
@@ -259,16 +272,21 @@ namespace StarterAssets
                 //Don't multiply mouse input by Time.deltaTime;
                 float deltaTimeMultiplier = IsCurrentDeviceMouse ? 1.0f : Time.deltaTime;
 
-                _cinemachineTargetYaw += _input.look.x * deltaTimeMultiplier;
-                _cinemachineTargetPitch += _input.look.y * deltaTimeMultiplier;
+                _cinemachineTargetYaw += _input.look.x * deltaTimeMultiplier * LookSpeed;
+                _cinemachineTargetPitch += _input.look.y * deltaTimeMultiplier * LookSpeed;
             }
 
             // clamp our rotations so our values are limited 360 degrees
             _cinemachineTargetYaw = ClampAngle(_cinemachineTargetYaw, float.MinValue, float.MaxValue);
+            float prevPitch = _cinemachineTargetPitch;
             _cinemachineTargetPitch = ClampAngle(_cinemachineTargetPitch, BottomClamp, TopClamp);
+            if (_cinemachineTargetPitch != prevPitch)
+            {
+                _pitchVelocity = 0f;
+            }
 
             // Smooth the rotation values
-            _smoothYaw = Mathf.SmoothDamp(_smoothYaw, _cinemachineTargetYaw, ref _yawVelocity, LookSmoothTime);
+            _smoothYaw = Mathf.SmoothDampAngle(_smoothYaw, _cinemachineTargetYaw, ref _yawVelocity, LookSmoothTime);
             _smoothPitch = Mathf.SmoothDamp(_smoothPitch, _cinemachineTargetPitch, ref _pitchVelocity, LookSmoothTime);
 
             // Cinemachine will follow this target
@@ -337,19 +355,63 @@ namespace StarterAssets
 
         public void StopGrind()
         {
+            // Calculate exit direction from spline tangent before stopping
+            Vector3 exitDirection = Vector3.forward;
+            if (GrindSpline != null && GrindSpline.Spline != null)
+            {
+                exitDirection = GrindSpline.transform.TransformDirection(
+                    (Vector3)GrindSpline.Spline.EvaluateTangent(_grindT)
+                ).normalized;
+
+                if (_grindDirection == SplineTravelDirection.EndToStart)
+                {
+                    exitDirection = -exitDirection;
+                }
+
+                exitDirection.y = 0f;
+                exitDirection.Normalize();
+            }
+
             _isGrinding = false;
             _animator.SetBool(_animIDGrinding, false);
             _controller.enabled = true;
+
+            // Preserve horizontal momentum from grind
+            _speed = _grindSpeedCurrent;
+            _targetRotation = Mathf.Atan2(exitDirection.x, exitDirection.z) * Mathf.Rad2Deg;
         }
 
         private void ExitGrindWithJump()
         {
+            // Calculate exit direction from spline tangent before stopping
+            Vector3 exitDirection = Vector3.forward;
+            if (GrindSpline != null && GrindSpline.Spline != null)
+            {
+                exitDirection = GrindSpline.transform.TransformDirection(
+                    (Vector3)GrindSpline.Spline.EvaluateTangent(_grindT)
+                ).normalized;
+
+                // Flip tangent for reverse grinding
+                if (_grindDirection == SplineTravelDirection.EndToStart)
+                {
+                    exitDirection = -exitDirection;
+                }
+
+                // Flatten to horizontal
+                exitDirection.y = 0f;
+                exitDirection.Normalize();
+            }
+
             // Re-enable controller
             _controller.enabled = true;
             _isGrinding = false;
 
-            // Apply jump velocity
+            // Apply jump velocity (vertical)
             _verticalVelocity = Mathf.Sqrt(JumpHeight * -2f * Gravity);
+
+            // Preserve horizontal momentum from grind
+            _speed = _grindSpeedCurrent;
+            _targetRotation = Mathf.Atan2(exitDirection.x, exitDirection.z) * Mathf.Rad2Deg;
 
             // Update animator if using character
             if (_hasAnimator)
@@ -584,8 +646,8 @@ namespace StarterAssets
 
         private static float ClampAngle(float lfAngle, float lfMin, float lfMax)
         {
-            if (lfAngle < -360f) lfAngle += 360f;
-            if (lfAngle > 360f) lfAngle -= 360f;
+            while (lfAngle < -360f) lfAngle += 360f;
+            while (lfAngle > 360f) lfAngle -= 360f;
             return Mathf.Clamp(lfAngle, lfMin, lfMax);
         }
 
