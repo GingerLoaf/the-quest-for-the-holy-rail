@@ -1,5 +1,5 @@
 using System;
-using System.Diagnostics;
+
 using System.IO;
 using System.Linq;
 using UnityEditor;
@@ -30,7 +30,7 @@ public class BuildScript
         // Fall back to git command (works locally)
         try
         {
-            ProcessStartInfo startInfo = new ProcessStartInfo
+            System.Diagnostics.ProcessStartInfo startInfo = new System.Diagnostics.ProcessStartInfo
             {
                 FileName = "git",
                 Arguments = "rev-parse --short HEAD",
@@ -41,7 +41,7 @@ public class BuildScript
                 WorkingDirectory = Directory.GetParent(Application.dataPath)?.FullName ?? "."
             };
 
-            using (Process process = Process.Start(startInfo))
+            using (System.Diagnostics.Process process = System.Diagnostics.Process.Start(startInfo))
             {
                 if (process == null)
                 {
