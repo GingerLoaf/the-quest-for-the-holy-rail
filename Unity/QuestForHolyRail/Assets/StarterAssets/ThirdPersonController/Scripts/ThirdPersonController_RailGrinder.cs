@@ -23,7 +23,7 @@ namespace StarterAssets
         public InputAction lookBackInput;
         public bool lookBack;
         private SplineContainer[] _splineContainers;
-
+        
         [Header("Player")]
         [Tooltip("Move speed of the character in m/s")]
         public float MoveSpeed = 2.0f;
@@ -187,10 +187,12 @@ namespace StarterAssets
 #endif
             }
         }
-
-
+        
+        public static ThirdPersonController_RailGrinder Instance { get; private set; }
+        
         private void Awake()
         {
+            Instance = this;
             // get a reference to our main camera
             if (_mainCamera == null)
             {
