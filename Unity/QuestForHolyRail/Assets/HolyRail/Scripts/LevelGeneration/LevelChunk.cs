@@ -1,9 +1,9 @@
 using System;
+using StarterAssets;
 using UnityEngine;
 
 namespace HolyRail.Scripts.LevelGeneration
 {
-    [RequireComponent(typeof(BoxCollider))]
     public class LevelChunk : MonoBehaviour
     {
         public event Action<LevelChunk> PlayerEnteredFirstTime;
@@ -14,38 +14,65 @@ namespace HolyRail.Scripts.LevelGeneration
         [Tooltip("Attachment points at the far end (away from pivot)")]
         public AttachmentPoint[] FarEnd = new AttachmentPoint[2];
 
+        [Header("Flip-Dependent Objects")]
+        [Tooltip("Objects that should only be enabled if the chunk is not flipped")]
+        public GameObject[] EnabledOnlyWhenNotFlipped;
+
         public bool PlayerIsInside { get; private set; }
         public bool HasBeenVisited { get; private set; }
         public int ChunkIndex { get; set; }
         public bool IsFlipped { get; set; }
 
-        private BoxCollider _collider;
+        private Transform _playerTransform;
+        private float _chunkStartZ;
+        private float _chunkEndZ;
 
         private void Awake()
         {
-            _collider = GetComponent<BoxCollider>();
-            _collider.isTrigger = true;
+            if (ThirdPersonController_RailGrinder.Instance != null)
+            {
+                _playerTransform = ThirdPersonController_RailGrinder.Instance.transform;
+            }
+
+            CalculateChunkBounds();
         }
 
-        private void OnTriggerEnter(Collider other)
+        private void Update()
         {
-            if (!other.CompareTag("Player"))
+            if (_playerTransform == null)
                 return;
 
-            PlayerIsInside = true;
+            float playerLocalZ = transform.InverseTransformPoint(_playerTransform.position).z;
+            bool wasInside = PlayerIsInside;
+            PlayerIsInside = playerLocalZ >= _chunkStartZ && playerLocalZ <= _chunkEndZ;
 
-            if (!HasBeenVisited)
+            if (PlayerIsInside && !wasInside)
             {
-                HasBeenVisited = true;
-                PlayerEnteredFirstTime?.Invoke(this);
+                if (!HasBeenVisited)
+                {
+                    HasBeenVisited = true;
+                    PlayerEnteredFirstTime?.Invoke(this);
+                }
             }
         }
 
-        private void OnTriggerExit(Collider other)
+        private void CalculateChunkBounds()
         {
-            if (other.CompareTag("Player"))
+            Vector3? nearPos = GetProgressionNearEndAveragePosition();
+            Vector3? farPos = GetProgressionFarEndAveragePosition();
+
+            if (nearPos.HasValue && farPos.HasValue)
             {
-                PlayerIsInside = false;
+                Vector3 nearLocal = transform.InverseTransformPoint(nearPos.Value);
+                Vector3 farLocal = transform.InverseTransformPoint(farPos.Value);
+
+                _chunkStartZ = Mathf.Min(nearLocal.z, farLocal.z);
+                _chunkEndZ = Mathf.Max(nearLocal.z, farLocal.z);
+            }
+            else
+            {
+                _chunkStartZ = 0f;
+                _chunkEndZ = 100f;
             }
         }
 
