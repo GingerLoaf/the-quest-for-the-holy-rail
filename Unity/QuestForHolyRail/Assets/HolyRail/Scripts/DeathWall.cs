@@ -53,6 +53,7 @@ namespace HolyRail.Scripts
         private int _playerSpeedSamples;
         private Vector3 _playerStartPosition;
         private bool _isActivated;
+        private bool _hasReachedMaxSpeed;
 
         private void Awake()
         {
@@ -156,6 +157,13 @@ namespace HolyRail.Scripts
             {
                 CurrentSpeed += Acceleration * Time.deltaTime;
                 CurrentSpeed = Mathf.Min(CurrentSpeed, MaxSpeed);
+
+                // Log when max speed is reached for the first time
+                if (!_hasReachedMaxSpeed && CurrentSpeed >= MaxSpeed)
+                {
+                    _hasReachedMaxSpeed = true;
+                    Debug.Log($"<color=magenta>[Death Wall Max Speed]</color> Reached maximum speed of {MaxSpeed:F2} m/s!", gameObject);
+                }
 
                 transform.position += Vector3.forward * CurrentSpeed * Time.deltaTime;
             }
