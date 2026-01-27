@@ -77,10 +77,10 @@ jobs:
 
           # NOTE: jq is standard on GitHub Actions Runners, but may not be available if this is eventually ported elsewhere
           
-          NOTES="**Author**: [${{ github.actor }}](https://github.com/${{ github.actor }})\n**Branch**: [$BRANCH](${{ github.server_url }}/${{ github.repository }}/tree/$BRANCH)\n**Commit**: [${{ github.sha }}](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})\n**Run**: [View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          NOTES=$(printf "**Author**: [${{ github.actor }}](https://github.com/${{ github.actor }})\n**Branch**: [$BRANCH](${{ github.server_url }}/${{ github.repository }}/tree/$BRANCH)\n**Commit**: [${{ github.sha }}](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})\n**Run**: [View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})")
 
           if [ "$STATUS" = "success" ] && [ -n "$ARTIFACT_URL" ]; then
-            NOTES="$NOTES\n**Artifact**: [Download]($ARTIFACT_URL)"
+            NOTES=$(printf "$NOTES\n**Artifact**: [Download]($ARTIFACT_URL)")
           fi
 
           # Create JSON payload using jq
