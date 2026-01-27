@@ -11,12 +11,16 @@ public class LevelManager : MonoBehaviour
     [Tooltip("Distance in Z to spawn next chunk ahead of current")]
     public float SpawnDistanceZ = 30f;
 
+    [Tooltip("Height adjustment when attachment points indicate elevation change")]
+    public float HeightOffset = 5f;
+
     [Tooltip("Number of chunks behind player to keep before despawning")]
     public int ChunksToKeepBehind = 2;
 
     private List<LevelChunk> _activeChunks = new();
     private int _nextChunkIndex;
     private float _nextSpawnZ;
+    private float _nextSpawnY;
 
     private void Start()
     {
@@ -35,6 +39,13 @@ public class LevelManager : MonoBehaviour
         if (ChunkPrefabs.Length == 0)
             return;
 
+        // Check previous chunk's attachment points to adjust height
+        if (_activeChunks.Count > 0)
+        {
+            var previousChunk = _activeChunks[^1];
+            AdjustHeightFromAttachmentPoints(previousChunk);
+        }
+
         // Select prefab (cycle through array)
         var prefab = ChunkPrefabs[_nextChunkIndex % ChunkPrefabs.Length];
 
@@ -42,7 +53,7 @@ public class LevelManager : MonoBehaviour
         bool spawnBackwards = Random.value < 0.5f;
 
         // If backwards, rotate 180 and offset by chunk length to compensate for pivot position
-        var spawnPosition = new Vector3(0f, 0f, _nextSpawnZ + (spawnBackwards ? SpawnDistanceZ : 0f));
+        var spawnPosition = new Vector3(0f, _nextSpawnY, _nextSpawnZ + (spawnBackwards ? SpawnDistanceZ : 0f));
         var spawnRotation = spawnBackwards ? Quaternion.Euler(0f, 180f, 0f) : Quaternion.identity;
 
         var chunk = Instantiate(prefab, spawnPosition, spawnRotation, transform);
@@ -56,11 +67,31 @@ public class LevelManager : MonoBehaviour
         }
 
         levelChunk.ChunkIndex = _nextChunkIndex;
+        levelChunk.IsFlipped = spawnBackwards;
         levelChunk.PlayerEnteredFirstTime += OnPlayerEnteredChunk;
 
         _activeChunks.Add(levelChunk);
         _nextChunkIndex++;
         _nextSpawnZ += SpawnDistanceZ;
+    }
+
+    private void AdjustHeightFromAttachmentPoints(LevelChunk chunk)
+    {
+        bool airPopulated = chunk.FarEndAirPopulated();
+        bool groundEmpty = chunk.FarEndGroundEmpty();
+        bool groundPopulated = chunk.FarEndGroundPopulated();
+        bool airEmpty = chunk.FarEndAirEmpty();
+
+        // Air populated + ground empty → spawn higher
+        if (airPopulated && groundEmpty)
+        {
+            _nextSpawnY += HeightOffset;
+        }
+        // Ground populated + air empty → spawn lower
+        else if (groundPopulated && airEmpty)
+        {
+            _nextSpawnY -= HeightOffset;
+        }
     }
 
     private void OnPlayerEnteredChunk(LevelChunk enteredChunk)
