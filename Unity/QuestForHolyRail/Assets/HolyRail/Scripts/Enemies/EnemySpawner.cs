@@ -53,60 +53,19 @@ public class EnemySpawner : MonoBehaviour
     [field: Tooltip("Total bullet instances to pre-allocate in the pool")]
     [field: SerializeField]
     public int BulletPoolSize { get; private set; } = 50;
-
-    [Header("Bot Settings")]
-    [field: Tooltip("Bots stop approaching when within this distance of the player")]
-    [field: SerializeField]
-    public float BotExclusionRadius { get; private set; } = 5f;
-
-    [field: Tooltip("How quickly bots accelerate toward the player")]
-    [field: SerializeField]
-    public float BotAcceleration { get; private set; } = 8f;
-
-    [field: Tooltip("Maximum movement speed of bots")]
-    [field: SerializeField]
-    public float BotMaxSpeed { get; private set; } = 6f;
-
-    [field: Tooltip("Perlin noise magnitude for organic drift movement")]
-    [field: SerializeField]
-    public float BotNoiseAmount { get; private set; } = 1.5f;
-
-    [field: Tooltip("Perlin noise frequency - higher = faster drift")]
-    [field: SerializeField]
-    public float BotNoiseSpeed { get; private set; } = 2f;
-
-    [field: Tooltip("Bots within this distance will push away from each other")]
-    [field: SerializeField]
-    public float BotAvoidanceRadius { get; private set; } = 3f;
-
-    [field: Tooltip("How strongly bots repel each other when too close")]
-    [field: SerializeField]
-    public float BotAvoidanceStrength { get; private set; } = 5f;
-
-    [field: Tooltip("Collision radius of the bot for physics queries")]
-    [field: SerializeField]
-    public float BotCollisionRadius { get; private set; } = 1.5f;
-
+    
     [Header("Bullet Settings")]
     [field: Tooltip("Travel speed of bullets")]
     [field: SerializeField]
     public float BulletSpeed { get; private set; } = 15f;
 
-    [field: Tooltip("Seconds between each shot fired by a bot")]
-    [field: SerializeField]
-    public float BotFireRate { get; private set; } = 1.5f;
-
-    [field: Tooltip("Bots only fire when player is within this distance")]
-    [field: SerializeField]
-    public float BotFiringRange { get; private set; } = 15f;
-
     [field: Tooltip("If true, bullets will knock the player off rails when hit")]
     [field: SerializeField]
     public bool BulletsKnockOffRail { get; private set; } = true;
 
-    private Queue<EnemyBot> _botPool;
+    private Queue<BaseEnemyBot> _botPool;
     private Queue<EnemyBullet> _bulletPool;
-    private List<EnemyBot> _activeBots;
+    private List<BaseEnemyBot> _activeBots;
     private float _spawnTimer;
 
     private void Awake()
@@ -131,14 +90,14 @@ public class EnemySpawner : MonoBehaviour
 
     private void InitializePools()
     {
-        _botPool = new Queue<EnemyBot>();
+        _botPool = new Queue<BaseEnemyBot>();
         _bulletPool = new Queue<EnemyBullet>();
-        _activeBots = new List<EnemyBot>();
+        _activeBots = new List<BaseEnemyBot>();
 
         for (int i = 0; i < BotPoolSize; i++)
         {
             var botObj = Instantiate(BotPrefab, transform);
-            var bot = botObj.GetComponent<EnemyBot>();
+            var bot = botObj.GetComponent<BaseEnemyBot>();
             bot.Initialize(this);
             botObj.SetActive(false);
             _botPool.Enqueue(bot);
@@ -194,7 +153,7 @@ public class EnemySpawner : MonoBehaviour
         return new Vector3(x, y, z);
     }
 
-    public void RecycleBot(EnemyBot bot)
+    public void RecycleBot(BaseEnemyBot bot)
     {
         if (bot == null)
         {
@@ -232,7 +191,7 @@ public class EnemySpawner : MonoBehaviour
         _bulletPool.Enqueue(bullet);
     }
 
-    public IReadOnlyList<EnemyBot> GetActiveBots()
+    public IReadOnlyList<BaseEnemyBot> GetActiveBots()
     {
         return _activeBots;
     }
