@@ -8,6 +8,9 @@ namespace HolyRail.Scripts.LevelGeneration
     {
         [FormerlySerializedAs("ChunkPrefabs")]
         [Header("Level Chunks")]
+        [Tooltip("Optional starter chunks that always spawn first in order")]
+        public GameObject[] starterChunkPrefabs;
+
         [Tooltip("Prefabs of level chunks to spawn")]
         public GameObject[] chunkPrefabs;
 
@@ -16,8 +19,11 @@ namespace HolyRail.Scripts.LevelGeneration
         [Tooltip("Distance in Z to spawn next chunk ahead of current")]
         public float spawnDistanceZ = 30f;
 
+        [Tooltip("Number of chunks ahead of player to keep loaded")]
+        public int chunksToKeepAhead = 5;
+
         [FormerlySerializedAs("ChunksToKeepBehind")] [Tooltip("Number of chunks behind player to keep before despawning")]
-        public int chunksToKeepBehind = 2;
+        public int chunksToKeepBehind = 5;
 
         private List<LevelChunk> _activeChunks = new();
         private int _nextChunkIndex;
@@ -31,8 +37,12 @@ namespace HolyRail.Scripts.LevelGeneration
                 return;
             }
 
-            // Spawn initial chunk at origin
-            SpawnNextChunk();
+            // Spawn initial chunks to fill the ahead buffer
+            // Spawn current chunk + chunksToKeepAhead
+            for (int i = 0; i <= chunksToKeepAhead; i++)
+            {
+                SpawnNextChunk();
+            }
         }
 
         private void SpawnNextChunk()
@@ -40,11 +50,25 @@ namespace HolyRail.Scripts.LevelGeneration
             if (chunkPrefabs.Length == 0)
                 return;
 
-            // Select prefab (cycle through array)
-            var prefab = chunkPrefabs[_nextChunkIndex % chunkPrefabs.Length];
+            GameObject prefab;
+            bool spawnBackwards = false;
 
-            // 50% chance to spawn backwards
-            bool spawnBackwards = Random.value < 0.5f;
+            // Use starter chunks first if available
+            if (starterChunkPrefabs != null && _nextChunkIndex < starterChunkPrefabs.Length)
+            {
+                prefab = starterChunkPrefabs[_nextChunkIndex];
+                // Starter chunks always spawn forward (no randomization)
+                spawnBackwards = false;
+            }
+            else
+            {
+                // Select prefab from regular chunks (cycle through array)
+                var regularIndex = _nextChunkIndex - (starterChunkPrefabs?.Length ?? 0);
+                prefab = chunkPrefabs[regularIndex % chunkPrefabs.Length];
+
+                // 50% chance to spawn backwards for regular chunks
+                spawnBackwards = Random.value < 0.5f;
+            }
 
             // If backwards, rotate 180 and offset by chunk length to compensate for pivot position
             var spawnPosition = new Vector3(0f, 0f, _nextSpawnZ + (spawnBackwards ? spawnDistanceZ : 0f));
@@ -90,8 +114,14 @@ namespace HolyRail.Scripts.LevelGeneration
 
         private void OnPlayerEnteredChunk(LevelChunk enteredChunk)
         {
-            // Spawn next chunk when player enters current one
-            SpawnNextChunk();
+            // Calculate how many chunks we should have ahead
+            int targetLastChunkIndex = enteredChunk.ChunkIndex + chunksToKeepAhead;
+
+            // Spawn chunks until we have the required number ahead
+            while (_nextChunkIndex <= targetLastChunkIndex)
+            {
+                SpawnNextChunk();
+            }
 
             // Despawn chunks that are too far behind
             DespawnOldChunks(enteredChunk.ChunkIndex);
