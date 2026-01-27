@@ -111,6 +111,10 @@ namespace StarterAssets
         public AudioClip GrindLoopAudioClip;
         [Range(0, 1)] public float GrindAudioVolume = 0.5f;
 
+        [Space(10)]
+        [Tooltip("Particle systems to enable emission while grinding")]
+        public ParticleSystem[] GrindParticleSystems;
+
         private AudioSource _grindLoopAudioSource;
         private AudioSource _skateLoopAudioSource;
         private bool _isGrinding;
@@ -491,6 +495,21 @@ namespace StarterAssets
                 _grindLoopAudioSource.volume = GrindAudioVolume;
                 _grindLoopAudioSource.Play();
             }
+
+            // Enable grind particle emission
+            SetGrindParticleEmission(true);
+        }
+
+        private void SetGrindParticleEmission(bool enabled)
+        {
+            if (GrindParticleSystems == null) return;
+
+            foreach (var ps in GrindParticleSystems)
+            {
+                if (ps == null) continue;
+                var emission = ps.emission;
+                emission.enabled = enabled;
+            }
         }
 
         public void StopGrind()
@@ -515,14 +534,22 @@ namespace StarterAssets
             _grindExitCooldownTimer = GrindExitCooldown;
             _momentumPreservationTimer = MomentumPreservationTime;
             _isGrinding = false;
-            _animator.SetBool(_animIDGrinding, false);
             _controller.enabled = true;
+
+            // Update animator if using character
+            if (_hasAnimator)
+            {
+                _animator.SetBool(_animIDGrinding, false);
+            }
 
             // Stop grind loop sound
             if (_grindLoopAudioSource != null && _grindLoopAudioSource.isPlaying)
             {
                 _grindLoopAudioSource.Stop();
             }
+
+            // Disable grind particle emission
+            SetGrindParticleEmission(false);
 
             // Preserve horizontal momentum from grind
             _speed = _grindSpeedCurrent * GrindJumpMomentumMultiplier;
@@ -565,6 +592,9 @@ namespace StarterAssets
             {
                 _grindLoopAudioSource.Stop();
             }
+
+            // Disable grind particle emission
+            SetGrindParticleEmission(false);
 
             // Apply jump velocity (vertical)
             _verticalVelocity = Mathf.Sqrt(actualJumpHeight * -2f * Gravity);
