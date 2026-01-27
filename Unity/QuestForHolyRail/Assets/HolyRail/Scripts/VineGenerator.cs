@@ -69,6 +69,9 @@ namespace HolyRail.Vines
         [field: SerializeField, Range(0f, 1f)] public float BranchDensity { get; set; } = 0.3f;
         public int EffectiveBranchCooldown => Mathf.RoundToInt(Mathf.Lerp(15, 1, BranchDensity));
 
+        [Header("Branch Separation")]
+        [field: SerializeField, Range(0f, 5f)] public float MinBranchSeparation { get; set; } = 0f;
+
         [Header("Direction Bias")]
         [field: SerializeField] public Vector3 ForwardDirection { get; set; } = Vector3.forward;
         [field: SerializeField, Range(0f, 2f)] public float ForwardBias { get; set; } = 0.5f;
@@ -84,7 +87,7 @@ namespace HolyRail.Vines
         [field: SerializeField, Range(0.05f, 1f)] public float AttractorGizmoSize { get; set; } = 0.15f;
 
         [Header("Spline Conversion")]
-        [field: SerializeField, Range(2, 100)] public int MinSplineLength { get; set; } = 5;
+        [field: SerializeField, Range(2, 100)] public int MinSplineLength { get; set; } = 2;
         [field: SerializeField, Range(10, 1000)] public int MaxSplineCount { get; set; } = 200;
         [field: SerializeField, Range(0f, 10f)] public float MinSplineWorldLength { get; set; } = 0.5f;
 
@@ -99,6 +102,15 @@ namespace HolyRail.Vines
         [field: SerializeField, Range(4, 64)] public int VineSegmentsPerUnit { get; set; } = 4;
         [field: SerializeField] public bool GenerateMeshes { get; set; } = true;
 
+        // Branch connection data for rail grinding transitions
+        [System.Serializable]
+        public class BranchConnection
+        {
+            public SplineContainer FromSpline;
+            public bool FromEnd; // true = end of spline (t=1), false = start of spline (t=0)
+            public List<SplineContainer> ConnectedSplines = new List<SplineContainer>();
+        }
+
         // Generated data (serialized to persist through Play mode)
         [SerializeField, HideInInspector]
         private List<VineNode> _generatedNodes = new List<VineNode>();
@@ -106,6 +118,8 @@ namespace HolyRail.Vines
         private List<VineAttractor> _generatedAttractors = new List<VineAttractor>();
         [SerializeField, HideInInspector]
         private List<SplineContainer> _generatedSplines = new List<SplineContainer>();
+        [SerializeField, HideInInspector]
+        private List<BranchConnection> _branchConnections = new List<BranchConnection>();
 
         // Compute buffers
         private ComputeBuffer _nodeBuffer;
@@ -126,6 +140,19 @@ namespace HolyRail.Vines
         public int AttractorCount_Active => _generatedAttractors.FindAll(a => a.Active == 1).Count;
         public int SplineCount => _generatedSplines.Count;
         public bool HasData => _generatedNodes.Count > 0;
+        public IReadOnlyList<BranchConnection> BranchConnections => _branchConnections;
+
+        public List<SplineContainer> GetConnectedSplines(SplineContainer fromSpline, bool atEnd)
+        {
+            foreach (var connection in _branchConnections)
+            {
+                if (connection.FromSpline == fromSpline && connection.FromEnd == atEnd)
+                {
+                    return connection.ConnectedSplines;
+                }
+            }
+            return null;
+        }
 
         public void Regenerate()
         {
@@ -425,7 +452,7 @@ namespace HolyRail.Vines
 
         public List<SplineContainer> ConvertToSplines()
         {
-            Debug.Log($"[VineSpline] ConvertToSplines called. Application.isPlaying: {Application.isPlaying}");
+            Debug.Log($"[VineSpline] ConvertToSplines called (segment-based). Application.isPlaying: {Application.isPlaying}");
 
             if (_generatedNodes.Count == 0)
             {
@@ -433,9 +460,10 @@ namespace HolyRail.Vines
                 return new List<SplineContainer>();
             }
 
-            // Clear existing splines
+            // Clear existing splines and branch connections
             ClearSplines();
             ClearCombinedMesh();
+            _branchConnections.Clear();
 
             // Build child lookup: nodeIndex -> list of children
             var childLookup = new Dictionary<int, List<int>>();
@@ -453,73 +481,162 @@ namespace HolyRail.Vines
                 }
             }
 
-            // Find all leaf nodes (nodes with no children)
-            var leafNodes = new List<int>();
+            // Identify segment start points:
+            // - Root nodes (parentIndex == -1)
+            // - Branch points (nodes with 2+ children)
+            var segmentStartNodes = new HashSet<int>();
+            var branchPoints = new HashSet<int>();
+
             for (int i = 0; i < _generatedNodes.Count; i++)
             {
-                if (childLookup[i].Count == 0)
+                // Root nodes are segment starts
+                if (_generatedNodes[i].ParentIndex == -1)
                 {
-                    leafNodes.Add(i);
+                    segmentStartNodes.Add(i);
+                }
+
+                // Branch points (2+ children) are also segment starts for their children
+                if (childLookup[i].Count >= 2)
+                {
+                    branchPoints.Add(i);
+                    // Each child of a branch point starts a new segment
+                    foreach (int child in childLookup[i])
+                    {
+                        segmentStartNodes.Add(child);
+                    }
                 }
             }
 
-            // Collect all valid paths with their world lengths for filtering
-            var pathsWithLengths = new List<(List<int> path, float worldLength)>();
-            int filteredByNodeCount = 0;
-            int filteredByWorldLength = 0;
-
-            foreach (int leaf in leafNodes)
+            // Log single root mode
+            int rootCount = segmentStartNodes.Count(n => _generatedNodes[n].ParentIndex == -1);
+            if (rootCount == 1)
             {
-                var path = new List<int>();
-                int current = leaf;
+                Debug.Log("VineGenerator: Single root mode - 1 root point detected");
+            }
 
+            Debug.Log($"VineGenerator: Found {segmentStartNodes.Count} segment start points, {branchPoints.Count} branch points, {rootCount} root(s)");
+
+            // Optional: Filter close branches if MinBranchSeparation > 0
+            if (MinBranchSeparation > 0f)
+            {
+                FilterCloseBranches(branchPoints, childLookup);
+            }
+
+            // Trace segments from each start point
+            // Each segment goes from a start point until it hits a leaf or another branch point
+            var segments = new List<List<int>>();
+            var segmentEndIsBranchPoint = new Dictionary<int, int>(); // segment index -> branch point node index
+
+            foreach (int startNode in segmentStartNodes)
+            {
+                var segment = new List<int>();
+                int current = startNode;
+
+                // Check if this segment starts from a branch point (include the branch point)
+                int parentOfStart = _generatedNodes[startNode].ParentIndex;
+                if (parentOfStart >= 0 && branchPoints.Contains(parentOfStart))
+                {
+                    segment.Add(parentOfStart);
+                }
+
+                // Trace until we hit a leaf or a branch point
                 while (current >= 0)
                 {
-                    path.Add(current);
-                    current = _generatedNodes[current].ParentIndex;
+                    segment.Add(current);
+
+                    var children = childLookup[current];
+                    if (children.Count == 0)
+                    {
+                        // Leaf node - end of segment
+                        break;
+                    }
+                    else if (children.Count >= 2)
+                    {
+                        // Branch point - end of segment (children will start their own segments)
+                        segmentEndIsBranchPoint[segments.Count] = current;
+                        break;
+                    }
+                    else
+                    {
+                        // Single child - continue along the segment
+                        current = children[0];
+                    }
                 }
 
-                // Path is leaf-to-root, reverse to get root-to-leaf
-                path.Reverse();
+                segments.Add(segment);
+            }
 
-                // Skip paths with too few nodes
-                if (path.Count < MinSplineLength)
-                {
-                    filteredByNodeCount++;
-                    continue;
-                }
+            // Filter segments by length
+            // SMART FILTERING: Only filter terminal segments (end at leaves), keep connective segments
+            var validSegments = new List<(List<int> segment, float worldLength, int segmentIndex)>();
+            int filteredByNodeCount = 0;
+            int filteredByWorldLength = 0;
+            int keptConnectiveSegments = 0;
+
+            for (int segIdx = 0; segIdx < segments.Count; segIdx++)
+            {
+                var segment = segments[segIdx];
 
                 // Calculate world-space length
                 float worldLength = 0f;
-                for (int i = 1; i < path.Count; i++)
+                for (int i = 1; i < segment.Count; i++)
                 {
                     worldLength += Vector3.Distance(
-                        _generatedNodes[path[i - 1]].Position,
-                        _generatedNodes[path[i]].Position);
+                        _generatedNodes[segment[i - 1]].Position,
+                        _generatedNodes[segment[i]].Position);
                 }
 
-                // Skip paths that are too short in world space
-                if (worldLength < MinSplineWorldLength)
+                // Determine if segment ends at a leaf (terminal) or branch point (connective)
+                int endNode = segment[segment.Count - 1];
+                bool isTerminalSegment = childLookup[endNode].Count == 0;
+
+                // Only filter terminal segments - keep connective segments for branch continuity
+                if (isTerminalSegment)
                 {
-                    filteredByWorldLength++;
-                    continue;
+                    // Skip segments with too few nodes
+                    if (segment.Count < MinSplineLength)
+                    {
+                        filteredByNodeCount++;
+                        continue;
+                    }
+
+                    // Skip segments that are too short in world space
+                    if (worldLength < MinSplineWorldLength)
+                    {
+                        filteredByWorldLength++;
+                        continue;
+                    }
+                }
+                else
+                {
+                    // Connective segment - always keep to maintain branch connectivity
+                    keptConnectiveSegments++;
                 }
 
-                pathsWithLengths.Add((path, worldLength));
+                validSegments.Add((segment, worldLength, segIdx));
             }
 
-            // Log filtering statistics
+            if (keptConnectiveSegments > 0)
+            {
+                Debug.Log($"VineGenerator: Kept {keptConnectiveSegments} connective segments (branch continuity)");
+            }
+
+            if (validSegments.Count == 0)
+            {
+                Debug.LogWarning("VineGenerator: All segments filtered! Try lowering MinSplineLength or MinSplineWorldLength");
+            }
+
             if (filteredByNodeCount > 0 || filteredByWorldLength > 0)
             {
-                Debug.Log($"VineGenerator: Filtered {filteredByNodeCount} paths (< {MinSplineLength} nodes), {filteredByWorldLength} paths (< {MinSplineWorldLength}m world length)");
+                Debug.Log($"VineGenerator: Filtered {filteredByNodeCount} segments (< {MinSplineLength} nodes), {filteredByWorldLength} segments (< {MinSplineWorldLength}m world length)");
             }
 
             // Sort by world length (longest first) and take top MaxSplineCount
-            pathsWithLengths.Sort((a, b) => b.worldLength.CompareTo(a.worldLength));
-            int validPathCount = pathsWithLengths.Count;
-            if (pathsWithLengths.Count > MaxSplineCount)
+            validSegments.Sort((a, b) => b.worldLength.CompareTo(a.worldLength));
+            int validSegmentCount = validSegments.Count;
+            if (validSegments.Count > MaxSplineCount)
             {
-                pathsWithLengths = pathsWithLengths.GetRange(0, MaxSplineCount);
+                validSegments = validSegments.GetRange(0, MaxSplineCount);
             }
 
             // Ensure we have a material for mesh rendering
@@ -529,35 +646,41 @@ namespace HolyRail.Vines
                 materialToUse = CreateDefaultVineMaterial();
             }
 
+            // Map from segment index to created SplineContainer
+            var segmentToSpline = new Dictionary<int, SplineContainer>();
+            // Map from node index to splines that start/end at that node
+            var nodeToSplineAtStart = new Dictionary<int, List<SplineContainer>>(); // splines that START at this node
+            var nodeToSplineAtEnd = new Dictionary<int, List<SplineContainer>>();   // splines that END at this node
+
             // Collect meshes for batching
             var meshesToCombine = new List<CombineInstance>();
             var tempSplineObjects = new List<GameObject>();
 
             int processedCount = 0;
-            int totalPaths = pathsWithLengths.Count;
+            int totalSegments = validSegments.Count;
             int totalOriginalPoints = 0;
             int totalSmoothedPoints = 0;
 
-            // Create splines for the filtered paths
-            foreach (var (path, worldLength) in pathsWithLengths)
+            // Create splines for valid segments
+            foreach (var (segment, worldLength, segIdx) in validSegments)
             {
 #if UNITY_EDITOR
-                if (totalPaths > 50)
+                if (totalSegments > 50)
                 {
-                    float progress = (float)processedCount / totalPaths;
+                    float progress = (float)processedCount / totalSegments;
                     EditorUtility.DisplayProgressBar("Converting Vines to Splines",
-                        $"Processing spline {processedCount + 1} of {totalPaths}...", progress);
+                        $"Processing segment {processedCount + 1} of {totalSegments}...", progress);
                 }
 #endif
 
                 // Create SplineContainer at world origin so knot positions work correctly
-                var splineGO = new GameObject($"VineSpline_{_generatedSplines.Count}");
+                var splineGO = new GameObject($"VineSegment_{_generatedSplines.Count}");
                 splineGO.transform.SetParent(transform, true);
                 splineGO.transform.position = Vector3.zero;
                 splineGO.transform.rotation = Quaternion.identity;
+                splineGO.transform.localScale = Vector3.one; // Ensure consistent world scale for grinding speed
 
                 var splineContainer = splineGO.AddComponent<SplineContainer>();
-                // Clear the default empty spline that Unity creates when adding SplineContainer
                 if (splineContainer.Splines.Count > 0)
                 {
                     splineContainer.RemoveSplineAt(0);
@@ -565,7 +688,7 @@ namespace HolyRail.Vines
                 var spline = splineContainer.AddSpline();
 
                 // Convert node indices to positions
-                var positions = path.Select(i => (float3)_generatedNodes[i].Position).ToList();
+                var positions = segment.Select(i => (float3)_generatedNodes[i].Position).ToList();
                 totalOriginalPoints += positions.Count;
 
                 // Apply smoothing if enabled
@@ -585,12 +708,26 @@ namespace HolyRail.Vines
                 }
 
 #if UNITY_EDITOR
-                // Mark as dirty so Unity saves the spline data
                 if (!Application.isPlaying)
                 {
                     EditorUtility.SetDirty(splineContainer);
                 }
 #endif
+
+                // Track segment -> spline mapping
+                segmentToSpline[segIdx] = splineContainer;
+
+                // Track node -> spline mappings for branch connections
+                int startNode = segment[0];
+                int endNode = segment[segment.Count - 1];
+
+                if (!nodeToSplineAtStart.ContainsKey(startNode))
+                    nodeToSplineAtStart[startNode] = new List<SplineContainer>();
+                nodeToSplineAtStart[startNode].Add(splineContainer);
+
+                if (!nodeToSplineAtEnd.ContainsKey(endNode))
+                    nodeToSplineAtEnd[endNode] = new List<SplineContainer>();
+                nodeToSplineAtEnd[endNode].Add(splineContainer);
 
                 // Generate mesh for batching
                 if (GenerateMeshes)
@@ -604,7 +741,6 @@ namespace HolyRail.Vines
                     splineExtrude.Capped = true;
                     splineExtrude.Rebuild();
 
-                    // Collect mesh for combining
                     if (meshFilter.sharedMesh != null && meshFilter.sharedMesh.vertexCount > 0)
                     {
                         meshesToCombine.Add(new CombineInstance
@@ -614,7 +750,6 @@ namespace HolyRail.Vines
                         });
                     }
 
-                    // Mark for cleanup after combining
                     tempSplineObjects.Add(splineGO);
                 }
 
@@ -626,6 +761,58 @@ namespace HolyRail.Vines
             EditorUtility.ClearProgressBar();
 #endif
 
+            // Build connections for ALL junction nodes
+            // (any node where splines end AND other splines start - includes both branches and linear continuations)
+            var junctionNodes = new HashSet<int>();
+            foreach (var kvp in nodeToSplineAtEnd)
+            {
+                if (nodeToSplineAtStart.ContainsKey(kvp.Key))
+                {
+                    junctionNodes.Add(kvp.Key);
+                }
+            }
+
+            foreach (int junctionNode in junctionNodes)
+            {
+                // Splines ending here connect to splines starting here (forward direction)
+                if (nodeToSplineAtEnd.TryGetValue(junctionNode, out var splinesEndingHere))
+                {
+                    if (nodeToSplineAtStart.TryGetValue(junctionNode, out var splinesStartingHere))
+                    {
+                        foreach (var endingSpline in splinesEndingHere)
+                        {
+                            var connection = new BranchConnection
+                            {
+                                FromSpline = endingSpline,
+                                FromEnd = true,
+                                ConnectedSplines = new List<SplineContainer>(splinesStartingHere)
+                            };
+                            _branchConnections.Add(connection);
+                        }
+                    }
+                }
+
+                // Reverse direction: splines starting here connect back to splines ending here
+                if (nodeToSplineAtStart.TryGetValue(junctionNode, out var splinesStartingHere2))
+                {
+                    if (nodeToSplineAtEnd.TryGetValue(junctionNode, out var splinesEndingHere2))
+                    {
+                        foreach (var startingSpline in splinesStartingHere2)
+                        {
+                            var connection = new BranchConnection
+                            {
+                                FromSpline = startingSpline,
+                                FromEnd = false,
+                                ConnectedSplines = new List<SplineContainer>(splinesEndingHere2)
+                            };
+                            _branchConnections.Add(connection);
+                        }
+                    }
+                }
+            }
+
+            Debug.Log($"VineGenerator: Created {_branchConnections.Count} connections ({junctionNodes.Count} junctions, {branchPoints.Count} branch points)");
+
             // Combine all meshes into one for single draw call
             if (GenerateMeshes && meshesToCombine.Count > 0)
             {
@@ -636,20 +823,15 @@ namespace HolyRail.Vines
             var smoothingInfo = EnablePathSmoothing && SmoothingTolerance > 0
                 ? $", smoothed {totalOriginalPoints} -> {totalSmoothedPoints} points ({100 - (totalSmoothedPoints * 100 / Mathf.Max(1, totalOriginalPoints))}% reduction)"
                 : "";
-            Debug.Log($"VineGenerator: Created {_generatedSplines.Count} splines from {leafNodes.Count} leaf nodes ({validPathCount} valid paths, max {MaxSplineCount}, batched into 1 mesh{smoothingInfo})");
+            Debug.Log($"VineGenerator: Created {_generatedSplines.Count} segment splines from {segments.Count} total segments ({validSegmentCount} valid, max {MaxSplineCount}, batched into 1 mesh{smoothingInfo})");
 
-            // Validate generated splines before notifying rail grinder
+            // Validate generated splines
             int validSplines = 0;
             foreach (var splineContainer in _generatedSplines)
             {
                 if (splineContainer != null && splineContainer.Spline != null && splineContainer.Spline.Count > 0)
                 {
                     validSplines++;
-                    Debug.Log($"[VineSpline] '{splineContainer.name}' has {splineContainer.Spline.Count} knots, length: {splineContainer.Spline.GetLength():F2}m");
-                }
-                else
-                {
-                    Debug.LogWarning($"[VineSpline] Invalid spline: container={splineContainer != null}, spline={splineContainer?.Spline != null}, knots={splineContainer?.Spline?.Count ?? 0}");
                 }
             }
             Debug.Log($"[VineSpline] {validSplines}/{_generatedSplines.Count} splines are valid for grinding");
@@ -666,6 +848,53 @@ namespace HolyRail.Vines
             }
 
             return _generatedSplines;
+        }
+
+        private void FilterCloseBranches(HashSet<int> branchPoints, Dictionary<int, List<int>> childLookup)
+        {
+            if (branchPoints.Count < 2) return;
+
+            var branchList = branchPoints.ToList();
+            var toRemove = new HashSet<int>();
+
+            // Check each pair of branch points
+            for (int i = 0; i < branchList.Count; i++)
+            {
+                if (toRemove.Contains(branchList[i])) continue;
+
+                var posI = _generatedNodes[branchList[i]].Position;
+
+                for (int j = i + 1; j < branchList.Count; j++)
+                {
+                    if (toRemove.Contains(branchList[j])) continue;
+
+                    var posJ = _generatedNodes[branchList[j]].Position;
+                    float dist = Vector3.Distance(posI, posJ);
+
+                    if (dist < MinBranchSeparation)
+                    {
+                        // Remove the branch point with fewer children
+                        int childCountI = childLookup[branchList[i]].Count;
+                        int childCountJ = childLookup[branchList[j]].Count;
+
+                        int nodeToRemove = childCountI <= childCountJ ? branchList[i] : branchList[j];
+                        toRemove.Add(nodeToRemove);
+
+                        Debug.Log($"VineGenerator: Pruning branch point {nodeToRemove} (too close to another branch, dist={dist:F2}m)");
+                    }
+                }
+            }
+
+            // Remove the pruned branch points
+            foreach (int node in toRemove)
+            {
+                branchPoints.Remove(node);
+            }
+
+            if (toRemove.Count > 0)
+            {
+                Debug.Log($"VineGenerator: Filtered {toRemove.Count} branch points due to MinBranchSeparation ({MinBranchSeparation}m)");
+            }
         }
 
         [SerializeField, HideInInspector]

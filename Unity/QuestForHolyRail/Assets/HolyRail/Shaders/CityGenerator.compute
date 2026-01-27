@@ -69,41 +69,38 @@ float4 quaternionFromYRotation(float angle)
 [numthreads(64, 1, 1)]
 void GenerateCity(uint3 id : SV_DispatchThreadID)
 {
-    if (id.x >= uint(_BuildingCount))
+    // Calculate grid dimensions - one thread per grid cell
+    float gridSize = _StreetWidth * 2.0; // Building + street
+    int gridExtent = int(ceil(_MapSize / gridSize / 2.0));
+    int gridWidth = gridExtent * 2; // Total cells per side
+
+    // Convert thread ID to grid cell coordinates
+    int totalCells = gridWidth * gridWidth;
+    if (id.x >= uint(totalCells))
         return;
 
-    uint buildingIndex = id.x;
+    int cellX = int(id.x) % gridWidth - gridExtent;
+    int cellZ = int(id.x) / gridWidth - gridExtent;
 
-    // Generate candidate position within map bounds
-    float halfMap = _MapSize * 0.5;
-    float x = randomInRange(buildingIndex, 0u, -halfMap, halfMap);
-    float z = randomInRange(buildingIndex, 1u, -halfMap, halfMap);
-
-    // Apply city center offset
-    x += _CityCenter.x;
-    z += _CityCenter.z;
+    // Calculate world position for this cell (building center)
+    float worldX = _CityCenter.x + cellX * gridSize + gridSize * 0.25;
+    float worldZ = _CityCenter.z + cellZ * gridSize + gridSize * 0.25;
 
     // Calculate distance from city center (horizontal only)
-    float distFromCenter = sqrt((x - _CityCenter.x) * (x - _CityCenter.x) +
-                                 (z - _CityCenter.z) * (z - _CityCenter.z));
+    float dx = worldX - _CityCenter.x;
+    float dz = worldZ - _CityCenter.z;
+    float distFromCenter = sqrt(dx * dx + dz * dz);
 
     // Determine zone type based on distance
     int zoneType = distFromCenter < _DowntownRadius ? 0 : 1;
 
-    // Apply density check - reject some buildings based on zone density
+    // Density check using cell index as seed
+    uint cellIndex = id.x;
     float densityThreshold = zoneType == 0 ? _DowntownDensity : _IndustrialDensity;
-    float densityRoll = randomInRange(buildingIndex, 2u, 0.0, 1.0);
+    float densityRoll = randomInRange(cellIndex, 0u, 0.0, 1.0);
 
     if (densityRoll > densityThreshold)
-    {
-        // Building rejected by density check - don't add it
-        return;
-    }
-
-    // Snap to street grid to create roads
-    float gridSize = _StreetWidth * 2.0; // Building + street
-    float gridX = floor(x / gridSize) * gridSize + gridSize * 0.25;
-    float gridZ = floor(z / gridSize) * gridSize + gridSize * 0.25;
+        return; // Skip this cell
 
     // Calculate building dimensions based on zone
     float height, widthX, widthZ;
@@ -111,33 +108,33 @@ void GenerateCity(uint3 id : SV_DispatchThreadID)
     if (zoneType == 0)
     {
         // Downtown: tall, narrow buildings
-        height = randomInRange(buildingIndex, 3u, _DowntownHeightMin, _DowntownHeightMax);
-        float baseWidth = randomInRange(buildingIndex, 4u, 8.0, 15.0);
+        height = randomInRange(cellIndex, 1u, _DowntownHeightMin, _DowntownHeightMax);
+        float baseWidth = randomInRange(cellIndex, 2u, 8.0, 15.0);
         widthX = baseWidth;
         widthZ = baseWidth;
     }
     else
     {
         // Industrial: short, wide buildings
-        height = randomInRange(buildingIndex, 3u, _IndustrialHeightMin, _IndustrialHeightMax);
-        widthX = randomInRange(buildingIndex, 4u, 15.0, 40.0);
-        widthZ = randomInRange(buildingIndex, 5u, 15.0, 40.0);
+        height = randomInRange(cellIndex, 1u, _IndustrialHeightMin, _IndustrialHeightMax);
+        widthX = randomInRange(cellIndex, 2u, 15.0, 40.0);
+        widthZ = randomInRange(cellIndex, 3u, 15.0, 40.0);
     }
 
     // Random Y rotation (0, 90, 180, or 270 degrees for grid alignment)
-    int rotationIndex = randomInt(buildingIndex, 6u, 0, 3);
+    int rotationIndex = randomInt(cellIndex, 4u, 0, 3);
     float rotationAngle = rotationIndex * 1.5707963; // PI/2
     float4 rotation = quaternionFromYRotation(rotationAngle);
 
     // Style variation
-    int styleIndex = randomInt(buildingIndex, 7u, 0, 7);
+    int styleIndex = randomInt(cellIndex, 5u, 0, 7);
 
     // Allocate output slot atomically
     int outputIndex;
     InterlockedAdd(_Counter[0], 1, outputIndex);
 
-    // Sanity check
-    if (outputIndex >= _BuildingCount)
+    // Sanity check - use totalCells as max buffer size
+    if (outputIndex >= totalCells)
     {
         InterlockedAdd(_Counter[0], -1);
         return;
@@ -146,7 +143,7 @@ void GenerateCity(uint3 id : SV_DispatchThreadID)
     // Write building data
     // Position Y is at half height so cube mesh sits on ground
     BuildingData building;
-    building.Position = float3(gridX, _CityCenter.y + height * 0.5, gridZ);
+    building.Position = float3(worldX, _CityCenter.y + height * 0.5, worldZ);
     building.Scale = float3(widthX, height, widthZ);
     building.Rotation = rotation;
     building.ZoneType = zoneType;

@@ -129,6 +129,12 @@ namespace HolyRail.City.Editor
                 rampMaterialProp.objectReferenceValue = rampMaterial;
             }
 
+            var rampYOffsetProp = serializedObject.FindProperty("<RampYOffset>k__BackingField");
+            if (rampYOffsetProp != null)
+            {
+                rampYOffsetProp.floatValue = -1f;
+            }
+
             serializedObject.ApplyModifiedPropertiesWithoutUndo();
 
             // 6. Add BuildingColliderPool component

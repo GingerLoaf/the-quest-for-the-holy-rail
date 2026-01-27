@@ -12,13 +12,9 @@ namespace HolyRail.City
         [field: SerializeField] public CityManager CityManager { get; private set; }
         [field: SerializeField] public Transform TrackingTarget { get; private set; }
 
-        [Header("Building Pool Settings")]
-        [field: SerializeField] public int PoolSize { get; private set; } = 200;
+        [Header("Pool Settings")]
         [field: SerializeField] public float ActivationRadius { get; private set; } = 150f;
         [field: SerializeField] public float UpdateDistanceThreshold { get; private set; } = 25f;
-
-        [Header("Ramp Pool Settings")]
-        [field: SerializeField] public int RampPoolSize { get; private set; } = 100;
 
         [Header("Debug")]
         [field: SerializeField] public bool ShowDebugGizmos { get; private set; }
@@ -258,6 +254,8 @@ namespace HolyRail.City
 
         private void CreateColliderPool()
         {
+            const string containerName = "BuildingColliders_Pool";
+
             // Clear existing pool
             foreach (var collider in _colliderPool)
             {
@@ -271,29 +269,22 @@ namespace HolyRail.City
             if (_buildingPoolContainer != null)
             {
                 DestroyImmediate(_buildingPoolContainer);
+                _buildingPoolContainer = null;
             }
 
-            // Create pool container
-            _buildingPoolContainer = new GameObject("BuildingColliders_Pool");
+            // Find and destroy any orphaned containers from domain reloads
+            DestroyOrphanedContainers(containerName);
+
+            // Create pool container (starts empty, colliders created on-demand)
+            _buildingPoolContainer = new GameObject(containerName);
             _buildingPoolContainer.transform.SetParent(transform);
             _buildingPoolContainer.transform.localPosition = Vector3.zero;
-
-            for (int i = 0; i < PoolSize; i++)
-            {
-                var go = new GameObject($"BuildingCollider_{i}");
-                go.transform.SetParent(_buildingPoolContainer.transform);
-                go.transform.position = InactivePosition;
-                go.layer = _buildingsLayer;
-
-                var boxCollider = go.AddComponent<BoxCollider>();
-                boxCollider.enabled = false;
-
-                _colliderPool.Add(boxCollider);
-            }
         }
 
         private void CreateRampColliderPool()
         {
+            const string containerName = "RampColliders_Pool";
+
             // Clear existing ramp pool
             foreach (var collider in _rampColliderPool)
             {
@@ -307,25 +298,16 @@ namespace HolyRail.City
             if (_rampPoolContainer != null)
             {
                 DestroyImmediate(_rampPoolContainer);
+                _rampPoolContainer = null;
             }
 
-            // Create pool container
-            _rampPoolContainer = new GameObject("RampColliders_Pool");
+            // Find and destroy any orphaned containers from domain reloads
+            DestroyOrphanedContainers(containerName);
+
+            // Create pool container (starts empty, colliders created on-demand)
+            _rampPoolContainer = new GameObject(containerName);
             _rampPoolContainer.transform.SetParent(transform);
             _rampPoolContainer.transform.localPosition = Vector3.zero;
-
-            for (int i = 0; i < RampPoolSize; i++)
-            {
-                var go = new GameObject($"RampCollider_{i}");
-                go.transform.SetParent(_rampPoolContainer.transform);
-                go.transform.position = InactivePosition;
-                go.layer = _buildingsLayer; // Use same layer as buildings
-
-                var boxCollider = go.AddComponent<BoxCollider>();
-                boxCollider.enabled = false;
-
-                _rampColliderPool.Add(boxCollider);
-            }
         }
 
         private void UpdateActiveColliders(Vector3 center)
@@ -353,23 +335,29 @@ namespace HolyRail.City
             _activeIndices.Clear();
             _assignedBuildingIndices.Clear();
 
-            // Activate colliders for nearby buildings (skip duplicates)
+            // Single pass: assign colliders to unique buildings, grow pool on demand
             int colliderIndex = 0;
-            for (int i = 0; i < buildingIndices.Count && colliderIndex < _colliderPool.Count; i++)
+            for (int i = 0; i < buildingIndices.Count; i++)
             {
                 var buildingIndex = buildingIndices[i];
 
                 // Skip if this building already has a collider assigned
-                if (_assignedBuildingIndices.Contains(buildingIndex))
+                if (!_assignedBuildingIndices.Add(buildingIndex))
                     continue;
 
-                var collider = _colliderPool[colliderIndex];
-                if (collider == null)
+                // Grow pool on demand if needed
+                if (colliderIndex >= _colliderPool.Count)
                 {
-                    colliderIndex++;
-                    continue;
+                    var go = new GameObject($"BuildingCollider_{colliderIndex}");
+                    go.transform.SetParent(_buildingPoolContainer.transform);
+                    go.transform.position = InactivePosition;
+                    go.layer = _buildingsLayer;
+                    var newCollider = go.AddComponent<BoxCollider>();
+                    newCollider.enabled = false;
+                    _colliderPool.Add(newCollider);
                 }
 
+                var collider = _colliderPool[colliderIndex];
                 var building = buildings[buildingIndex];
 
                 collider.transform.position = building.Position;
@@ -378,7 +366,6 @@ namespace HolyRail.City
                 collider.enabled = true;
 
                 _activeIndices.Add(buildingIndex);
-                _assignedBuildingIndices.Add(buildingIndex);
                 colliderIndex++;
             }
 
@@ -410,23 +397,29 @@ namespace HolyRail.City
             _activeRampIndices.Clear();
             _assignedRampIndices.Clear();
 
-            // Activate colliders for nearby ramps (skip duplicates)
+            // Single pass: assign colliders to unique ramps, grow pool on demand
             int colliderIndex = 0;
-            for (int i = 0; i < rampIndices.Count && colliderIndex < _rampColliderPool.Count; i++)
+            for (int i = 0; i < rampIndices.Count; i++)
             {
                 var rampIndex = rampIndices[i];
 
                 // Skip if this ramp already has a collider assigned
-                if (_assignedRampIndices.Contains(rampIndex))
+                if (!_assignedRampIndices.Add(rampIndex))
                     continue;
 
-                var collider = _rampColliderPool[colliderIndex];
-                if (collider == null)
+                // Grow pool on demand if needed
+                if (colliderIndex >= _rampColliderPool.Count)
                 {
-                    colliderIndex++;
-                    continue;
+                    var go = new GameObject($"RampCollider_{colliderIndex}");
+                    go.transform.SetParent(_rampPoolContainer.transform);
+                    go.transform.position = InactivePosition;
+                    go.layer = _buildingsLayer;
+                    var newCollider = go.AddComponent<BoxCollider>();
+                    newCollider.enabled = false;
+                    _rampColliderPool.Add(newCollider);
                 }
 
+                var collider = _rampColliderPool[colliderIndex];
                 var ramp = ramps[rampIndex];
 
                 collider.transform.position = ramp.Position;
@@ -435,11 +428,25 @@ namespace HolyRail.City
                 collider.enabled = true;
 
                 _activeRampIndices.Add(rampIndex);
-                _assignedRampIndices.Add(rampIndex);
                 colliderIndex++;
             }
 
             ActiveRampColliderCount = colliderIndex;
+        }
+
+        private void DestroyOrphanedContainers(string containerName)
+        {
+            // Find all GameObjects with this name and destroy them
+            // This handles orphaned containers from domain reloads/script recompilation
+            var existing = GameObject.Find(containerName);
+            while (existing != null)
+            {
+                if (Application.isPlaying)
+                    Destroy(existing);
+                else
+                    DestroyImmediate(existing);
+                existing = GameObject.Find(containerName);
+            }
         }
 
         private void OnDrawGizmosSelected()
