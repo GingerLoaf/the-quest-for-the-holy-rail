@@ -1,6 +1,6 @@
 //Maya ASCII 2023 scene
 //Name: Sid_Parry.ma
-//Last modified: Mon, Jan 26, 2026 09:54:48 PM
+//Last modified: Mon, Jan 26, 2026 10:37:27 PM
 //Codeset: 1252
 file -rdi 1 -ns "Sid_Rig" -rfn "Sid_RigRN" -op "v=0;" -typ "mayaAscii" "E:/Dev/GGJ26_QuestForHolyRail/the-quest-for-the-holy-rail/SourceArt/Sid/Sid_Rig.ma";
 file -r -ns "Sid_Rig" -dr 1 -rfn "Sid_RigRN" -op "v=0;" -typ "mayaAscii" "E:/Dev/GGJ26_QuestForHolyRail/the-quest-for-the-holy-rail/SourceArt/Sid/Sid_Rig.ma";
@@ -17,17 +17,17 @@ fileInfo "product" "Maya 2023";
 fileInfo "version" "2023";
 fileInfo "cutIdentifier" "202202161415-df43006fd3";
 fileInfo "osv" "Windows 11 Pro v2009 (Build: 26200)";
-fileInfo "UUID" "B7C19560-4EBC-2829-10F2-409F6B1F1C8D";
+fileInfo "UUID" "99B8198F-46EB-8981-6F94-19A684BB4AAF";
 createNode transform -s -n "persp";
 	rename -uid "499C4AE0-4E6A-8F18-FA1B-0F95C87BEDF0";
 	setAttr ".v" no;
-	setAttr ".t" -type "double3" 146.00072706030261 22.904760934530909 -39.252588686179521 ;
-	setAttr ".r" -type "double3" -5.1383527299985525 105.80000000018514 0 ;
+	setAttr ".t" -type "double3" 1.1566231647153149 44.869038805910492 -120.40607434685369 ;
+	setAttr ".r" -type "double3" -14.138352730101298 534.19999999979507 0 ;
 createNode camera -s -n "perspShape" -p "persp";
 	rename -uid "67043205-4C8E-787C-947F-0B8E5AF42A2E";
 	setAttr -k off ".v" no;
 	setAttr ".fl" 34.999999999999993;
-	setAttr ".coi" 155.94863838503434;
+	setAttr ".coi" 123.98310032517273;
 	setAttr ".imn" -type "string" "persp";
 	setAttr ".den" -type "string" "persp_depth";
 	setAttr ".man" -type "string" "persp_mask";
@@ -103,20 +103,29 @@ createNode gameFbxExporter -n "gameExporterPreset1";
 	rename -uid "A0DE2A0E-4DBB-318D-EA5D-73A108E832A8";
 	setAttr ".pn" -type "string" "Model Default";
 	setAttr ".ils" yes;
-	setAttr ".ilu" yes;
+	setAttr ".ssn" -type "string" "";
 	setAttr ".ebm" yes;
 	setAttr ".ich" yes;
 	setAttr ".inc" yes;
 	setAttr ".fv" -type "string" "FBX201800";
+	setAttr ".exp" -type "string" "E:/Dev/GGJ26_QuestForHolyRail/the-quest-for-the-holy-rail/SourceArt/Sid/Export";
+	setAttr ".exf" -type "string" "Sid_Parry";
 createNode gameFbxExporter -n "gameExporterPreset2";
 	rename -uid "92ED7AE6-40CC-D470-EBDB-088A69B6323E";
 	setAttr ".pn" -type "string" "Anim Default";
 	setAttr ".ils" yes;
+	setAttr ".ilu" yes;
 	setAttr ".eti" 2;
+	setAttr ".esi" 2;
+	setAttr ".ssn" -type "string" "";
+	setAttr ".ac[0].acn" -type "string" "Parry";
+	setAttr ".ac[0].acs" 1;
+	setAttr ".ac[0].ace" 26;
 	setAttr ".spt" 2;
 	setAttr ".ic" no;
 	setAttr ".ebm" yes;
 	setAttr ".fv" -type "string" "FBX201800";
+	setAttr ".exp" -type "string" "E:/Dev/GGJ26_QuestForHolyRail/the-quest-for-the-holy-rail/SourceArt/Sid/Export";
 createNode gameFbxExporter -n "gameExporterPreset3";
 	rename -uid "41EF615B-4A74-0D4C-D2D0-E49A70FCB9B2";
 	setAttr ".pn" -type "string" "TE Anim Default";
@@ -553,7 +562,7 @@ createNode reference -n "Sid_RigRN";
 	setAttr ".ed" -type "dataReferenceEdits" 
 		"Sid_RigRN"
 		"Sid_RigRN" 0
-		"Sid_RigRN" 502
+		"Sid_RigRN" 504
 		1 |Sid_Rig:Collar_Grp|Sid_Rig:Collar_Ctrl_Master "blendParent1" "blendParent1" 
 		" -ci 1 -k 1 -dv 1 -smn 0 -smx 1 -at \"double\""
 		1 |Sid_Rig:Main|Sid_Rig:MotionSystem|Sid_Rig:FKSystem|Sid_Rig:FKParentConstraintToChest_M|Sid_Rig:FKOffsetShoulder_R|Sid_Rig:FKExtraShoulder_R|Sid_Rig:FKShoulder_R 
@@ -576,6 +585,8 @@ createNode reference -n "Sid_RigRN";
 		"blendOrient1" "blendOrient1" " -ci 1 -k 1 -dv 1 -smn 0 -smx 1 -at \"double\""
 		1 |Sid_Rig:Main|Sid_Rig:MotionSystem|Sid_Rig:FKSystem|Sid_Rig:FKParentConstraintToChest_M|Sid_Rig:FKOffsetShoulder_L|Sid_Rig:FKExtraShoulder_L|Sid_Rig:FKShoulder_L|Sid_Rig:FKXShoulder_L|Sid_Rig:FKOffsetShoulder1_L|Sid_Rig:FKExtraShoulder1_L|Sid_Rig:FKShoulder1_L|Sid_Rig:FKXShoulder1_L|Sid_Rig:FKOffsetElbow_L|Sid_Rig:FKExtraElbow_L|Sid_Rig:FKElbow_L|Sid_Rig:FKXElbow_L|Sid_Rig:FKOffsetElbow1_L|Sid_Rig:FKExtraElbow1_L|Sid_Rig:FKElbow1_L|Sid_Rig:FKXElbow1_L|Sid_Rig:FKOffsetWrist_L|Sid_Rig:FKExtraWrist_L|Sid_Rig:FKWrist_L 
 		"blendOrient1" "blendOrient1" " -ci 1 -k 1 -dv 1 -smn 0 -smx 1 -at \"double\""
+		2 "|Sid_Rig:Body|Sid_Rig:BodyShape" "visibility" " -k 0 1"
+		2 "|Sid_Rig:Camiseta|Sid_Rig:CamisetaShape" "visibility" " -k 0 1"
 		2 "|Sid_Rig:Collar_Grp" "visibility" " 0"
 		2 "|Sid_Rig:Collar_Grp|Sid_Rig:Collar_Ctrl_Master" "blendParent1" " -k 1"
 		
@@ -3548,7 +3559,7 @@ createNode animCurveTU -n "FKAnkle_L_scaleZ";
 	setAttr -s 4 ".ktv[0:3]"  1 1 9 1 14 1 16 1;
 createNode script -n "sceneConfigurationScriptNode";
 	rename -uid "025A4386-4E1A-6089-21E1-7B920579E750";
-	setAttr ".b" -type "string" "playbackOptions -min 1 -max 30 -ast 1 -aet 30 ";
+	setAttr ".b" -type "string" "playbackOptions -min 1 -max 26 -ast 1 -aet 30 ";
 	setAttr ".st" 6;
 createNode animLayer -n "BaseAnimation";
 	rename -uid "E152B13F-4F6A-BFE5-1566-1F99FEEAD856";
@@ -3586,7 +3597,7 @@ createNode animCurveTA -n "FKShoulder_L_rotateY_BakeResults_inputB";
 		 27 6.868355322655491 28 6.868355322655491 29 6.868355322655491 30 6.868355322655491;
 createNode animBlendNodeAdditiveRotation -n "Sid_Rig:FKShoulder_L_rotate_BakeResults";
 	rename -uid "B6CC283D-4A74-D141-27DC-37A22482E539";
-	setAttr ".o" -type "double3" -0.70240419677850174 5.2601516653886558 5.8221398410910714 ;
+	setAttr ".o" -type "double3" 19.467992034448162 -0.10859292431893074 8.7179406146386516 ;
 createNode animCurveTA -n "FKShoulder_L_rotate_BakeResults_inputBZ";
 	rename -uid "B6D5A6F2-420C-95D5-5CC4-239A645E7BBB";
 	setAttr ".tan" 18;
@@ -3625,7 +3636,7 @@ createNode animCurveTA -n "FKShoulder1_L_rotateY_BakeResults_inputB";
 		 27 -195.01917797170947 28 -195.05637840215414 29 -195.05637840215414 30 -195.05637840215414;
 createNode animBlendNodeAdditiveRotation -n "Sid_Rig:FKShoulder1_L_rotate_BakeResults";
 	rename -uid "71AD1616-4E20-5587-7F86-4F81B8EF5B7E";
-	setAttr ".o" -type "double3" 180.42332836366336 -208.8144445114618 -199.19313728364421 ;
+	setAttr ".o" -type "double3" 259.61139530238853 -192.99999982968939 -67.368062170636662 ;
 createNode animCurveTA -n "FKShoulder1_L_rotate_BakeResults_inputBZ";
 	rename -uid "98BD0540-4266-559A-1693-A0A4E993A7F6";
 	setAttr ".tan" 18;
@@ -3664,7 +3675,7 @@ createNode animCurveTA -n "FKElbow_L_rotateY_BakeResults_inputB";
 		 27 -4.560238338570838 28 -6.6309585980125068 29 -6.6327048761840528 30 -6.6327048761840528;
 createNode animBlendNodeAdditiveRotation -n "Sid_Rig:FKElbow_L_rotate_BakeResults";
 	rename -uid "594E0655-42E3-5337-4E41-9A862DF56723";
-	setAttr ".o" -type "double3" -362.43025204864819 17.84477278718591 360.07539867267832 ;
+	setAttr ".o" -type "double3" -362.42472345631734 -1.0313650349151506 387.73528685034256 ;
 createNode animCurveTA -n "FKElbow_L_rotate_BakeResults_inputBZ";
 	rename -uid "653DA40C-4988-7FFB-1629-C3B205B18CEC";
 	setAttr ".tan" 18;
@@ -3703,7 +3714,7 @@ createNode animCurveTA -n "FKElbow1_L_rotateY_BakeResults_inputB";
 		 27 183.44754836452125 28 189.3831204863788 29 189.50247313224793 30 189.50247313224793;
 createNode animBlendNodeAdditiveRotation -n "Sid_Rig:FKElbow1_L_rotate_BakeResults";
 	rename -uid "2BC92235-457E-9DB9-C798-E29B8860F732";
-	setAttr ".o" -type "double3" 536.35843851503682 -200.39361439821815 -539.45762347944924 ;
+	setAttr ".o" -type "double3" 521.42723770454256 175.87813768191174 -506.17848704243124 ;
 createNode animCurveTA -n "FKElbow1_L_rotate_BakeResults_inputBZ";
 	rename -uid "1AB04B5F-42D9-94A8-AF73-709B3284D55A";
 	setAttr ".tan" 18;
@@ -3742,7 +3753,7 @@ createNode animCurveTA -n "FKWrist_L_rotateY_BakeResults_inputB";
 		 27 164.96184815715202 28 2.9927128368164175 29 2.5333774425665503 30 2.5311572011754722;
 createNode animBlendNodeAdditiveRotation -n "Sid_Rig:FKWrist_L_rotate_BakeResults";
 	rename -uid "EEECCED2-470E-24CE-4FBA-508B7C5CF1DD";
-	setAttr ".o" -type "double3" -541.94214499233669 165.99245645475574 536.60887560268873 ;
+	setAttr ".o" -type "double3" -546.17064699093794 166.35160726797159 571.2901194740856 ;
 createNode animCurveTA -n "FKWrist_L_rotate_BakeResults_inputBZ";
 	rename -uid "C74AC7D9-42B0-7FD9-4D04-1CBEDB07E535";
 	setAttr ".tan" 18;
@@ -3799,7 +3810,7 @@ createNode animCurveTA -n "FKShoulder_R_rotateY_BakeResults1_inputB";
 		 29 -4.5054574169032966 30 -4.5054574169032966;
 createNode animBlendNodeAdditiveRotation -n "Sid_Rig:FKShoulder_R_rotate_BakeResults1";
 	rename -uid "80D31D6E-42EC-E294-A59D-8EBB5D240E50";
-	setAttr ".o" -type "double3" 0.31659111769926451 3.3674492218401966 -2.8468668979716325 ;
+	setAttr ".o" -type "double3" -1.3829098664849333 11.853255420477922 -0.52668582743239645 ;
 createNode animCurveTA -n "FKShoulder_R_rotate_BakeResults1_inputBZ";
 	rename -uid "CA87F5F5-4C5E-4070-A44B-38A988980784";
 	setAttr ".tan" 18;
@@ -3838,7 +3849,7 @@ createNode animCurveTA -n "FKShoulder1_R_rotateY_BakeResults1_inputB";
 		 27 -8.2698987621787605 28 -8.408651474524067 29 -8.408651474524067 30 -8.408651474524067;
 createNode animBlendNodeAdditiveRotation -n "Sid_Rig:FKShoulder1_R_rotate_BakeResults1";
 	rename -uid "0AC94F09-45D3-C9EB-2E6B-9F82799D54AC";
-	setAttr ".o" -type "double3" -47.782782072922572 38.326739471814669 -58.885343983808205 ;
+	setAttr ".o" -type "double3" -71.401343734039983 8.4115873511822876 -68.766052055628322 ;
 createNode animCurveTA -n "FKShoulder1_R_rotate_BakeResults1_inputBZ";
 	rename -uid "4F596CD6-4975-BCA0-775F-21A8BE278BD4";
 	setAttr ".tan" 18;
@@ -3877,7 +3888,7 @@ createNode animCurveTA -n "FKElbow_R_rotateY_BakeResults1_inputB";
 		 27 13.860190296032886 28 10.207942504383253 29 10.202813519581268 30 10.202813519581268;
 createNode animBlendNodeAdditiveRotation -n "Sid_Rig:FKElbow_R_rotate_BakeResults1";
 	rename -uid "BB06E370-430B-CE2A-A713-A19EDA78E372";
-	setAttr ".o" -type "double3" 1.8998757751860771 8.4747729348659657 24.241879978722835 ;
+	setAttr ".o" -type "double3" -11.411259525157069 23.440820872879858 19.252736587912384 ;
 createNode animCurveTA -n "FKElbow_R_rotate_BakeResults1_inputBZ";
 	rename -uid "D1C13652-4F2F-D101-C20B-E997455D060F";
 	setAttr ".tan" 18;
@@ -3916,7 +3927,7 @@ createNode animCurveTA -n "FKElbow1_R_rotateY_BakeResults1_inputB";
 		 27 20.254207859727451 28 9.6518728253228208 29 9.5451742293379187 30 9.5451742293379134;
 createNode animBlendNodeAdditiveRotation -n "Sid_Rig:FKElbow1_R_rotate_BakeResults1";
 	rename -uid "FE664B6A-4440-164C-78AE-ADAEA54525B2";
-	setAttr ".o" -type "double3" 3.8438441401137431 0.390138427027447 45.95236852344361 ;
+	setAttr ".o" -type "double3" 0.91344205517879307 17.48157255862181 19.849427881098382 ;
 createNode animCurveTA -n "FKElbow1_R_rotate_BakeResults1_inputBZ";
 	rename -uid "4783FF28-4B7B-5B47-FFEE-BEB50158DA21";
 	setAttr ".tan" 18;
@@ -3955,7 +3966,7 @@ createNode animCurveTA -n "FKWrist_R_rotateY_BakeResults1_inputB";
 		 27 11.677967238641973 28 -3.2207755940176011 29 -4.3975525306232566 30 -4.400183005139831;
 createNode animBlendNodeAdditiveRotation -n "Sid_Rig:FKWrist_R_rotate_BakeResults1";
 	rename -uid "BB586193-421A-A48A-86BE-FFB281C00593";
-	setAttr ".o" -type "double3" 4.8032255232981855 5.5162732033546842 14.238334756606404 ;
+	setAttr ".o" -type "double3" -8.6193583686633559 0.64353663501871872 22.635763936664048 ;
 createNode animCurveTA -n "FKWrist_R_rotate_BakeResults1_inputBZ";
 	rename -uid "762FA3DB-4B77-351A-2698-FEABC00A3F67";
 	setAttr ".tan" 18;
@@ -3978,8 +3989,8 @@ createNode hyperLayout -n "hyperLayout2";
 	setAttr ".ihi" 0;
 	setAttr -s 6 ".hyp";
 select -ne :time1;
-	setAttr ".o" 7;
-	setAttr ".unw" 7;
+	setAttr ".o" 26;
+	setAttr ".unw" 26;
 select -ne :hardwareRenderingGlobals;
 	setAttr ".otfna" -type "stringArray" 22 "NURBS Curves" "NURBS Surfaces" "Polygons" "Subdiv Surface" "Particles" "Particle Instance" "Fluids" "Strokes" "Image Planes" "UI" "Lights" "Cameras" "Locators" "Joints" "IK Handles" "Deformers" "Motion Trails" "Components" "Hair Systems" "Follicles" "Misc. UI" "Ornaments"  ;
 	setAttr ".otfva" -type "Int32Array" 22 0 1 1 1 1 1
