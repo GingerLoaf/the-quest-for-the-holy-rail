@@ -45,9 +45,11 @@ namespace StarterAssets
         [Tooltip("Acceleration and deceleration")]
         public float SpeedChangeRate = 10.0f;
 
-        public AudioClip LandingAudioClip;
-        public AudioClip[] FootstepAudioClips;
-        [Range(0, 1)] public float FootstepAudioVolume = 0.5f;
+        [Tooltip("Sound effects played when landing (random selection)")]
+        public AudioClip[] SkateLandingAudioClips;
+        [Tooltip("Looping sound effect while skating")]
+        public AudioClip SkateLoopAudioClip;
+        [Range(0, 1)] public float SkateAudioVolume = 0.5f;
 
         [Space(10)]
         [Tooltip("The height the player can jump")]
@@ -110,6 +112,7 @@ namespace StarterAssets
         [Range(0, 1)] public float GrindAudioVolume = 0.5f;
 
         private AudioSource _grindLoopAudioSource;
+        private AudioSource _skateLoopAudioSource;
         private bool _isGrinding;
         private float _grindExitCooldownTimer;
         private float _momentumPreservationTimer;
@@ -267,6 +270,12 @@ namespace StarterAssets
             _grindLoopAudioSource.loop = true;
             _grindLoopAudioSource.playOnAwake = false;
             _grindLoopAudioSource.spatialBlend = 0f; // 2D sound
+
+            // Initialize skate loop audio source
+            _skateLoopAudioSource = gameObject.AddComponent<AudioSource>();
+            _skateLoopAudioSource.loop = true;
+            _skateLoopAudioSource.playOnAwake = false;
+            _skateLoopAudioSource.spatialBlend = 0f; // 2D sound
         }
 
         private void Update()
@@ -741,6 +750,31 @@ namespace StarterAssets
                 _animator.SetFloat(_animIDSpeed, _animationBlend);
                 _animator.SetFloat(_animIDMotionSpeed, inputMagnitude);
             }
+
+            // Manage skate loop sound
+            UpdateSkateLoopSound();
+        }
+
+        private void UpdateSkateLoopSound()
+        {
+            bool shouldPlaySkateLoop = Grounded && _speed > 0.1f && !_isGrinding;
+
+            if (shouldPlaySkateLoop)
+            {
+                if (SkateLoopAudioClip != null && _skateLoopAudioSource != null && !_skateLoopAudioSource.isPlaying)
+                {
+                    _skateLoopAudioSource.clip = SkateLoopAudioClip;
+                    _skateLoopAudioSource.volume = SkateAudioVolume;
+                    _skateLoopAudioSource.Play();
+                }
+            }
+            else
+            {
+                if (_skateLoopAudioSource != null && _skateLoopAudioSource.isPlaying)
+                {
+                    _skateLoopAudioSource.Stop();
+                }
+            }
         }
 
         private void JumpAndGravity()
@@ -848,21 +882,18 @@ namespace StarterAssets
 
         private void OnFootstep(AnimationEvent animationEvent)
         {
-            if (animationEvent.animatorClipInfo.weight > 0.5f)
-            {
-                if (FootstepAudioClips.Length > 0)
-                {
-                    var index = Random.Range(0, FootstepAudioClips.Length);
-                    AudioSource.PlayClipAtPoint(FootstepAudioClips[index], transform.TransformPoint(_controller.center), FootstepAudioVolume);
-                }
-            }
+            // Footsteps replaced by skate loop sound - this method kept for animation event compatibility
         }
 
         private void OnLand(AnimationEvent animationEvent)
         {
             if (animationEvent.animatorClipInfo.weight > 0.5f)
             {
-                AudioSource.PlayClipAtPoint(LandingAudioClip, transform.TransformPoint(_controller.center), FootstepAudioVolume);
+                if (SkateLandingAudioClips != null && SkateLandingAudioClips.Length > 0)
+                {
+                    var index = Random.Range(0, SkateLandingAudioClips.Length);
+                    AudioSource.PlayClipAtPoint(SkateLandingAudioClips[index], transform.TransformPoint(_controller.center), SkateAudioVolume);
+                }
             }
         }
 

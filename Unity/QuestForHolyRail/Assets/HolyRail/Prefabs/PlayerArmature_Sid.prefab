@@ -734,7 +734,7 @@ ParentConstraint:
   m_TranslationAtRest: {x: 0.058437724, y: 1.3911655, z: 0.06412231}
   m_RotationAtRest: {x: -59.999973, y: 0, z: 0}
   m_TranslationOffsets:
-  - {x: -0.033126235, y: 0.16264597, z: -0.04345338}
+  - {x: -0.033126235, y: 0.16264594, z: -0.04345338}
   m_RotationOffsets:
   - {x: -30.000025, y: -90.00001, z: 180}
   m_AffectTranslationX: 1
@@ -1832,7 +1832,7 @@ ParentConstraint:
   m_TranslationAtRest: {x: 0.014984306, y: 1.5283208, z: -0.11457419}
   m_RotationAtRest: {x: 0, y: 0, z: 0}
   m_TranslationOffsets:
-  - {x: -0.17028153, y: -0.016050525, z: 0}
+  - {x: -0.17028153, y: -0.016050577, z: 0}
   m_RotationOffsets:
   - {x: -90, y: 0, z: 90}
   m_AffectTranslationX: 1
@@ -2822,7 +2822,7 @@ ParentConstraint:
   m_TranslationAtRest: {x: -0.1358532, y: -0.051877536, z: -0.014011278}
   m_RotationAtRest: {x: 0, y: 0, z: 0}
   m_TranslationOffsets:
-  - {x: 0.16603482, y: -0.09458303, z: -0.0031949729}
+  - {x: 0.16603482, y: -0.094583035, z: -0.0031949878}
   m_RotationOffsets:
   - {x: 84.28317, y: -18.647892, z: 71.30663}
   m_AffectTranslationX: 1
@@ -3349,19 +3349,10 @@ MonoBehaviour:
   SprintSpeed: 8
   RotationSmoothTime: 0.12
   SpeedChangeRate: 10
-  LandingAudioClip: {fileID: 8300000, guid: ff697d3070687ce4583faa0561a145a2, type: 3}
-  FootstepAudioClips:
-  - {fileID: 8300000, guid: 72f526a6a9890f643a88e85a61c86c8a, type: 3}
-  - {fileID: 8300000, guid: 85016e0f2b01da248b9663dd49a161b0, type: 3}
-  - {fileID: 8300000, guid: 186de84b3207156479abe98f4958fed0, type: 3}
-  - {fileID: 8300000, guid: 1a91fcd19acf1e54bba0945d9f390849, type: 3}
-  - {fileID: 8300000, guid: 14e8a8d2158bec840b56c54f5266e692, type: 3}
-  - {fileID: 8300000, guid: 29841e7d5bbfb5b419c9ad16ca8bc4c1, type: 3}
-  - {fileID: 8300000, guid: dd1af302b8902684d9381de1f2d3a5af, type: 3}
-  - {fileID: 8300000, guid: 67c8b33e424ccdc4486edf538ab91c5a, type: 3}
-  - {fileID: 8300000, guid: 274649b0e221539409070ebf6c18918b, type: 3}
-  - {fileID: 8300000, guid: a3194b8bbc96ef84fab1f98f4b7dae3e, type: 3}
-  FootstepAudioVolume: 0.5
+  SkateLandingAudioClips:
+  - {fileID: 8300000, guid: f7d894170ef540c4b8adaca3f8ec45ac, type: 3}
+  SkateLoopAudioClip: {fileID: 8300000, guid: abc379293bad8204c86a744047b2ef46, type: 3}
+  SkateAudioVolume: 0.444
   JumpHeight: 2
   Gravity: -10
   SpeedMultiplier: 1
@@ -3387,7 +3378,7 @@ MonoBehaviour:
   GrindBoostDecayRate: 2
   GrindStartAudioClips:
   - {fileID: 8300000, guid: e4551fca0912cc047aacf644df52166b, type: 3}
-  - {fileID: 8300000, guid: f7d894170ef540c4b8adaca3f8ec45ac, type: 3}
+  - {fileID: 8300000, guid: a59c1e578ad6c1e45bc42f7a453f19be, type: 3}
   GrindLoopAudioClip: {fileID: 8300000, guid: 785ecc391d35ef7429875aa1c6584418, type: 3}
   GrindAudioVolume: 1
   VirtualCamera: {fileID: 0}
@@ -4167,7 +4158,7 @@ ParentConstraint:
   m_TranslationAtRest: {x: 0.1358532, y: -0.051877536, z: -0.014011278}
   m_RotationAtRest: {x: 0, y: 0, z: 0}
   m_TranslationOffsets:
-  - {x: -0.1654205, y: 0.093440846, z: 0.0031529665}
+  - {x: -0.16542049, y: 0.09344113, z: 0.0031529665}
   m_RotationOffsets:
   - {x: -84.463455, y: 164.73972, z: 105.31637}
   m_AffectTranslationX: 1
@@ -4508,7 +4499,7 @@ ParentConstraint:
   m_TranslationAtRest: {x: 0.014984329, y: 1.6472924, z: -0.079719625}
   m_RotationAtRest: {x: 0, y: 0, z: 0}
   m_TranslationOffsets:
-  - {x: -0.28925312, y: 0.018804036, z: 0}
+  - {x: -0.28925312, y: 0.018803954, z: 0}
   m_RotationOffsets:
   - {x: -90, y: 0, z: 90}
   m_AffectTranslationX: 1
@@ -6134,7 +6125,7 @@ ParentConstraint:
   m_TranslationAtRest: {x: -0.028469069, y: 1.3915732, z: 0.06412231}
   m_RotationAtRest: {x: -59.999973, y: 0, z: 0}
   m_TranslationOffsets:
-  - {x: -0.03353393, y: 0.16264597, z: 0.043453403}
+  - {x: -0.03353393, y: 0.16264594, z: 0.043453403}
   m_RotationOffsets:
   - {x: -30.000025, y: -90.00001, z: 180}
   m_AffectTranslationX: 1
