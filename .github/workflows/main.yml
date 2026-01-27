@@ -1,0 +1,92 @@
+name: Build Unity Project
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  build:
+    name: Build for ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    concurrency:
+      group: unity-build-${{ github.ref }}-${{ matrix.os }}
+      cancel-in-progress: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-14  # runner pinned to macOS 14, upgrade if needed.  This avoids CI/CD breaking builds when GitHub updates their runners.
+            targetPlatform: StandaloneOSX
+            buildMethod: BuildScript.BuildMacOS
+          - name: Windows
+            os: windows-2022  # runner pinned to Windows 2022, upgrade if needed.  This avoids CI/CD breaking builds when GitHub updates their runners.
+            targetPlatform: StandaloneWindows64
+            buildMethod: BuildScript.BuildWindows
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: actions/cache@v4
+        with:
+          path: Unity/QuestForHolyRail/Library
+          key: Library-${{ runner.os }}-${{ hashFiles('Unity/QuestForHolyRail/Packages/manifest.json', 'Unity/QuestForHolyRail/Packages/packages-lock.json', 'Unity/QuestForHolyRail/ProjectSettings/ProjectVersion.txt') }}
+          restore-keys: |
+            Library-${{ runner.os }}-
+
+      - uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: Unity/QuestForHolyRail
+          unityVersion: 6000.3.5f1  # Pin Unity Editor version to match ProjectSettings/ProjectVersion.txt and avoid CI breakage from Unity updates
+          targetPlatform: ${{ matrix.targetPlatform }}
+          buildMethod: ${{ matrix.buildMethod }}
+
+      - uses: actions/upload-artifact@v4
+        id: upload-build
+        with:
+          name: Build-${{ matrix.name }}-${{ github.sha }}
+          path: Unity/QuestForHolyRail/Builds/${{ matrix.name }}_*/**
+          if-no-files-found: error
+
+      - name: Discord Notification
+        if: always()
+        shell: bash
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          STATUS: ${{ job.status }}
+          ARTIFACT_URL: ${{ steps.upload-build.outputs.artifact-url }}
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK" ]; then
+            echo "Discord webhook secret not set. Skipping notification."
+            exit 0
+          fi
+
+          COLOR=15548997 # Red
+          if [ "$STATUS" = "success" ]; then
+            COLOR=5763719 # Green
+          fi
+
+          # NOTE: jq is standard on GitHub Actions Runners, but may not be available if this is eventually ported elsewhere
+          
+          NOTES="**Author**: [${{ github.actor }}](https://github.com/${{ github.actor }})\n**Branch**: [$BRANCH](${{ github.server_url }}/${{ github.repository }}/tree/$BRANCH)\n**Commit**: [${{ github.sha }}](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})\n**Run**: [View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+
+          if [ "$STATUS" = "success" ] && [ -n "$ARTIFACT_URL" ]; then
+            NOTES="$NOTES\n**Artifact**: [Download]($ARTIFACT_URL)"
+          fi
+
+          # Create JSON payload using jq
+          PAYLOAD=$(jq -n \
+            --arg title "Build ${{ matrix.name }} - $STATUS" \
+            --arg color "$COLOR" \
+            --arg desc "$NOTES" \
+            '{embeds: [{title: $title, color: ($color | tonumber), description: $desc}]}')
+
+          curl -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK"
