@@ -130,6 +130,9 @@ namespace HolyRail.Scripts.Editor
                 DrawStatRow("  Player Avg Speed:", $"{record.playerAvgSpeed:F2} m/s", new Color(0.7f, 0.9f, 1f));
                 DrawStatRow("  Wall Max Speed:", $"{record.deathWallSpeed:F2} m/s", new Color(1f, 0.8f, 0.6f));
 
+                EditorGUILayout.Space(5);
+                DrawVelocityGraph(record, i + 1);
+
                 EditorGUILayout.EndVertical();
 
                 if (i < records.Count - 1)
@@ -192,6 +195,92 @@ namespace HolyRail.Scripts.Editor
             coloredStyle.fontStyle = FontStyle.Bold;
 
             EditorGUILayout.LabelField(value, coloredStyle);
+            EditorGUILayout.EndHorizontal();
+        }
+
+        private void DrawVelocityGraph(SpeedAnalytics record, int sessionIndex)
+        {
+            if (record.velocityTimeline == null || record.velocityTimeline.Count == 0)
+            {
+                EditorGUILayout.HelpBox("No velocity timeline data available for this session.", MessageType.Info);
+                return;
+            }
+
+            EditorGUILayout.Space(5);
+            EditorGUILayout.LabelField("Velocity Over Time Graph", EditorStyles.boldLabel);
+
+            // Graph dimensions
+            float graphHeight = 150f;
+            float graphWidth = EditorGUIUtility.currentViewWidth - 40f;
+            float padding = 10f;
+
+            Rect graphRect = GUILayoutUtility.GetRect(graphWidth, graphHeight);
+            Rect innerRect = new Rect(
+                graphRect.x + padding,
+                graphRect.y + padding,
+                graphRect.width - padding * 2,
+                graphRect.height - padding * 2
+            );
+
+            // Draw background
+            EditorGUI.DrawRect(graphRect, new Color(0.15f, 0.15f, 0.15f));
+            EditorGUI.DrawRect(innerRect, new Color(0.2f, 0.2f, 0.2f));
+
+            // Find min/max values for scaling
+            float maxTime = record.velocityTimeline.Max(p => p.timeFromStart);
+            float maxVelocity = Mathf.Max(record.velocityTimeline.Max(p => p.velocity), record.playerMaxSpeed);
+            float minVelocity = 0f;
+
+            // Draw grid lines
+            Handles.color = new Color(0.3f, 0.3f, 0.3f);
+            for (int i = 0; i <= 4; i++)
+            {
+                float y = innerRect.y + (innerRect.height / 4f) * i;
+                Handles.DrawLine(new Vector3(innerRect.x, y), new Vector3(innerRect.xMax, y));
+            }
+
+            // Draw velocity line
+            Handles.color = new Color(0.3f, 0.8f, 1f);
+            for (int i = 0; i < record.velocityTimeline.Count - 1; i++)
+            {
+                var point1 = record.velocityTimeline[i];
+                var point2 = record.velocityTimeline[i + 1];
+
+                float x1 = innerRect.x + (point1.timeFromStart / maxTime) * innerRect.width;
+                float y1 = innerRect.yMax - ((point1.velocity - minVelocity) / (maxVelocity - minVelocity)) * innerRect.height;
+
+                float x2 = innerRect.x + (point2.timeFromStart / maxTime) * innerRect.width;
+                float y2 = innerRect.yMax - ((point2.velocity - minVelocity) / (maxVelocity - minVelocity)) * innerRect.height;
+
+                Handles.DrawLine(new Vector3(x1, y1), new Vector3(x2, y2));
+            }
+
+            // Draw data points
+            Handles.color = new Color(0.5f, 1f, 0.5f);
+            foreach (var point in record.velocityTimeline)
+            {
+                float x = innerRect.x + (point.timeFromStart / maxTime) * innerRect.width;
+                float y = innerRect.yMax - ((point.velocity - minVelocity) / (maxVelocity - minVelocity)) * innerRect.height;
+                Handles.DrawSolidDisc(new Vector3(x, y, 0), Vector3.forward, 2f);
+            }
+
+            // Draw labels
+            var labelStyle = new GUIStyle(EditorStyles.miniLabel);
+            labelStyle.normal.textColor = Color.white;
+
+            // Y-axis labels (velocity)
+            GUI.Label(new Rect(graphRect.x, innerRect.y - 10, 50, 20), $"{maxVelocity:F1} m/s", labelStyle);
+            GUI.Label(new Rect(graphRect.x, innerRect.yMax - 10, 50, 20), $"{minVelocity:F1} m/s", labelStyle);
+
+            // X-axis labels (time)
+            GUI.Label(new Rect(innerRect.x, innerRect.yMax + 2, 50, 20), "0s", labelStyle);
+            GUI.Label(new Rect(innerRect.xMax - 30, innerRect.yMax + 2, 50, 20), $"{maxTime:F1}s", labelStyle);
+
+            // Legend
+            EditorGUILayout.Space(5);
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField($"  Session Duration: {maxTime:F1}s", GUILayout.Width(150));
+            EditorGUILayout.LabelField($"  Data Points: {record.velocityTimeline.Count}", GUILayout.Width(120));
             EditorGUILayout.EndHorizontal();
         }
 
