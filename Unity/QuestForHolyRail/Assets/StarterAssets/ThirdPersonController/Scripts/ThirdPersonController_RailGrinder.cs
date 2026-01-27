@@ -1,6 +1,7 @@
 ﻿ using UnityEngine;
  using UnityEngine.Splines;
  using Unity.Splines.Examples;
+ using Unity.Mathematics;
  using Random = UnityEngine.Random;
 #if ENABLE_INPUT_SYSTEM 
 using UnityEngine.InputSystem;
@@ -72,8 +73,14 @@ namespace StarterAssets
         public float GrindSpeed = 8f;
         public float GrindAcceleration = 12f;
         public float GrindRotationSmoothTime = 0.08f;
+        public float GrindDistanceThreshold = 2f;
+        public bool AutoGrind = false;
+        public float GrindExitCooldown = 0.3f;
+        [Tooltip("Vertical offset for grind detection. 0 = on rail, negative = below rail allowed")]
+        public float GrindTriggerOffset = -0.5f;
 
         private bool _isGrinding;
+        private float _grindExitCooldownTimer;
         private float _grindT;                 // Normalized spline position (0–1)
         private float _grindSpeedCurrent;
         private float _grindRotationVelocity;
@@ -233,6 +240,17 @@ namespace StarterAssets
             }
             else
             {
+                if (_grindExitCooldownTimer > 0f)
+                {
+                    _grindExitCooldownTimer -= Time.deltaTime;
+                }
+
+                // Auto-grind: cooldown prevents immediate re-attach after jumping off
+                if (AutoGrind && !Grounded && _grindExitCooldownTimer <= 0f)
+                {
+                    TryStartGrind();
+                }
+
                 JumpAndGravity();
                 GroundedCheck();
                 Move();
@@ -316,29 +334,41 @@ namespace StarterAssets
             VirtualCamera.m_Lens = lens;
         }
 
+        private bool TryStartGrind()
+        {
+            if (_isGrinding) return false;
+
+            var result = ShowNearestPoint.GetNearestPointWithFacingDirection(
+                transform.position,
+                transform.forward,
+                _splineContainers);
+
+            if (result.Container == null) return false;
+
+            // Hemisphere check: only grind if player is above the rail (with offset)
+            float playerY = transform.position.y;
+            float railY = result.Position.y;
+            if (playerY < railY + GrindTriggerOffset) return false;
+
+            if (result.Distance <= GrindDistanceThreshold)
+            {
+                StartGrind(result.Container, result.SplineParameter, result.TravelDirection);
+                return true;
+            }
+            return false;
+        }
+
         void OnGrindRequested(InputAction.CallbackContext context)
         {
             if (!_isGrinding)
             {
-                // Use facing direction to determine grind direction
-                var result = ShowNearestPoint.GetNearestPointWithFacingDirection(
-                    transform.position,
-                    transform.forward,
-                    _splineContainers);
-
-                if (result.Container != null)
+                if (!TryStartGrind())
                 {
-                    StartGrind(result.Container, result.SplineParameter, result.TravelDirection);
-                    Debug.Log($"Started grinding with direction: {result.TravelDirection}");
-                }
-                else
-                {
-                    Debug.LogWarning("No spline found to grind on.");
+                    Debug.LogWarning("No spline within grind distance threshold.");
                 }
             }
             else
             {
-                // Exit grind and jump if already grinding
                 ExitGrindWithJump();
             }
         }
@@ -383,6 +413,7 @@ namespace StarterAssets
                 exitDirection.Normalize();
             }
 
+            _grindExitCooldownTimer = GrindExitCooldown;
             _isGrinding = false;
             _animator.SetBool(_animIDGrinding, false);
             _controller.enabled = true;
@@ -412,6 +443,9 @@ namespace StarterAssets
                 exitDirection.y = 0f;
                 exitDirection.Normalize();
             }
+
+            // Start cooldown timer to prevent immediate re-attach in auto-grind mode
+            _grindExitCooldownTimer = GrindExitCooldown;
 
             // Re-enable controller
             _controller.enabled = true;
