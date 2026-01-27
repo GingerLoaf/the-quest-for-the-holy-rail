@@ -7,4 +7,10 @@ public class AttachmentPoint : MonoBehaviour
 
     [Tooltip("True for ground-level points, false for air points")]
     public bool IsGround;
+    
+    private void OnDrawGizmos()
+    {
+        Gizmos.color = IsPopulated ? Color.green : Color.red;
+        Gizmos.DrawSphere(transform.position, 0.2f);
+    }
 }
