@@ -248,7 +248,10 @@ namespace StarterAssets
                 // Auto-grind: cooldown prevents immediate re-attach after jumping off
                 if (AutoGrind && !Grounded && _grindExitCooldownTimer <= 0f)
                 {
-                    TryStartGrind();
+                    if (TryStartGrind())
+                    {
+                        return; // Exit Update - controller is now disabled for grinding
+                    }
                 }
 
                 JumpAndGravity();

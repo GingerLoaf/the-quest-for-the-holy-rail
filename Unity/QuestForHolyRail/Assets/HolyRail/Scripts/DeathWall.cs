@@ -33,6 +33,18 @@ public class DeathWall : MonoBehaviour
         if (other.CompareTag("Player"))
         {
             SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+            return;
+        }
+
+        if (other.TryGetComponent<EnemyBot>(out var bot))
+        {
+            EnemySpawner.Instance?.RecycleBot(bot);
+            return;
+        }
+
+        if (other.TryGetComponent<EnemyBullet>(out var bullet))
+        {
+            EnemySpawner.Instance?.RecycleBullet(bullet);
         }
     }
 }
