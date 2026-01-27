@@ -1,3 +1,4 @@
+using StarterAssets;
 using UnityEngine;
 
 public class EnemyBullet : MonoBehaviour
@@ -44,6 +45,16 @@ public class EnemyBullet : MonoBehaviour
     {
         if (other.CompareTag("Player"))
         {
+            // Knock player off rail if grinding and toggle is enabled
+            if (_spawner != null && _spawner.BulletsKnockOffRail)
+            {
+                var grinder = other.GetComponentInParent<ThirdPersonController_RailGrinder>();
+                if (grinder != null)
+                {
+                    grinder.StopGrind();
+                }
+            }
+
             // TODO: Apply damage to player
             _spawner?.RecycleBullet(this);
         }

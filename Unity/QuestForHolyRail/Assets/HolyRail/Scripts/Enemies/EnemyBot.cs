@@ -60,6 +60,10 @@ public class EnemyBot : MonoBehaviour
             _velocity *= 0.95f;
         }
 
+        // Apply avoidance from other bots
+        var avoidance = CalculateAvoidance();
+        _velocity += avoidance * Time.deltaTime;
+
         float time = Time.time * _spawner.BotNoiseSpeed;
         var noise = new Vector3(
             Mathf.PerlinNoise(_noiseOffsetX + time, 0f) - 0.5f,
@@ -68,6 +72,39 @@ public class EnemyBot : MonoBehaviour
         ) * _spawner.BotNoiseAmount * 2f;
 
         transform.position += (_velocity + noise) * Time.deltaTime;
+    }
+
+    private Vector3 CalculateAvoidance()
+    {
+        var avoidance = Vector3.zero;
+        float avoidRadius = _spawner.BotAvoidanceRadius;
+        float avoidStrength = _spawner.BotAvoidanceStrength;
+
+        if (avoidRadius <= 0f)
+        {
+            return avoidance;
+        }
+
+        var activeBots = _spawner.GetActiveBots();
+        foreach (var otherBot in activeBots)
+        {
+            if (otherBot == this || otherBot == null)
+            {
+                continue;
+            }
+
+            var toOther = otherBot.transform.position - transform.position;
+            float distance = toOther.magnitude;
+
+            if (distance < avoidRadius && distance > 0.01f)
+            {
+                // Push away from other bot, stronger when closer
+                float strength = (avoidRadius - distance) / avoidRadius;
+                avoidance -= toOther.normalized * strength * avoidStrength;
+            }
+        }
+
+        return avoidance;
     }
 
     private void UpdateFiring()
