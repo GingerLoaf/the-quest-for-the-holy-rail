@@ -1,62 +1,65 @@
 using StarterAssets;
 using UnityEngine;
 
-public class EnemyBullet : MonoBehaviour
+namespace HolyRail.Scripts.Enemies
 {
-    private EnemySpawner _spawner;
-    private Vector3 _direction;
-    private float _lifetime;
-    private const float MaxLifetime = 5f;
-
-    public void Initialize(EnemySpawner spawner)
+    public class EnemyBullet : MonoBehaviour
     {
-        _spawner = spawner;
-    }
+        private EnemySpawner _spawner;
+        private Vector3 _direction;
+        private float _lifetime;
+        private const float MaxLifetime = 5f;
 
-    public void OnSpawn(Vector3 direction)
-    {
-        _direction = direction.normalized;
-        _lifetime = 0f;
-    }
-
-    public void OnRecycle()
-    {
-        _direction = Vector3.zero;
-        _lifetime = 0f;
-    }
-
-    private void Update()
-    {
-        if (_spawner == null)
+        public void Initialize(EnemySpawner spawner)
         {
-            return;
+            _spawner = spawner;
         }
 
-        transform.position += _direction * _spawner.BulletSpeed * Time.deltaTime;
-
-        _lifetime += Time.deltaTime;
-        if (_lifetime >= MaxLifetime)
+        public void OnSpawn(Vector3 direction)
         {
-            _spawner.RecycleBullet(this);
+            _direction = direction.normalized;
+            _lifetime = 0f;
         }
-    }
 
-    private void OnTriggerEnter(Collider other)
-    {
-        if (other.CompareTag("Player"))
+        public void OnRecycle()
         {
-            // Knock player off rail if grinding and toggle is enabled
-            if (_spawner != null && _spawner.BulletsKnockOffRail)
+            _direction = Vector3.zero;
+            _lifetime = 0f;
+        }
+
+        private void Update()
+        {
+            if (!_spawner)
             {
-                var grinder = other.GetComponentInParent<ThirdPersonController_RailGrinder>();
-                if (grinder != null)
-                {
-                    grinder.StopGrind();
-                }
+                return;
             }
 
-            // TODO: Apply damage to player
-            _spawner?.RecycleBullet(this);
+            transform.position += _direction * (_spawner.BulletSpeed * Time.deltaTime);
+
+            _lifetime += Time.deltaTime;
+            if (_lifetime >= MaxLifetime)
+            {
+                _spawner.RecycleBullet(this);
+            }
+        }
+
+        private void OnTriggerEnter(Collider other)
+        {
+            if (other.CompareTag("Player"))
+            {
+                // Knock player off rail if grinding and toggle is enabled
+                if (_spawner && _spawner.BulletsKnockOffRail)
+                {
+                    var grinder = other.GetComponentInParent<ThirdPersonController_RailGrinder>();
+                    if (grinder)
+                    {
+                        grinder.StopGrind();
+                    }
+                }
+
+                // TODO: Apply damage to player
+                _spawner?.RecycleBullet(this);
+            }
         }
     }
 }

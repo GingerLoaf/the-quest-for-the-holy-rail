@@ -1,4 +1,5 @@
-﻿ using UnityEngine;
+﻿using System.Collections;
+ using UnityEngine;
  using UnityEngine.Splines;
  using Unity.Splines.Examples;
  using Unity.Mathematics;
@@ -47,6 +48,9 @@ namespace StarterAssets
 
         [Tooltip("The character uses its own gravity value. The engine default is -9.81f")]
         public float Gravity = -15.0f;
+
+        [Header("Status Effects")] 
+        public float SpeedMultiplier = 1.0f;
 
         [Space(10)]
         [Tooltip("Time required to pass before being able to jump again. Set to 0f to instantly jump again")]
@@ -501,7 +505,7 @@ namespace StarterAssets
             }
 
             // Determine target speed (apply same sprint ratio as ground movement)
-            float targetSpeed = _input.sprint ? GrindSpeed * (SprintSpeed / MoveSpeed) : GrindSpeed;
+            float targetSpeed = (_input.sprint ? GrindSpeed * (SprintSpeed / MoveSpeed) : GrindSpeed) * SpeedMultiplier;
 
             // Use boost decay rate when above target speed (decaying boost), otherwise use normal acceleration
             float lerpRate = _grindSpeedCurrent > targetSpeed ? GrindBoostDecayRate : GrindAcceleration;
@@ -577,7 +581,7 @@ namespace StarterAssets
         private void Move()
         {
             // set target speed based on move speed, sprint speed and if sprint is pressed
-            float targetSpeed = _input.sprint ? SprintSpeed : MoveSpeed;
+            float targetSpeed = (_input.sprint ? SprintSpeed : MoveSpeed) * SpeedMultiplier;
 
             // a simplistic acceleration and deceleration designed to be easy to remove, replace, or iterate upon
 
@@ -730,6 +734,19 @@ namespace StarterAssets
             Gizmos.DrawSphere(
                 new Vector3(transform.position.x, transform.position.y - GroundedOffset, transform.position.z),
                 GroundedRadius);
+        }
+
+        public void ApplySpeedReduction(float multiplier, float duration)
+        {
+            StopCoroutine("SpeedReductionCoroutine");
+            StartCoroutine(SpeedReductionCoroutine(multiplier, duration));
+        }
+
+        private IEnumerator SpeedReductionCoroutine(float multiplier, float duration)
+        {
+            SpeedMultiplier = multiplier;
+            yield return new WaitForSeconds(duration);
+            SpeedMultiplier = 1.0f;
         }
 
         private void OnFootstep(AnimationEvent animationEvent)

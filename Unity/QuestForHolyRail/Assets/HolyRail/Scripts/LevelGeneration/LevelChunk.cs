@@ -1,102 +1,104 @@
 using System;
 using UnityEngine;
 
-[RequireComponent(typeof(BoxCollider))]
-public class LevelChunk : MonoBehaviour
+namespace HolyRail.Scripts.LevelGeneration
 {
-    public event Action<LevelChunk> PlayerEnteredFirstTime;
-
-    [Header("Attachment Points")]
-    [Tooltip("Attachment points at the near end (at pivot)")]
-    public AttachmentPoint[] NearEnd = new AttachmentPoint[2];
-    [Tooltip("Attachment points at the far end (away from pivot)")]
-    public AttachmentPoint[] FarEnd = new AttachmentPoint[2];
-
-    public bool PlayerIsInside { get; private set; }
-    public bool HasBeenVisited { get; private set; }
-    public int ChunkIndex { get; set; }
-    public bool IsFlipped { get; set; }
-
-    private BoxCollider _collider;
-
-    private void Awake()
+    [RequireComponent(typeof(BoxCollider))]
+    public class LevelChunk : MonoBehaviour
     {
-        _collider = GetComponent<BoxCollider>();
-        _collider.isTrigger = true;
-    }
+        public event Action<LevelChunk> PlayerEnteredFirstTime;
 
-    private void OnTriggerEnter(Collider other)
-    {
-        if (!other.CompareTag("Player"))
-            return;
+        [Header("Attachment Points")]
+        [Tooltip("Attachment points at the near end (at pivot)")]
+        public AttachmentPoint[] NearEnd = new AttachmentPoint[2];
+        [Tooltip("Attachment points at the far end (away from pivot)")]
+        public AttachmentPoint[] FarEnd = new AttachmentPoint[2];
 
-        PlayerIsInside = true;
+        public bool PlayerIsInside { get; private set; }
+        public bool HasBeenVisited { get; private set; }
+        public int ChunkIndex { get; set; }
+        public bool IsFlipped { get; set; }
 
-        if (!HasBeenVisited)
+        private BoxCollider _collider;
+
+        private void Awake()
         {
-            HasBeenVisited = true;
-            PlayerEnteredFirstTime?.Invoke(this);
+            _collider = GetComponent<BoxCollider>();
+            _collider.isTrigger = true;
         }
-    }
 
-    private void OnTriggerExit(Collider other)
-    {
-        if (other.CompareTag("Player"))
+        private void OnTriggerEnter(Collider other)
         {
-            PlayerIsInside = false;
-        }
-    }
+            if (!other.CompareTag("Player"))
+                return;
 
-    /// <summary>
-    /// Gets the attachment points at the end facing the next chunk in progression.
-    /// Accounts for whether the chunk was spawned flipped.
-    /// </summary>
-    public AttachmentPoint[] GetProgressionFarEnd()
-    {
-        return IsFlipped ? NearEnd : FarEnd;
-    }
+            PlayerIsInside = true;
 
-    /// <summary>
-    /// Gets the attachment points at the end facing the previous chunk in progression.
-    /// Accounts for whether the chunk was spawned flipped.
-    /// </summary>
-    public AttachmentPoint[] GetProgressionNearEnd()
-    {
-        return IsFlipped ? FarEnd : NearEnd;
-    }
-
-    /// <summary>
-    /// Gets the average world position of populated points at the progression far end.
-    /// Returns null if no populated points exist.
-    /// </summary>
-    public Vector3? GetProgressionFarEndAveragePosition()
-    {
-        return GetAveragePosition(GetProgressionFarEnd());
-    }
-
-    /// <summary>
-    /// Gets the average world position of populated points at the progression near end.
-    /// Returns null if no populated points exist.
-    /// </summary>
-    public Vector3? GetProgressionNearEndAveragePosition()
-    {
-        return GetAveragePosition(GetProgressionNearEnd());
-    }
-
-    private Vector3? GetAveragePosition(AttachmentPoint[] points)
-    {
-        Vector3 sum = Vector3.zero;
-        int count = 0;
-
-        foreach (var point in points)
-        {
-            if (point != null)
+            if (!HasBeenVisited)
             {
-                sum += point.transform.position;
-                count++;
+                HasBeenVisited = true;
+                PlayerEnteredFirstTime?.Invoke(this);
             }
         }
 
-        return count > 0 ? sum / count : null;
+        private void OnTriggerExit(Collider other)
+        {
+            if (other.CompareTag("Player"))
+            {
+                PlayerIsInside = false;
+            }
+        }
+
+        /// <summary>
+        /// Gets the attachment points at the end facing the next chunk in progression.
+        /// Accounts for whether the chunk was spawned flipped.
+        /// </summary>
+        public AttachmentPoint[] GetProgressionFarEnd()
+        {
+            return IsFlipped ? NearEnd : FarEnd;
+        }
+
+        /// <summary>
+        /// Gets the attachment points at the end facing the previous chunk in progression.
+        /// Accounts for whether the chunk was spawned flipped.
+        /// </summary>
+        public AttachmentPoint[] GetProgressionNearEnd()
+        {
+            return IsFlipped ? FarEnd : NearEnd;
+        }
+
+        /// <summary>
+        /// Gets the average world position of populated points at the progression far end.
+        /// Returns null if no populated points exist.
+        /// </summary>
+        public Vector3? GetProgressionFarEndAveragePosition()
+        {
+            return GetAveragePosition(GetProgressionFarEnd());
+        }
+
+        /// <summary>
+        /// Gets the average world position of populated points at the progression near end.
+        /// Returns null if no populated points exist.
+        /// </summary>
+        public Vector3? GetProgressionNearEndAveragePosition()
+        {
+            return GetAveragePosition(GetProgressionNearEnd());
+        }
+
+        private Vector3? GetAveragePosition(AttachmentPoint[] points)
+        {
+            Vector3 sum = Vector3.zero;
+            int count = 0;
+
+            foreach (var point in points)
+            {
+                if (!point) continue;
+                
+                sum += point.transform.position;
+                count++;
+            }
+
+            return count > 0 ? sum / count : null;
+        }
     }
 }

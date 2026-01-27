@@ -1,50 +1,54 @@
+using HolyRail.Scripts.Enemies;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
-public class DeathWall : MonoBehaviour
+namespace HolyRail.Scripts
 {
-    [field: SerializeField]
-    public float StartSpeed { get; private set; } = 1.5f;
-
-    [field: SerializeField]
-    public float Acceleration { get; private set; } = 0.1f;
-
-    [field: SerializeField]
-    public float MaxSpeed { get; private set; } = 10f;
-
-    [field: SerializeField]
-    public float CurrentSpeed { get; private set; }
-
-    private void Awake()
+    public class DeathWall : MonoBehaviour
     {
-        CurrentSpeed = StartSpeed;
-    }
+        [field: SerializeField]
+        public float StartSpeed { get; private set; } = 1.5f;
 
-    private void Update()
-    {
-        CurrentSpeed += Acceleration * Time.deltaTime;
-        CurrentSpeed = Mathf.Min(CurrentSpeed, MaxSpeed);
+        [field: SerializeField]
+        public float Acceleration { get; private set; } = 0.1f;
 
-        transform.position += Vector3.forward * CurrentSpeed * Time.deltaTime;
-    }
+        [field: SerializeField]
+        public float MaxSpeed { get; private set; } = 10f;
 
-    private void OnTriggerEnter(Collider other)
-    {
-        if (other.CompareTag("Player"))
+        [field: SerializeField]
+        public float CurrentSpeed { get; private set; }
+
+        private void Awake()
         {
-            SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
-            return;
+            CurrentSpeed = StartSpeed;
         }
 
-        if (other.TryGetComponent<EnemyBot>(out var bot))
+        private void Update()
         {
-            EnemySpawner.Instance?.RecycleBot(bot);
-            return;
+            CurrentSpeed += Acceleration * Time.deltaTime;
+            CurrentSpeed = Mathf.Min(CurrentSpeed, MaxSpeed);
+
+            transform.position += Vector3.forward * CurrentSpeed * Time.deltaTime;
         }
 
-        if (other.TryGetComponent<EnemyBullet>(out var bullet))
+        private void OnTriggerEnter(Collider other)
         {
-            EnemySpawner.Instance?.RecycleBullet(bullet);
+            if (other.CompareTag("Player"))
+            {
+                SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+                return;
+            }
+
+            if (other.TryGetComponent<BaseEnemyBot>(out var bot))
+            {
+                EnemySpawner.Instance?.RecycleBot(bot);
+                return;
+            }
+
+            if (other.TryGetComponent<EnemyBullet>(out var bullet))
+            {
+                EnemySpawner.Instance?.RecycleBullet(bullet);
+            }
         }
     }
 }

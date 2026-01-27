@@ -1,10 +1,13 @@
 using UnityEngine;
 
-public class AttachmentPoint : MonoBehaviour
+namespace HolyRail.Scripts.LevelGeneration
 {
-    private void OnDrawGizmos()
+    public class AttachmentPoint : MonoBehaviour
     {
-        Gizmos.color = Color.cyan;
-        Gizmos.DrawSphere(transform.position, 0.2f);
+        private void OnDrawGizmos()
+        {
+            Gizmos.color = Color.cyan;
+            Gizmos.DrawSphere(transform.position, 0.2f);
+        }
     }
 }
