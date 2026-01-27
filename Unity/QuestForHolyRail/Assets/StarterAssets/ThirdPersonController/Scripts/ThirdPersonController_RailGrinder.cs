@@ -102,6 +102,14 @@ namespace StarterAssets
         [Tooltip("How quickly the start boost decays toward base grind speed")]
         public float GrindBoostDecayRate = 8f;
 
+        [Space(10)]
+        [Tooltip("Sound effects played when landing on a rail (random selection)")]
+        public AudioClip[] GrindStartAudioClips;
+        [Tooltip("Looping sound effect while grinding")]
+        public AudioClip GrindLoopAudioClip;
+        [Range(0, 1)] public float GrindAudioVolume = 0.5f;
+
+        private AudioSource _grindLoopAudioSource;
         private bool _isGrinding;
         private float _grindExitCooldownTimer;
         private float _momentumPreservationTimer;
@@ -253,6 +261,12 @@ namespace StarterAssets
                 _baseFOV = VirtualCamera.m_Lens.FieldOfView;
                 _targetFOV = _baseFOV;
             }
+
+            // Initialize grind loop audio source
+            _grindLoopAudioSource = gameObject.AddComponent<AudioSource>();
+            _grindLoopAudioSource.loop = true;
+            _grindLoopAudioSource.playOnAwake = false;
+            _grindLoopAudioSource.spatialBlend = 0f; // 2D sound
         }
 
         private void Update()
@@ -448,11 +462,26 @@ namespace StarterAssets
             }
 
             // Store the direction, defaulting to StartToEnd if Unknown or Stationary
-            _grindDirection = (direction == SplineTravelDirection.EndToStart) 
-                ? SplineTravelDirection.EndToStart 
+            _grindDirection = (direction == SplineTravelDirection.EndToStart)
+                ? SplineTravelDirection.EndToStart
                 : SplineTravelDirection.StartToEnd;
 
             _controller.enabled = false; // important: spline drives position
+
+            // Play grind start sound
+            if (GrindStartAudioClips != null && GrindStartAudioClips.Length > 0)
+            {
+                var index = Random.Range(0, GrindStartAudioClips.Length);
+                AudioSource.PlayClipAtPoint(GrindStartAudioClips[index], transform.position, GrindAudioVolume);
+            }
+
+            // Start grind loop sound
+            if (GrindLoopAudioClip != null && _grindLoopAudioSource != null)
+            {
+                _grindLoopAudioSource.clip = GrindLoopAudioClip;
+                _grindLoopAudioSource.volume = GrindAudioVolume;
+                _grindLoopAudioSource.Play();
+            }
         }
 
         public void StopGrind()
@@ -479,6 +508,12 @@ namespace StarterAssets
             _isGrinding = false;
             _animator.SetBool(_animIDGrinding, false);
             _controller.enabled = true;
+
+            // Stop grind loop sound
+            if (_grindLoopAudioSource != null && _grindLoopAudioSource.isPlaying)
+            {
+                _grindLoopAudioSource.Stop();
+            }
 
             // Preserve horizontal momentum from grind
             _speed = _grindSpeedCurrent * GrindJumpMomentumMultiplier;
@@ -515,6 +550,12 @@ namespace StarterAssets
             // Re-enable controller
             _controller.enabled = true;
             _isGrinding = false;
+
+            // Stop grind loop sound
+            if (_grindLoopAudioSource != null && _grindLoopAudioSource.isPlaying)
+            {
+                _grindLoopAudioSource.Stop();
+            }
 
             // Apply jump velocity (vertical)
             _verticalVelocity = Mathf.Sqrt(actualJumpHeight * -2f * Gravity);
