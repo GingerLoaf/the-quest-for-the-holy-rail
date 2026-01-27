@@ -334,16 +334,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1c2d51e84a71de64697205e7a787f010, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::LevelChunk
-  NearEndGround:
+  NearEnd:
   - {fileID: 0}
   - {fileID: 0}
-  NearEndAir:
-  - {fileID: 0}
-  - {fileID: 0}
-  FarEndGround:
-  - {fileID: 0}
-  - {fileID: 0}
-  FarEndAir:
+  FarEnd:
   - {fileID: 0}
   - {fileID: 0}
 --- !u!65 &104165204
@@ -367,6 +361,11 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 1, y: 1, z: 1}
   m_Center: {x: 0, y: 0, z: 0}
+--- !u!4 &388309865 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 2719569588957798408, guid: df0598a8a492f624aa26eafe2d8b616b, type: 3}
+  m_PrefabInstance: {fileID: 91670753}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &396438357
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -1880,7 +1879,7 @@ PrefabInstance:
     - target: {fileID: 4468446077880731019, guid: ab0aafce3c0224be7befd1b0009a2a1d, type: 3}
       propertyPath: <Player>k__BackingField
       value: 
-      objectReference: {fileID: 0}
+      objectReference: {fileID: 388309865}
     - target: {fileID: 4779066903883341362, guid: ab0aafce3c0224be7befd1b0009a2a1d, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0
