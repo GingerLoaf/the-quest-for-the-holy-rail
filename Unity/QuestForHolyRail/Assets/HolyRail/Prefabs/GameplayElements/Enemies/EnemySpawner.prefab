@@ -1,0 +1,68 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &6558885053267105923
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 4779066903883341362}
+  - component: {fileID: 4468446077880731019}
+  m_Layer: 0
+  m_Name: EnemySpawner
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &4779066903883341362
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6558885053267105923}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &4468446077880731019
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6558885053267105923}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e1e2e3e4e5e67890e1e2e3e4e5e67890, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  <BotPrefab>k__BackingField: {fileID: 1000000000000000000, guid: f1f2f3f4f5f67890f1f2f3f4f5f67890, type: 3}
+  <BulletPrefab>k__BackingField: {fileID: 2000000000000000000, guid: a2a3a4a5a6a78901a2a3a4a5a6a78901, type: 3}
+  <Player>k__BackingField: {fileID: 0}
+  <SpawnOffsetZ>k__BackingField: 30
+  <SpawnWidth>k__BackingField: 20
+  <SpawnHeight>k__BackingField: 14.26
+  <SpawnDepth>k__BackingField: 10
+  <SpawnInterval>k__BackingField: 2
+  <MaxActiveEnemies>k__BackingField: 10
+  <BotPoolSize>k__BackingField: 20
+  <BulletPoolSize>k__BackingField: 50
+  <BotExclusionRadius>k__BackingField: 5
+  <BotAcceleration>k__BackingField: 14
+  <BotMaxSpeed>k__BackingField: 11
+  <BotNoiseAmount>k__BackingField: 4
+  <BotNoiseSpeed>k__BackingField: 2
+  <BotAvoidanceRadius>k__BackingField: 4
+  <BotAvoidanceStrength>k__BackingField: 5
+  <BulletSpeed>k__BackingField: 55
+  <BotFireRate>k__BackingField: 3
+  <BotFiringRange>k__BackingField: 15
+  <BulletsKnockOffRail>k__BackingField: 1
