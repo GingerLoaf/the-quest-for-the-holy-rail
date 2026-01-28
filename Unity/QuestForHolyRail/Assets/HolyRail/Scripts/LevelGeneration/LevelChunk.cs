@@ -48,8 +48,6 @@ namespace HolyRail.Scripts.LevelGeneration
 
         public void InitializeSplineMeshControllers()
         {
-            Debug.Log("h e r e ");
-
             if (SplineMeshControllers == null || SplineMeshControllers.Length == 0)
             {
                 SplineMeshControllers = GetComponentsInChildren<SplineMeshController>();

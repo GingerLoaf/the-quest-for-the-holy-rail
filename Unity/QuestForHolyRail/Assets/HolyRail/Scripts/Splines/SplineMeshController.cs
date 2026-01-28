@@ -13,7 +13,7 @@ public class SplineMeshController : MonoBehaviour
     public float glowLength = 8f;
     [Range(0f, 1f)] public float glowMix = 1f;
     public float glowBrightness = 1f;
-    public float animDuration = 1f;
+    public float showHideDuration = .25f;
 
     private float _animTimer;
     private float _animFrom;
@@ -88,7 +88,7 @@ public class SplineMeshController : MonoBehaviour
         if (_animating)
         {
             _animTimer += Time.deltaTime;
-            var t = Mathf.Clamp01(_animTimer / animDuration);
+            var t = Mathf.Clamp01(_animTimer / showHideDuration);
             glowMix = Mathf.Lerp(_animFrom, _animTo, t);
 
             if (t >= 1f)
