@@ -87,6 +87,7 @@ Shader "HolyRail/ScrollingGradient"
                 half _TexBlend;
                 half _GlowLocation;
                 half _GlowLength;
+                half _GlowFlip;
                 half _GlowMix;
                 half _GlowBrightness;
                 half3 _UniformGlowColor;
@@ -153,10 +154,11 @@ Shader "HolyRail/ScrollingGradient"
 
                
 
-                // Linear fade: 1 at _GlowLocation, 0 at (_GlowLocation - _GlowLength)
+                // Linear fade: normal goes from _GlowLocation down, flipped goes from _GlowLocation up
                 half t = uv.y;
-                half glow = saturate(1.0 - (_GlowLocation - t) / _GlowLength);
-                glow *= step(t, _GlowLocation);
+                half dist = lerp(_GlowLocation - t, t - _GlowLocation, _GlowFlip);
+                half glow = saturate(1.0 - dist / _GlowLength);
+                glow *= step(0.0, dist);
 
                 glow *= _GlowBrightness;
                 glow *= _GlowMix;

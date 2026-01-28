@@ -528,6 +528,11 @@ namespace StarterAssets
                 _animator.SetBool(_animIDGrinding, true);
             }
 
+            if (SplineMeshController != null)
+            {
+                SplineMeshController.Show();
+            }
+
             // Store the direction, defaulting to StartToEnd if Unknown or Stationary
             _grindDirection = (direction == SplineTravelDirection.EndToStart)
                 ? SplineTravelDirection.EndToStart
@@ -568,6 +573,11 @@ namespace StarterAssets
 
         public void StopGrind()
         {
+            if (SplineMeshController != null)
+            {
+                SplineMeshController.Hide();
+            }
+
             // Calculate exit direction from spline tangent before stopping
             Vector3 exitDirection = Vector3.forward;
             if (GrindSpline != null && GrindSpline.Spline != null)
@@ -612,6 +622,11 @@ namespace StarterAssets
 
         private void ExitGrindWithJump(float? jumpHeight = null)
         {
+            if (SplineMeshController != null)
+            {
+                SplineMeshController.Hide();
+            }
+
             float actualJumpHeight = jumpHeight ?? JumpHeight;
 
             // Calculate exit direction from spline tangent before stopping
@@ -723,8 +738,6 @@ namespace StarterAssets
             if (SplineMeshController != null)
             {
                 SplineMeshController.glowLocation = _grindT * _grindSplineLength;
-
-                Debug.Log(_grindT * _grindSplineLength);
             }
 
             // Flip tangent when grinding in reverse direction so character faces movement direction
