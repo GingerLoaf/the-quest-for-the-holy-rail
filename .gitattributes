@@ -1,0 +1,94 @@
+# -----------------------------------------------------------------------------
+# Git LFS configuration for Unity projects
+# -----------------------------------------------------------------------------
+# This file tells Git which file patterns should be stored in LFS (Large File Storage).
+# Rule of thumb:
+#   - Put large/binary assets in LFS (models, textures, audio, video, binaries).
+#   - Do NOT put Unity .meta files in LFS (keep them in normal Git).
+#   - Avoid putting potentially-mergeable Unity YAML/text assets in LFS unless you
+#     intentionally want "last writer wins" behavior.
+# -----------------------------------------------------------------------------
+
+# --- 3D models / DCC files ---
+*.fbx  filter=lfs diff=lfs merge=lfs -text
+*.obj  filter=lfs diff=lfs merge=lfs -text
+*.blend filter=lfs diff=lfs merge=lfs -text
+*.max  filter=lfs diff=lfs merge=lfs -text
+*.ma   filter=lfs diff=lfs merge=lfs -text
+*.mb   filter=lfs diff=lfs merge=lfs -text
+*.c4d  filter=lfs diff=lfs merge=lfs -text
+*.dae  filter=lfs diff=lfs merge=lfs -text
+*.3ds  filter=lfs diff=lfs merge=lfs -text
+*.glb  filter=lfs diff=lfs merge=lfs -text
+*.gltf filter=lfs diff=lfs merge=lfs -text
+
+# --- Textures / images (often huge, usually binary) ---
+*.psd  filter=lfs diff=lfs merge=lfs -text
+*.psb  filter=lfs diff=lfs merge=lfs -text
+*.tif  filter=lfs diff=lfs merge=lfs -text
+*.tiff filter=lfs diff=lfs merge=lfs -text
+*.tga  filter=lfs diff=lfs merge=lfs -text
+*.exr  filter=lfs diff=lfs merge=lfs -text
+*.hdr  filter=lfs diff=lfs merge=lfs -text
+*.bmp  filter=lfs diff=lfs merge=lfs -text
+*.png  filter=lfs diff=lfs merge=lfs -text
+*.jpg  filter=lfs diff=lfs merge=lfs -text
+*.jpeg filter=lfs diff=lfs merge=lfs -text
+*.gif  filter=lfs diff=lfs merge=lfs -text
+*.webp filter=lfs diff=lfs merge=lfs -text
+*.svg  filter=lfs diff=lfs merge=lfs -text
+
+# --- Audio ---
+*.wav  filter=lfs diff=lfs merge=lfs -text
+*.mp3  filter=lfs diff=lfs merge=lfs -text
+*.ogg  filter=lfs diff=lfs merge=lfs -text
+*.aif  filter=lfs diff=lfs merge=lfs -text
+*.aiff filter=lfs diff=lfs merge=lfs -text
+*.flac filter=lfs diff=lfs merge=lfs -text
+
+# --- Video / cutscenes ---
+*.mp4  filter=lfs diff=lfs merge=lfs -text
+*.mov  filter=lfs diff=lfs merge=lfs -text
+*.webm filter=lfs diff=lfs merge=lfs -text
+*.mkv  filter=lfs diff=lfs merge=lfs -text
+
+# --- Fonts ---
+*.ttf  filter=lfs diff=lfs merge=lfs -text
+*.otf  filter=lfs diff=lfs merge=lfs -text
+
+# --- Unity asset bundles / addressables / binary blobs ---
+*.bundle        filter=lfs diff=lfs merge=lfs -text
+*.unitypackage  filter=lfs diff=lfs merge=lfs -text
+
+# --- Archives (if you ever check them in; ideally avoid) ---
+*.zip  filter=lfs diff=lfs merge=lfs -text
+*.7z   filter=lfs diff=lfs merge=lfs -text
+*.rar  filter=lfs diff=lfs merge=lfs -text
+
+# --- Executables / build outputs (prefer NOT committing these at all) ---
+*.exe  filter=lfs diff=lfs merge=lfs -text
+*.dll  filter=lfs diff=lfs merge=lfs -text
+*.pdb  filter=lfs diff=lfs merge=lfs -text
+*.app  filter=lfs diff=lfs merge=lfs -text
+*.dmg  filter=lfs diff=lfs merge=lfs -text
+
+# --- Blender / Substance / misc asset authoring ---
+*.spp  filter=lfs diff=lfs merge=lfs -text
+*.sbsar filter=lfs diff=lfs merge=lfs -text
+
+# -----------------------------------------------------------------------------
+# Things you generally should NOT put in LFS:
+# -----------------------------------------------------------------------------
+# Unity metadata must stay in normal Git.
+# (No rule needed—just don't add *.meta to LFS.)
+
+# Unity scene/prefab/asset files are often YAML-text (if Force Text is enabled).
+# Keeping them in normal Git makes diffs/merges possible.
+# If your team prefers locking/last-writer-wins for these, you *can* LFS them,
+# but it's usually a bad idea with 10 people during a jam.
+# Examples (intentionally NOT in LFS):
+#   *.unity
+#   *.prefab
+#   *.asset
+#   *.anim
+#   *.controller
