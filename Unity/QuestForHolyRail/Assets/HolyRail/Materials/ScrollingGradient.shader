@@ -11,13 +11,6 @@ Shader "HolyRail/ScrollingGradient"
         _EdgeColor ("Edge Color", Color) = (0, 0, 0, 1)
         _EdgeAmount ("Edge Amount", Range(0, 1)) = 1.0
         _EdgePower ("Edge Power", Float) = 2.0
-
-        [Header(Texture)]
-        _MainTex ("Texture", 2D) = "white" {}
-        _TexTiling ("Texture Tiling (X, Y)", Vector) = (1, 1, 0, 0)
-        _TexScrollSpeed ("Texture Scroll Speed (X, Y)", Vector) = (0, 0, 0, 0)
-        _TexRotation ("Texture Rotation (Degrees)", Float) = 0.0
-        _TexBlend ("Texture Blend", Range(0, 1)) = 0.0
     }
 
     SubShader
@@ -45,9 +38,6 @@ Shader "HolyRail/ScrollingGradient"
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
-            TEXTURE2D(_MainTex);
-            SAMPLER(sampler_MainTex);
-
             struct Attributes
             {
                 float4 positionOS : POSITION;
@@ -74,11 +64,6 @@ Shader "HolyRail/ScrollingGradient"
                 half4 _EdgeColor;
                 half _EdgeAmount;
                 half _EdgePower;
-                float4 _MainTex_ST;
-                float4 _TexTiling;
-                float4 _TexScrollSpeed;
-                half _TexRotation;
-                half _TexBlend;
             CBUFFER_END
 
             Varyings vert(Attributes input)
@@ -110,24 +95,8 @@ Shader "HolyRail/ScrollingGradient"
                 half3 gradientResult = triWave * _GradientColor.rgb;
                 half3 baseResult = gradientResult + _BaseColor.rgb;
 
-                // Sample texture with tiling, scrolling, and rotation
-                float2 texUV = uv * _TexTiling.xy + _Time.y * _TexScrollSpeed.xy;
-
-                // Rotate UVs around center (0.5, 0.5)
-                float rotRad = _TexRotation * 0.0174533h; // degrees to radians
-                float cosRot = cos(rotRad);
-                float sinRot = sin(rotRad);
-                float2 centeredUV = texUV - 0.5h;
-                texUV.x = centeredUV.x * cosRot - centeredUV.y * sinRot + 0.5h;
-                texUV.y = centeredUV.x * sinRot + centeredUV.y * cosRot + 0.5h;
-
-                half4 texColor = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, texUV);
-
-                // Blend texture with gradient result
-                half3 blendedResult = lerp(baseResult, baseResult * texColor.rgb, _TexBlend);
-
                 // Apply emission intensity
-                half3 emissionColor = blendedResult * _EmissionIntensity;
+                half3 emissionColor = baseResult * _EmissionIntensity;
 
                 // Fresnel-based edge darkening (view-dependent)
                 half3 normalWS = normalize(input.normalWS);

@@ -73,29 +73,18 @@ namespace Unity.Splines.Examples
 
             foreach (var container in splineContainers)
             {
-                if (container == null)
+                if (container == null || container.Spline == null)
                     continue;
 
-                // Check Splines collection directly instead of Spline property
-                var splines = container.Splines;
-                if (splines == null || splines.Count == 0)
-                    continue;
+                using var native = new NativeSpline(container.Spline, container.transform.localToWorldMatrix);
+                float distance = SplineUtility.GetNearestPoint(native, worldPosition, out float3 point, out float t);
 
-                foreach (var spline in splines)
+                if (distance < nearestDistance)
                 {
-                    if (spline == null || spline.Count < 2)
-                        continue;
-
-                    using var native = new NativeSpline(spline, container.transform.localToWorldMatrix);
-                    float distance = SplineUtility.GetNearestPoint(native, worldPosition, out float3 point, out float t);
-
-                    if (distance < nearestDistance)
-                    {
-                        nearestDistance = distance;
-                        nearestPosition = point;
-                        nearestT = t;
-                        nearestContainer = container;
-                    }
+                    nearestDistance = distance;
+                    nearestPosition = point;
+                    nearestT = t;
+                    nearestContainer = container;
                 }
             }
 
@@ -120,21 +109,8 @@ namespace Unity.Splines.Examples
             if (result.Container == null)
                 return result;
 
-            // Get the first valid spline from the container
-            Spline spline = null;
-            foreach (var s in result.Container.Splines)
-            {
-                if (s != null && s.Count >= 2)
-                {
-                    spline = s;
-                    break;
-                }
-            }
-            if (spline == null)
-                return result;
-
             // Get tangent at nearest point
-            using var native = new NativeSpline(spline, result.Container.transform.localToWorldMatrix);
+            using var native = new NativeSpline(result.Container.Spline, result.Container.transform.localToWorldMatrix);
             float3 tangent = math.normalize(native.EvaluateTangent(result.SplineParameter));
 
             // Flatten both vectors to horizontal plane for more intuitive direction matching
@@ -189,21 +165,8 @@ namespace Unity.Splines.Examples
                 }
                 else
                 {
-                    // Get the first valid spline from the container
-                    Spline splineForTangent = null;
-                    foreach (var s in result.Container.Splines)
-                    {
-                        if (s != null && s.Count >= 2)
-                        {
-                            splineForTangent = s;
-                            break;
-                        }
-                    }
-                    if (splineForTangent == null)
-                        return result;
-
                     // Get tangent at current position to determine direction along spline
-                    using var native = new NativeSpline(splineForTangent, result.Container.transform.localToWorldMatrix);
+                    using var native = new NativeSpline(result.Container.Spline, result.Container.transform.localToWorldMatrix);
                     float3 tangent = native.EvaluateTangent(result.SplineParameter);
                     tangent = math.normalize(tangent);
 
@@ -223,7 +186,7 @@ namespace Unity.Splines.Examples
                         // Fallback to parameter delta if movement is perpendicular
                         float tDelta = result.SplineParameter - previousT;
 
-                        if (splineForTangent.Closed && math.abs(tDelta) > 0.5f)
+                        if (result.Container.Spline.Closed && math.abs(tDelta) > 0.5f)
                         {
                             tDelta = tDelta > 0 ? tDelta - 1f : tDelta + 1f;
                         }
@@ -241,15 +204,9 @@ namespace Unity.Splines.Examples
             if (!TryGetComponent(out _lineRenderer))
                 Debug.LogError("ShowNearestPoint requires a LineRenderer.");
             _lineRenderer.positionCount = 2;
-            RefreshSplineContainers();
+            _splineContainers = FindObjectsByType<SplineContainer>(FindObjectsSortMode.None);
             if (NearestPoint == null)
                 Debug.LogError("Nearest Point GameObject is null");
-        }
-
-        public void RefreshSplineContainers()
-        {
-            _splineContainers = FindObjectsByType<SplineContainer>(FindObjectsSortMode.None);
-            Debug.Log($"ShowNearestPoint: Refreshed spline cache, found {_splineContainers.Length} containers");
         }
 
         private void Update()
