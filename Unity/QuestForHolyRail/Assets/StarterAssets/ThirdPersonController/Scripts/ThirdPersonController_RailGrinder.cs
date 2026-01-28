@@ -136,6 +136,8 @@ namespace StarterAssets
         [Tooltip("Particle systems to enable emission while grinding")]
         public ParticleSystem[] GrindParticleSystems;
 
+        public GrindGlowLight GrindGlowLight;
+
         private AudioSource _grindLoopAudioSource;
         private AudioSource _skateLoopAudioSource;
         private bool _isGrinding;
@@ -533,6 +535,11 @@ namespace StarterAssets
                 SplineMeshController.Show();
             }
 
+            if (GrindGlowLight != null)
+            {
+                GrindGlowLight.Show();
+            }
+
             // Store the direction, defaulting to StartToEnd if Unknown or Stationary
             _grindDirection = (direction == SplineTravelDirection.EndToStart)
                 ? SplineTravelDirection.EndToStart
@@ -576,6 +583,11 @@ namespace StarterAssets
             if (SplineMeshController != null)
             {
                 SplineMeshController.Hide();
+            }
+
+            if (GrindGlowLight != null)
+            {
+                GrindGlowLight.Hide();
             }
 
             // Calculate exit direction from spline tangent before stopping
@@ -625,6 +637,11 @@ namespace StarterAssets
             if (SplineMeshController != null)
             {
                 SplineMeshController.Hide();
+            }
+
+            if (GrindGlowLight != null)
+            {
+                GrindGlowLight.Hide();
             }
 
             float actualJumpHeight = jumpHeight ?? JumpHeight;
@@ -738,6 +755,11 @@ namespace StarterAssets
             if (SplineMeshController != null)
             {
                 SplineMeshController.glowLocation = _grindT * _grindSplineLength;
+            }
+
+            if (GrindGlowLight != null)
+            {
+                GrindGlowLight.transform.position = position;
             }
 
             // Flip tangent when grinding in reverse direction so character faces movement direction
