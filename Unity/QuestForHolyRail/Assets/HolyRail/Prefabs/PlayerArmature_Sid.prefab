@@ -8202,17 +8202,17 @@ MonoBehaviour:
     m_Flags: 0
   lookBack: 0
   MoveSpeed: 8
-  _airControlMultiplier: 1
+  _airControlMultiplier: 6
   MomentumPreservationTime: 0.5
   SprintSpeed: 8
-  RotationSmoothTime: 0.12
-  SpeedChangeRate: 10
+  RotationSmoothTime: 0.149
+  SpeedChangeRate: 22
   SkateLandingAudioClips:
   - {fileID: 8300000, guid: f7d894170ef540c4b8adaca3f8ec45ac, type: 3}
   SkateLoopAudioClip: {fileID: 8300000, guid: abc379293bad8204c86a744047b2ef46, type: 3}
   SkateAudioVolume: 0.444
-  JumpHeight: 2
-  Gravity: -10
+  JumpHeight: 3
+  Gravity: -22
   SpeedMultiplier: 1
   JumpTimeout: 0.5
   FallTimeout: 0.15
@@ -8230,10 +8230,10 @@ MonoBehaviour:
   AutoGrind: 1
   GrindExitCooldown: 0.25
   GrindTriggerOffset: -0.5
-  GrindJumpMomentumMultiplier: 5
+  GrindJumpMomentumMultiplier: 2.65
   GrindEndJumpHeight: 0.6
-  GrindStartBoost: 3
-  GrindBoostDecayRate: 2
+  GrindStartBoost: 4
+  GrindBoostDecayRate: 1
   GrindStartAudioClips:
   - {fileID: 8300000, guid: e4551fca0912cc047aacf644df52166b, type: 3}
   - {fileID: 8300000, guid: a59c1e578ad6c1e45bc42f7a453f19be, type: 3}
@@ -8251,7 +8251,7 @@ MonoBehaviour:
   CameraAngleOverride: 0
   LockCameraPosition: 0
   LookSmoothTime: 0.1
-  LookSpeed: 2
+  LookSpeed: 1.5
 --- !u!1 &4503544842889081297
 GameObject:
   m_ObjectHideFlags: 0
