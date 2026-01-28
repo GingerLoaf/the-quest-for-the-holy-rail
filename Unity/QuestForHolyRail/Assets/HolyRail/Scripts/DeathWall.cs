@@ -97,12 +97,13 @@ namespace HolyRail.Scripts
             _isCatchingUp = false;
         }
 
+#if UNITY_EDITOR
         /// <summary>
         /// Records a death event with all speed analytics data
         /// </summary>
-        private void RecordDeathAnalytics()
+        private void RecordDeathAnalytics_EditorOnly()
         {
-            var analytics = LoadAnalytics();
+            var analytics = LoadAnalytics_EditorOnly();
             float playerAvgSpeed = _playerSpeedSamples > 0 ? _playerSpeedSum / _playerSpeedSamples : 0f;
 
             // Add final data point at death
@@ -111,15 +112,15 @@ namespace HolyRail.Scripts
 
             var record = new SpeedAnalytics(_playerCurrentSpeed, _playerMaxSpeed, playerAvgSpeed, CurrentSpeed, _velocityTimeline);
             analytics.records.Add(record);
-            SaveAnalytics(analytics);
+            SaveAnalytics_EditorOnly(analytics);
 
             Debug.Log($"<color=cyan>[Analytics Recorded]</color> Total Deaths: {analytics.records.Count} | Velocity samples: {_velocityTimeline.Count}", gameObject);
         }
-
+        
         /// <summary>
         /// Loads analytics data from EditorPrefs
         /// </summary>
-        public static AnalyticsData LoadAnalytics()
+        public static AnalyticsData LoadAnalytics_EditorOnly()
         {
             string json = UnityEditor.EditorPrefs.GetString(ANALYTICS_PREFS_KEY, "");
             if (string.IsNullOrEmpty(json))
@@ -141,7 +142,7 @@ namespace HolyRail.Scripts
         /// <summary>
         /// Saves analytics data to EditorPrefs
         /// </summary>
-        private void SaveAnalytics(AnalyticsData data)
+        private void SaveAnalytics_EditorOnly(AnalyticsData data)
         {
             string json = JsonUtility.ToJson(data);
             UnityEditor.EditorPrefs.SetString(ANALYTICS_PREFS_KEY, json);
@@ -150,11 +151,12 @@ namespace HolyRail.Scripts
         /// <summary>
         /// Clears all analytics data (called from custom editor)
         /// </summary>
-        public static void ClearAnalytics()
+        public static void ClearAnalytics_EditorOnly()
         {
             UnityEditor.EditorPrefs.DeleteKey(ANALYTICS_PREFS_KEY);
             Debug.Log("<color=yellow>[Analytics Cleared]</color> All death records have been reset.");
         }
+#endif
 
         private void Update()
         {
@@ -263,7 +265,11 @@ namespace HolyRail.Scripts
             if (other.CompareTag("Player"))
             {
                 Debug.Log($"<color=red>Player Killed!</color> <color=yellow>Current Speed: {_playerCurrentSpeed:F2} m/s</color> | <color=cyan>Max Speed Reached: {_playerMaxSpeed:F2} m/s</color> | <color=orange>Death Wall Speed: {CurrentSpeed:F2} m/s</color>", gameObject);
-                RecordDeathAnalytics();
+                
+#if UNITY_EDITOR
+                RecordDeathAnalytics_EditorOnly();
+#endif
+                
                 SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
                 return;
             }

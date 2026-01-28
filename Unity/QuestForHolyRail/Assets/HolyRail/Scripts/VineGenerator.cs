@@ -927,14 +927,6 @@ namespace HolyRail.Vines
                 materialToUse = CreateDefaultVineMaterial();
             }
 
-            // Track which edges have been meshed to avoid z-fighting on shared trunk sections
-            // Key is (min node index, max node index) to make edge order-independent
-            var meshedEdges = new HashSet<(int, int)>();
-
-            // Collect meshes for batching
-            var meshesToCombine = new List<CombineInstance>();
-            var tempSplineObjects = new List<GameObject>();
-
             int processedCount = 0;
             int totalPaths = validPaths.Count;
             int totalOriginalPoints = 0;
@@ -1001,87 +993,20 @@ namespace HolyRail.Vines
                 }
 #endif
 
-                // Generate mesh for batching - only for un-meshed portions of the path
+                // Generate mesh directly on this spline's GameObject
                 if (GenerateMeshes)
                 {
-                    // Find the first un-meshed edge in this path
-                    int meshStartIdx = 0;
-                    for (int i = 1; i < path.Count; i++)
-                    {
-                        var edge = MakeEdgeKey(path[i - 1], path[i]);
-                        if (!meshedEdges.Contains(edge))
-                        {
-                            meshStartIdx = i - 1;
-                            break;
-                        }
-                        meshStartIdx = i; // All edges so far are meshed, start from next
-                    }
+                    var meshFilter = splineGO.AddComponent<MeshFilter>();
+                    var meshRenderer = splineGO.AddComponent<MeshRenderer>();
+                    meshRenderer.sharedMaterial = materialToUse;
 
-                    // Mark all edges from meshStartIdx onward as meshed
-                    for (int i = meshStartIdx + 1; i < path.Count; i++)
-                    {
-                        var edge = MakeEdgeKey(path[i - 1], path[i]);
-                        meshedEdges.Add(edge);
-                    }
-
-                    // Only create mesh if we have un-meshed portion
-                    if (meshStartIdx < path.Count - 1)
-                    {
-                        // Create a temporary spline for just the un-meshed portion
-                        var meshPositions = new List<float3>();
-                        for (int i = meshStartIdx; i < path.Count; i++)
-                        {
-                            meshPositions.Add((float3)_generatedNodes[path[i]].Position);
-                        }
-
-                        // Apply smoothing to mesh portion if enabled
-                        if (EnablePathSmoothing && SmoothingTolerance > 0)
-                        {
-                            var smoothed = new List<float3>();
-                            SplineUtility.ReducePoints(meshPositions, smoothed, SmoothingTolerance);
-                            meshPositions = smoothed;
-                        }
-
-                        // Create temporary spline container for mesh generation
-                        var tempMeshGO = new GameObject($"TempMesh_{pathIdx}");
-                        tempMeshGO.transform.SetParent(transform, true);
-                        tempMeshGO.transform.position = Vector3.zero;
-                        tempMeshGO.transform.rotation = Quaternion.identity;
-                        tempMeshGO.transform.localScale = Vector3.one;
-
-                        var tempSplineContainer = tempMeshGO.AddComponent<SplineContainer>();
-                        if (tempSplineContainer.Splines.Count > 0)
-                        {
-                            tempSplineContainer.RemoveSplineAt(0);
-                        }
-                        var tempSpline = tempSplineContainer.AddSpline();
-
-                        foreach (var pos in meshPositions)
-                        {
-                            var knot = new BezierKnot(pos);
-                            tempSpline.Add(knot, TangentMode.AutoSmooth);
-                        }
-
-                        var meshFilter = tempMeshGO.AddComponent<MeshFilter>();
-                        var splineExtrude = tempMeshGO.AddComponent<SplineExtrude>();
-                        splineExtrude.Container = tempSplineContainer;
-                        splineExtrude.Radius = VineRadius;
-                        splineExtrude.Sides = VineSegments;
-                        splineExtrude.SegmentsPerUnit = VineSegmentsPerUnit;
-                        splineExtrude.Capped = true;
-                        splineExtrude.Rebuild();
-
-                        if (meshFilter.sharedMesh != null && meshFilter.sharedMesh.vertexCount > 0)
-                        {
-                            meshesToCombine.Add(new CombineInstance
-                            {
-                                mesh = meshFilter.sharedMesh,
-                                transform = tempMeshGO.transform.localToWorldMatrix
-                            });
-                        }
-
-                        tempSplineObjects.Add(tempMeshGO);
-                    }
+                    var splineExtrude = splineGO.AddComponent<SplineExtrude>();
+                    splineExtrude.Container = splineContainer;
+                    splineExtrude.Radius = VineRadius;
+                    splineExtrude.Sides = VineSegments;
+                    splineExtrude.SegmentsPerUnit = VineSegmentsPerUnit;
+                    splineExtrude.Capped = true;
+                    splineExtrude.Rebuild();
                 }
 
                 _generatedSplines.Add(splineContainer);
@@ -1096,17 +1021,12 @@ namespace HolyRail.Vines
             // Each spline is a complete path - no junctions to track
             Debug.Log($"VineGenerator: Created {_generatedSplines.Count} continuous splines (no branch connections needed)");
 
-            // Combine all meshes into one for single draw call
-            if (GenerateMeshes && meshesToCombine.Count > 0)
-            {
-                CombineVineMeshes(meshesToCombine, materialToUse, tempSplineObjects);
-            }
-
             // Log creation and smoothing statistics
             var smoothingInfo = EnablePathSmoothing && SmoothingTolerance > 0
                 ? $", smoothed {totalOriginalPoints} -> {totalSmoothedPoints} points ({100 - (totalSmoothedPoints * 100 / Mathf.Max(1, totalOriginalPoints))}% reduction)"
                 : "";
-            Debug.Log($"VineGenerator: Created {_generatedSplines.Count} continuous splines from {paths.Count} total paths ({validPathCount} valid, max {MaxSplineCount}, batched into 1 mesh{smoothingInfo})");
+            var meshInfo = GenerateMeshes ? ", per-spline meshes" : "";
+            Debug.Log($"VineGenerator: Created {_generatedSplines.Count} continuous splines from {paths.Count} total paths ({validPathCount} valid, max {MaxSplineCount}{meshInfo}{smoothingInfo})");
 
             // Validate generated splines
             int validSplines = 0;
@@ -1131,12 +1051,6 @@ namespace HolyRail.Vines
             }
 
             return _generatedSplines;
-        }
-
-        // Helper to create an order-independent edge key for deduplication
-        private static (int, int) MakeEdgeKey(int a, int b)
-        {
-            return a < b ? (a, b) : (b, a);
         }
 
         private void FilterCloseBranches(HashSet<int> branchPoints, Dictionary<int, List<int>> childLookup)
@@ -1188,43 +1102,6 @@ namespace HolyRail.Vines
 
         [SerializeField, HideInInspector]
         private GameObject _combinedMeshObject;
-
-        private void CombineVineMeshes(List<CombineInstance> meshesToCombine, Material material, List<GameObject> tempObjects)
-        {
-            // Create combined mesh
-            var combinedMesh = new Mesh();
-            combinedMesh.name = "CombinedVineMesh";
-            combinedMesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32; // Support large meshes
-            combinedMesh.CombineMeshes(meshesToCombine.ToArray(), true, true);
-            combinedMesh.RecalculateBounds();
-
-            // Create single GameObject for all vines
-            _combinedMeshObject = new GameObject("VineMesh_Combined");
-            _combinedMeshObject.transform.SetParent(transform, false);
-            _combinedMeshObject.transform.position = Vector3.zero;
-            _combinedMeshObject.transform.rotation = Quaternion.identity;
-
-            var meshFilter = _combinedMeshObject.AddComponent<MeshFilter>();
-            meshFilter.sharedMesh = combinedMesh;
-
-            var meshRenderer = _combinedMeshObject.AddComponent<MeshRenderer>();
-            meshRenderer.sharedMaterial = material;
-
-            // Destroy temporary mesh generation objects (they are not spline containers, just temp mesh holders)
-            foreach (var tempGO in tempObjects)
-            {
-                if (Application.isPlaying)
-                {
-                    Destroy(tempGO);
-                }
-                else
-                {
-                    DestroyImmediate(tempGO);
-                }
-            }
-
-            Debug.Log($"VineGenerator: Combined {meshesToCombine.Count} meshes into 1 (verts: {combinedMesh.vertexCount}, tris: {combinedMesh.triangles.Length / 3})");
-        }
 
         private void ClearCombinedMesh()
         {

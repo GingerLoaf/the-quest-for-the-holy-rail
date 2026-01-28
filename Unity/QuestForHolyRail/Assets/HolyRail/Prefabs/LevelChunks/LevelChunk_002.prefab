@@ -192,6 +192,10 @@ MonoBehaviour:
   PickUpCount: 3
   MinPickUpSpacing: 0.1
   PickUpHeightOffset: 1
+  SplineMeshControllers:
+  - {fileID: 2139857251209223473}
+  - {fileID: 819019135487480428}
+  - {fileID: 8440217403476017538}
 --- !u!1 &1669235955374417424
 GameObject:
   m_ObjectHideFlags: 0
@@ -205,6 +209,7 @@ GameObject:
   - component: {fileID: 5103261586656969376}
   - component: {fileID: 3220212435723575702}
   - component: {fileID: 5292943212874171523}
+  - component: {fileID: 819019135487480428}
   m_Layer: 0
   m_Name: Spline (4)
   m_TagString: Untagged
@@ -456,6 +461,26 @@ MonoBehaviour:
       type: {class: Circle, ns: UnityEngine.Splines.ExtrusionShapes, asm: Unity.Splines}
       data:
         m_Sides: 8
+--- !u!114 &819019135487480428
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1669235955374417424}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3df23cd19b1752d4e86c1dba4601a810, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SplineMeshController
+  <MeshTarget>k__BackingField: {fileID: 3220212435723575702}
+  levelChunk: {fileID: 1381385729319134840}
+  flip: 0
+  glowLocation: 0
+  glowLength: 8
+  glowMix: 1
+  glowBrightness: 1
+  animDuration: 1
 --- !u!1 &2062698937097841118
 GameObject:
   m_ObjectHideFlags: 0
@@ -469,6 +494,7 @@ GameObject:
   - component: {fileID: 149128780340307251}
   - component: {fileID: 32690278523271212}
   - component: {fileID: 1918500738143755548}
+  - component: {fileID: 2139857251209223473}
   m_Layer: 0
   m_Name: Spline
   m_TagString: Untagged
@@ -700,6 +726,26 @@ MonoBehaviour:
       type: {class: Circle, ns: UnityEngine.Splines.ExtrusionShapes, asm: Unity.Splines}
       data:
         m_Sides: 8
+--- !u!114 &2139857251209223473
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2062698937097841118}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3df23cd19b1752d4e86c1dba4601a810, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SplineMeshController
+  <MeshTarget>k__BackingField: {fileID: 32690278523271212}
+  levelChunk: {fileID: 1381385729319134840}
+  flip: 0
+  glowLocation: 0
+  glowLength: 8
+  glowMix: 1
+  glowBrightness: 1
+  animDuration: 1
 --- !u!1 &3734368321211875610
 GameObject:
   m_ObjectHideFlags: 0
@@ -747,6 +793,7 @@ GameObject:
   - component: {fileID: 4412858105421978688}
   - component: {fileID: 504025292280563326}
   - component: {fileID: 7613004760025039190}
+  - component: {fileID: 8440217403476017538}
   m_Layer: 0
   m_Name: Spline (5)
   m_TagString: Untagged
@@ -998,6 +1045,26 @@ MonoBehaviour:
       type: {class: Circle, ns: UnityEngine.Splines.ExtrusionShapes, asm: Unity.Splines}
       data:
         m_Sides: 8
+--- !u!114 &8440217403476017538
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4341480616789957201}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3df23cd19b1752d4e86c1dba4601a810, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SplineMeshController
+  <MeshTarget>k__BackingField: {fileID: 504025292280563326}
+  levelChunk: {fileID: 1381385729319134840}
+  flip: 0
+  glowLocation: 0
+  glowLength: 8
+  glowMix: 1
+  glowBrightness: 1
+  animDuration: 1
 --- !u!1001 &3348075672630333736
 PrefabInstance:
   m_ObjectHideFlags: 0

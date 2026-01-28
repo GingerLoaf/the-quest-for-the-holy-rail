@@ -44,6 +44,32 @@ namespace HolyRail.Scripts.LevelGeneration
         private float _chunkEndZ;
         private bool _previousIsFlipped;
 
+        public SplineMeshController[] SplineMeshControllers;
+
+        public void InitializeSplineMeshControllers()
+        {
+            if (SplineMeshControllers == null || SplineMeshControllers.Length == 0)
+            {
+                SplineMeshControllers = GetComponentsInChildren<SplineMeshController>();
+            }
+
+            if (SplineMeshControllers != null)
+            {
+                foreach (var controller in SplineMeshControllers)
+                {
+                    if (controller != null)
+                    {
+                        controller.flip = IsFlipped;
+
+                        if (IsFlipped)
+                        {
+                            controller.glowLocation = controller.GetSplineLength();
+                        }
+                    }
+                }
+            }
+        }
+
         private void Awake()
         {
             if (ThirdPersonController_RailGrinder.Instance != null)

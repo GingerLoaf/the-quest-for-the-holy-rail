@@ -3,6 +3,7 @@ Shader "HolyRail/ScrollingGradient"
     Properties
     {
         _BaseColor ("Base Color", Color) = (0, 0, 0, 1)
+        _BaseBrightness ("Base Brightness", Float) = .25
         _GradientColor ("Gradient Color", Color) = (0, 1, 1, 1)
         _ScrollSpeed ("Scroll Speed", Float) = 1.0
         _Frequency ("Frequency", Float) = 2.0
@@ -11,6 +12,10 @@ Shader "HolyRail/ScrollingGradient"
         _EdgeColor ("Edge Color", Color) = (0, 0, 0, 1)
         _EdgeAmount ("Edge Amount", Range(0, 1)) = 1.0
         _EdgePower ("Edge Power", Float) = 2.0
+        _GlowLocation ("Spline Location", Float) = 0.0
+        _GlowLength ("Glow Length", Float) = 2.0
+        [HDR] _UniformGlowColor ("Uniform Glow Color", Color) = (0,0,0,0)
+
 
         [Header(Texture)]
         _MainTex ("Texture", 2D) = "white" {}
@@ -66,6 +71,7 @@ Shader "HolyRail/ScrollingGradient"
 
             CBUFFER_START(UnityPerMaterial)
                 half4 _BaseColor;
+                half _BaseBrightness;
                 half4 _GradientColor;
                 half _ScrollSpeed;
                 half _Frequency;
@@ -79,6 +85,12 @@ Shader "HolyRail/ScrollingGradient"
                 float4 _TexScrollSpeed;
                 half _TexRotation;
                 half _TexBlend;
+                half _GlowLocation;
+                half _GlowLength;
+                half _GlowFlip;
+                half _GlowMix;
+                half _GlowBrightness;
+                half3 _UniformGlowColor;
             CBUFFER_END
 
             Varyings vert(Attributes input)
@@ -138,9 +150,22 @@ Shader "HolyRail/ScrollingGradient"
                 edgeFactor = saturate(edgeFactor);
 
                 // Lerp from emission color to edge color based on edge factor
-                half3 finalColor = lerp(emissionColor, _EdgeColor.rgb, edgeFactor);
+                half3 baseColor = lerp(emissionColor, _EdgeColor.rgb, edgeFactor);
 
-                // Apply fog
+               
+
+                // Linear fade: normal goes from _GlowLocation down, flipped goes from _GlowLocation up
+                half t = uv.y;
+                half dist = lerp(_GlowLocation - t, t - _GlowLocation, _GlowFlip);
+                half glow = saturate(1.0 - dist / _GlowLength);
+                glow *= step(0.0, dist);
+
+                glow *= _GlowBrightness;
+                glow *= _GlowMix;
+
+                half3 finalColor = baseColor * _BaseBrightness + baseColor * glow + _UniformGlowColor * glow;
+
+                 // Apply fog
                 finalColor = MixFog(finalColor, input.fogFactor);
 
                 return half4(finalColor, 1.0h);
