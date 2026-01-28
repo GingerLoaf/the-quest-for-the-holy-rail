@@ -11,7 +11,7 @@ namespace HolyRail.City
         public Vector3 Position;
         public Vector3 Scale;
         public Quaternion Rotation;
-        public int ZoneType;    // 0 = Downtown, 1 = Industrial
-        public int StyleIndex;  // Texture/color variation
+        public int NeedsCollider;  // 0 = Visual only, 1 = Needs collider (corridor-adjacent)
+        public int StyleIndex;     // Texture/color variation
     }
 }

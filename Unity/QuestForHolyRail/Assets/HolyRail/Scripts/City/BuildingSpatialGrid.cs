@@ -27,6 +27,10 @@ namespace HolyRail.City
 
             for (int i = 0; i < buildings.Count; i++)
             {
+                // Only index buildings that need colliders
+                if (buildings[i].NeedsCollider == 0)
+                    continue;
+
                 var cellKey = GetCellKey(buildings[i].Position);
 
                 if (!_cells.TryGetValue(cellKey, out var list))

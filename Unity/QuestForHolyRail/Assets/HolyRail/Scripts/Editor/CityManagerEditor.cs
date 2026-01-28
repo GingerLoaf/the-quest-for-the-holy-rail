@@ -31,9 +31,10 @@ namespace HolyRail.City.Editor
             EditorGUILayout.Space(10);
 
             // Check for missing references
-            bool hasAllReferences = manager.CityGeneratorShader != null &&
-                                    manager.BuildingMesh != null &&
+            bool hasAllReferences = manager.BuildingMesh != null &&
                                     manager.BuildingMaterial != null;
+
+            bool hasMissingCorridorReferences = !manager.HasValidCorridorSetup;
 
             // Check ramp references if ramps are enabled
             bool hasMissingRampReferences = manager.EnableRamps &&
@@ -43,9 +44,20 @@ namespace HolyRail.City.Editor
             {
                 EditorGUILayout.HelpBox(
                     "Missing references! Assign the following:\n" +
-                    (manager.CityGeneratorShader == null ? "- City Generator Shader (compute)\n" : "") +
                     (manager.BuildingMesh == null ? "- Building Mesh\n" : "") +
                     (manager.BuildingMaterial == null ? "- Building Material" : ""),
+                    MessageType.Warning);
+                EditorGUILayout.Space(5);
+            }
+
+            if (hasMissingCorridorReferences)
+            {
+                EditorGUILayout.HelpBox(
+                    "Corridor layout not configured! Assign:\n" +
+                    (manager.ConvergencePoint == null ? "- Convergence Point (center plaza)\n" : "") +
+                    (manager.EndpointA == null ? "- Endpoint A\n" : "") +
+                    (manager.EndpointB == null ? "- Endpoint B\n" : "") +
+                    (manager.EndpointC == null ? "- Endpoint C" : ""),
                     MessageType.Warning);
                 EditorGUILayout.Space(5);
             }
@@ -61,7 +73,8 @@ namespace HolyRail.City.Editor
             }
 
             // Generate Button (Green)
-            EditorGUI.BeginDisabledGroup(!hasAllReferences);
+            bool canGenerate = hasAllReferences && !hasMissingCorridorReferences;
+            EditorGUI.BeginDisabledGroup(!canGenerate);
             GUI.backgroundColor = new Color(0.3f, 0.9f, 0.3f);
             if (GUILayout.Button("GENERATE CITY", GUILayout.Height(40)))
             {
@@ -115,13 +128,14 @@ namespace HolyRail.City.Editor
             // Help Box
             EditorGUILayout.Space(10);
             EditorGUILayout.HelpBox(
-                "Setup:\n" +
-                "1. Use menu HolyRail > Setup City Generator for auto-setup\n" +
-                "2. Or manually assign the CityGenerator compute shader\n" +
-                "3. Assign a mesh (cube works well) and material\n" +
-                "4. Position this GameObject at the desired city center\n" +
-                "5. Click GENERATE CITY or enter Play mode\n" +
-                "6. Adjust parameters and regenerate as needed",
+                "Corridor-Based City Setup:\n" +
+                "1. Create 4 empty GameObjects in scene\n" +
+                "2. Position 1 as Convergence Point (center plaza)\n" +
+                "3. Position 3 as Endpoints (corridor destinations)\n" +
+                "4. Assign all transforms to this component\n" +
+                "5. Assign building mesh and material\n" +
+                "6. Click GENERATE CITY\n" +
+                "7. Adjust corridor parameters and regenerate as needed",
                 MessageType.None);
         }
 
@@ -139,27 +153,36 @@ namespace HolyRail.City.Editor
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("Building Attempts:", labelStyle, GUILayout.Width(140));
-            EditorGUILayout.LabelField(manager.BuildingCount.ToString("N0"), valueStyle);
-            EditorGUILayout.EndHorizontal();
-
-            float successRate = manager.BuildingCount > 0 ?
-                (float)manager.ActualBuildingCount / manager.BuildingCount * 100f : 0f;
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("Placement Rate:", labelStyle, GUILayout.Width(140));
-            EditorGUILayout.LabelField($"{successRate:F1}%", valueStyle);
+            EditorGUILayout.LabelField("Corridors:", labelStyle, GUILayout.Width(140));
+            EditorGUILayout.LabelField("3", valueStyle);
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.Space(5);
 
+            // Corridor settings info
             EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("Map Size:", labelStyle, GUILayout.Width(140));
-            EditorGUILayout.LabelField($"{manager.MapSize:F0}m x {manager.MapSize:F0}m", valueStyle);
+            EditorGUILayout.LabelField("Corridor Width:", labelStyle, GUILayout.Width(140));
+            EditorGUILayout.LabelField($"{manager.CorridorWidth:F0}m", valueStyle);
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("Downtown Radius:", labelStyle, GUILayout.Width(140));
-            EditorGUILayout.LabelField($"{manager.DowntownRadius:F0}m", valueStyle);
+            EditorGUILayout.LabelField("Building Spacing:", labelStyle, GUILayout.Width(140));
+            EditorGUILayout.LabelField($"{manager.BuildingSpacing:F0}m", valueStyle);
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("Convergence Radius:", labelStyle, GUILayout.Width(140));
+            EditorGUILayout.LabelField($"{manager.ConvergenceRadius:F0}m (plaza)", valueStyle);
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("Building Rows:", labelStyle, GUILayout.Width(140));
+            EditorGUILayout.LabelField($"{manager.BuildingRows} per side", valueStyle);
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("Plaza Ring:", labelStyle, GUILayout.Width(140));
+            EditorGUILayout.LabelField(manager.EnablePlazaRing ? $"{manager.PlazaRingRows} row(s)" : "Disabled", valueStyle);
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.Space(5);

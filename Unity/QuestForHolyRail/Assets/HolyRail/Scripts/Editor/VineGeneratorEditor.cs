@@ -75,6 +75,18 @@ namespace HolyRail.Vines.Editor
                 EditorGUILayout.PropertyField(serializedObject.FindProperty("<MinBranchSeparation>k__BackingField"));
             }
 
+            // Obstacle Avoidance - shown for all modes
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Obstacle Avoidance", EditorStyles.boldLabel);
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("<EnableObstacleAvoidance>k__BackingField"));
+
+            if (generator.EnableObstacleAvoidance)
+            {
+                EditorGUI.indentLevel++;
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("<ObstacleAvoidanceDistance>k__BackingField"));
+                EditorGUI.indentLevel--;
+            }
+
             // Direction Bias - shown for both modes (Free uses ForwardDirection)
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Direction Bias", EditorStyles.boldLabel);

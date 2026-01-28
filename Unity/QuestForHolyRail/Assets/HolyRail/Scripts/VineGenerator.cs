@@ -76,6 +76,10 @@ namespace HolyRail.Vines
         [Header("Branch Separation")]
         [field: SerializeField, Range(0f, 5f)] public float MinBranchSeparation { get; set; } = 0f;
 
+        [Header("Obstacle Avoidance")]
+        [field: SerializeField] public bool EnableObstacleAvoidance { get; set; } = false;
+        [field: SerializeField, Range(0.1f, 5f)] public float ObstacleAvoidanceDistance { get; set; } = 0.5f;
+
         [Header("Direction Bias")]
         [field: SerializeField] public Vector3 ForwardDirection { get; set; } = Vector3.forward;
         [field: SerializeField, Range(0f, 2f)] public float ForwardBias { get; set; } = 0.5f;
@@ -241,6 +245,24 @@ namespace HolyRail.Vines
                     GenerateVolumeAttractors(random, AttractorCount / 2);
                     break;
             }
+
+            // Filter out attractors that are inside or near obstacles
+            FilterAttractorsNearObstacles();
+        }
+
+        private void FilterAttractorsNearObstacles()
+        {
+            if (!EnableObstacleAvoidance)
+                return;
+
+            int originalCount = _generatedAttractors.Count;
+            _generatedAttractors = _generatedAttractors
+                .Where(a => !Physics.CheckSphere(a.Position, ObstacleAvoidanceDistance))
+                .ToList();
+
+            int removed = originalCount - _generatedAttractors.Count;
+            if (removed > 0)
+                Debug.Log($"VineGenerator: Filtered {removed} attractors near obstacles");
         }
 
         private void GenerateSurfaceAttractors(System.Random random, int count)
@@ -337,6 +359,8 @@ namespace HolyRail.Vines
                 float noiseOffsetUp = splineIdx * 100f + 33f;
                 float noiseOffsetForward = splineIdx * 100f + 67f;
 
+                int splineStartNodeIndex = _generatedNodes.Count;
+
                 for (int i = 0; i < pointCount; i++)
                 {
                     float t = (float)i / (pointCount - 1);
@@ -351,6 +375,20 @@ namespace HolyRail.Vines
                         + forward * (t * splineLength + noiseForward)
                         + up * noiseUp
                         + right * noiseRight;
+
+                    // Obstacle avoidance: push position away from obstacles
+                    if (EnableObstacleAvoidance && i > 0 && Physics.CheckSphere(position, ObstacleAvoidanceDistance))
+                    {
+                        var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
+                        var dir = (position - prevPos).normalized;
+                        float dist = Vector3.Distance(prevPos, position);
+
+                        if (Physics.SphereCast(prevPos, ObstacleAvoidanceDistance * 0.5f, dir, out var hit, dist + ObstacleAvoidanceDistance))
+                        {
+                            // Push position back along travel direction and away along surface normal
+                            position = hit.point - dir * ObstacleAvoidanceDistance + hit.normal * ObstacleAvoidanceDistance;
+                        }
+                    }
 
                     _generatedNodes.Add(new VineNode
                     {
@@ -509,12 +547,63 @@ namespace HolyRail.Vines
                 var attractorArray = new VineAttractor[_generatedAttractors.Count];
                 _attractorBuffer.GetData(attractorArray);
                 _generatedAttractors = new List<VineAttractor>(attractorArray);
+
+                // Filter out nodes that are too close to obstacles
+                FilterNodesNearObstacles();
             }
             finally
             {
                 // Cleanup buffers
                 ReleaseBuffers();
             }
+        }
+
+        private void FilterNodesNearObstacles()
+        {
+            if (!EnableObstacleAvoidance)
+                return;
+
+            // Find nodes too close to obstacles
+            var nodesToRemove = new HashSet<int>();
+            for (int i = 0; i < _generatedNodes.Count; i++)
+            {
+                if (Physics.CheckSphere(_generatedNodes[i].Position, ObstacleAvoidanceDistance))
+                    nodesToRemove.Add(i);
+            }
+
+            if (nodesToRemove.Count == 0)
+                return;
+
+            // Rebuild node list with updated parent indices
+            var newNodes = new List<VineNode>();
+            var oldToNew = new Dictionary<int, int>();
+
+            for (int i = 0; i < _generatedNodes.Count; i++)
+            {
+                if (nodesToRemove.Contains(i))
+                    continue;
+
+                var node = _generatedNodes[i];
+                int newParent = -1;
+                if (node.ParentIndex >= 0 && !nodesToRemove.Contains(node.ParentIndex))
+                {
+                    oldToNew.TryGetValue(node.ParentIndex, out newParent);
+                    if (!oldToNew.ContainsKey(node.ParentIndex))
+                        newParent = -1;
+                }
+
+                oldToNew[i] = newNodes.Count;
+                newNodes.Add(new VineNode
+                {
+                    Position = node.Position,
+                    ParentIndex = newParent,
+                    IsTip = node.IsTip,
+                    LastGrowIteration = node.LastGrowIteration
+                });
+            }
+
+            Debug.Log($"VineGenerator: Filtered {nodesToRemove.Count} nodes near obstacles");
+            _generatedNodes = newNodes;
         }
 
         private void SetBuffersForKernel(int kernel)
