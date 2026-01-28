@@ -33,7 +33,7 @@ namespace HolyRail.Scripts.Editor
                 EditorGUILayout.Space(10);
 
                 // Load analytics data
-                var analytics = DeathWall.LoadAnalytics();
+                var analytics = DeathWall.LoadAnalytics_EditorOnly();
                 int deathCount = analytics.records.Count;
 
                 if (deathCount == 0)
@@ -59,7 +59,7 @@ namespace HolyRail.Scripts.Editor
                         $"Are you sure you want to clear all {deathCount} death records?\n\nThis action cannot be undone!", 
                         "Clear", "Cancel"))
                     {
-                        DeathWall.ClearAnalytics();
+                        DeathWall.ClearAnalytics_EditorOnly();
                     }
                 }
                 GUI.backgroundColor = Color.white;
