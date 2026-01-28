@@ -1,5 +1,6 @@
 using HolyRail.Scripts.LevelGeneration;
 using UnityEngine;
+using UnityEngine.Splines;
 
 [ExecuteAlways]
 public class SplineMeshController : MonoBehaviour
@@ -20,6 +21,22 @@ public class SplineMeshController : MonoBehaviour
     private bool _animating;
 
     private MaterialPropertyBlock _propertyBlock;
+
+    /// <summary>
+    /// Don't call every frame...
+    /// </summary>
+    /// <returns></returns>
+    public float GetSplineLength()
+    {
+        var spline = GetComponent<SplineContainer>();
+
+        if (spline != null)
+        {
+            return spline.CalculateLength();
+        }
+
+        return 0f;
+    }
 
     private MaterialPropertyBlock PropertyBlock
     {

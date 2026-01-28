@@ -88,6 +88,8 @@ namespace HolyRail.Scripts.LevelGeneration
             levelChunk.IsFlipped = spawnBackwards;
             levelChunk.PlayerEnteredFirstTime += OnPlayerEnteredChunk;
 
+            levelChunk.InitializeSplineMeshControllers();
+
             // Align attachment points with previous chunk
             if (_activeChunks.Count > 0)
             {
