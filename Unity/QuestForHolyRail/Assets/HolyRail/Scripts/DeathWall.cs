@@ -85,8 +85,13 @@ namespace HolyRail.Scripts
         private const float CATCHUP_ACCELERATION_BOOST = 2.0f; // Acceleration multiplier during catch-up
         private float _normalAcceleration;
 
+        // Pause state
+        private bool _isPaused;
+        public static DeathWall Instance { get; private set; }
+
         private void Awake()
         {
+            Instance = this;
             CurrentSpeed = StartSpeed;
             _isActivated = false;
             _sessionStartTime = Time.time;
@@ -95,6 +100,36 @@ namespace HolyRail.Scripts
             _normalMaxSpeed = MaxSpeed;
             _normalAcceleration = Acceleration;
             _isCatchingUp = false;
+            _isPaused = false;
+        }
+
+        private void OnDestroy()
+        {
+            if (Instance == this)
+            {
+                Instance = null;
+            }
+        }
+
+        public void Pause()
+        {
+            _isPaused = true;
+        }
+
+        public void Resume()
+        {
+            _isPaused = false;
+        }
+
+        public void ResetToPosition(Vector3 position)
+        {
+            transform.position = new Vector3(transform.position.x, transform.position.y, position.z - 30f);
+            CurrentSpeed = StartSpeed;
+            _isActivated = false;
+            _isCatchingUp = false;
+            MaxSpeed = _normalMaxSpeed;
+            Acceleration = _normalAcceleration;
+            _hasReachedMaxSpeed = false;
         }
 
 #if UNITY_EDITOR
@@ -204,8 +239,8 @@ namespace HolyRail.Scripts
                 }
             }
 
-            // Only move the wall if it has been activated
-            if (_isActivated)
+            // Only move the wall if it has been activated and not paused
+            if (_isActivated && !_isPaused)
             {
                 // Catch-up mechanic: check distance to player
                 if (StarterAssets.ThirdPersonController_RailGrinder.Instance != null)

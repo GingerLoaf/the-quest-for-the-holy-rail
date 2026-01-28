@@ -1,13 +1,32 @@
+using System.Collections;
 using UnityEngine;
 
 public class MusicController : MonoBehaviour
 {
+    public static MusicController Instance { get; private set; }
+
     [field: SerializeField] public AudioSource MusicSource { get; private set; }
     [field: SerializeField] public AudioClip[] Songs { get; private set; }
     [field: SerializeField] [field: Range(0f, 1f)] public float Volume { get; private set; } = 1f;
+    [field: SerializeField] public float FadeDuration { get; private set; } = 1f;
 
     private int[] _shuffledIndices;
     private int _currentIndex;
+    private Coroutine _fadeCoroutine;
+    private bool _isPaused;
+
+    private void Awake()
+    {
+        Instance = this;
+    }
+
+    private void OnDestroy()
+    {
+        if (Instance == this)
+        {
+            Instance = null;
+        }
+    }
 
     private void Start()
     {
@@ -23,7 +42,7 @@ public class MusicController : MonoBehaviour
         if (MusicSource == null || Songs == null || Songs.Length == 0)
             return;
 
-        if (!MusicSource.isPlaying)
+        if (!MusicSource.isPlaying && !_isPaused)
             PlayNextTrack();
     }
 
@@ -58,5 +77,43 @@ public class MusicController : MonoBehaviour
             ShufflePlaylist();
 
         PlayCurrentTrack();
+    }
+
+    public void FadeOut()
+    {
+        if (_fadeCoroutine != null)
+        {
+            StopCoroutine(_fadeCoroutine);
+        }
+        _isPaused = true;
+        _fadeCoroutine = StartCoroutine(FadeCoroutine(Volume, 0f));
+    }
+
+    public void FadeIn()
+    {
+        if (_fadeCoroutine != null)
+        {
+            StopCoroutine(_fadeCoroutine);
+        }
+        _isPaused = false;
+        _fadeCoroutine = StartCoroutine(FadeCoroutine(MusicSource.volume, Volume));
+    }
+
+    private IEnumerator FadeCoroutine(float fromVolume, float toVolume)
+    {
+        if (MusicSource == null)
+            yield break;
+
+        float elapsed = 0f;
+        while (elapsed < FadeDuration)
+        {
+            elapsed += Time.deltaTime;
+            float t = elapsed / FadeDuration;
+            MusicSource.volume = Mathf.Lerp(fromVolume, toVolume, t);
+            yield return null;
+        }
+
+        MusicSource.volume = toVolume;
+        _fadeCoroutine = null;
     }
 }

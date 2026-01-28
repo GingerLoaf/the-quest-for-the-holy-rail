@@ -9,7 +9,25 @@ namespace HolyRail.Scripts
 {
     public class GameSessionManager : MonoBehaviour
     {
-        public static GameSessionManager Instance { get; private set; }
+        public static GameSessionManager Instance 
+        { 
+            get
+            {
+                if (instance == null)
+                {
+                    instance = FindFirstObjectByType<GameSessionManager>();
+                    if (instance == null)
+                    {
+                        var obj = new GameObject("GameSessionManager");
+                        instance = obj.AddComponent<GameSessionManager>();
+                        Debug.Log("Auto-created GameSessionManager");
+                    }
+                }
+                return instance;
+            }
+            private set => instance = value;
+        }
+        private static GameSessionManager instance;
     
         public Action<PlayerUpgrade[]> OnUpgradeListChanged;
     
@@ -35,30 +53,16 @@ namespace HolyRail.Scripts
 
         private int m_money = 0;
 
-        public IReadOnlyList<PlayerUpgrade> Upgrades => m_upgrades;
+        public IReadOnlyList<PlayerUpgrade> Upgrades => new List<PlayerUpgrade>(m_upgradeTiers.Keys);
 
-        public float GetMultiplierFromUpgrades(UpgradeType type)
-        {
-            var multiplier = 1.0f;
-            foreach (var upgrade in m_upgrades)
-            {
-                if (upgrade.Type != type)
-                {
-                    continue;
-                }
-            
-                multiplier += upgrade.Multiplier;
-            }
-
-            return multiplier;
-        }
+        private Dictionary<PlayerUpgrade, int> m_upgradeTiers = new Dictionary<PlayerUpgrade, int>();
     
         private void Awake()
         {
             // If we already have one in static memory, kill this one
-            if (Instance != null)
+            if (Instance != null && Instance != this)
             {
-                enabled = false;
+                Destroy(gameObject);
                 return;
             }
         
@@ -68,22 +72,82 @@ namespace HolyRail.Scripts
             DontDestroyOnLoad(this);
         }
 
-        private readonly List<PlayerUpgrade> m_upgrades = new();
+        public IReadOnlyList<PlayerUpgrade> CurrentShopInventory => _currentShopInventory;
+        private List<PlayerUpgrade> _currentShopInventory = new List<PlayerUpgrade>();
+
+        private void Start()
+        {
+            // Initial inventory generation
+            RegenerateShopInventory();
+        }
+
+        public void RegenerateShopInventory()
+        {
+            _currentShopInventory.Clear();
+            
+            // Load all available upgrades
+            var allUpgrades = Resources.LoadAll<PlayerUpgrade>(string.Empty);
+            if (allUpgrades == null || allUpgrades.Length == 0) 
+            {
+                Debug.LogWarning("[GameSessionManager] No upgrades found in Resources!");
+                return;
+            }
+
+            // Simple shuffle and take 3
+            var shuffled = new List<PlayerUpgrade>(allUpgrades);
+            for (int i = 0; i < shuffled.Count; i++)
+            {
+                var temp = shuffled[i];
+                int randomIndex = UnityEngine.Random.Range(i, shuffled.Count);
+                shuffled[i] = shuffled[randomIndex];
+                shuffled[randomIndex] = temp;
+            }
+
+            // Take up to 3
+            int count = Mathf.Min(shuffled.Count, 3);
+            for(int i=0; i<count; i++)
+            {
+                _currentShopInventory.Add(shuffled[i]);
+            }
+            
+            Debug.Log($"[GameSessionManager] Regenerated Shop Inventory with {_currentShopInventory.Count} items.");
+        }
+        
+        public int GetUpgradeTier(PlayerUpgrade upgrade)
+        {
+            if (upgrade != null && m_upgradeTiers.TryGetValue(upgrade, out int tier))
+            {
+                return tier;
+            }
+            return 0;
+        }
 
         public bool AddUpgrade(PlayerUpgrade upgrade)
         {
             Assert.IsNotNull(upgrade);
 
-            if (m_upgrades.Contains(upgrade))
+            if (m_upgradeTiers.ContainsKey(upgrade))
             {
-                return false;
+                // Already owned, try to increase tier
+                if (m_upgradeTiers[upgrade] < upgrade.MaxTier)
+                {
+                    m_upgradeTiers[upgrade]++;
+                }
+                else
+                {
+                    // Already at max tier
+                    return false;
+                }
             }
-        
-            m_upgrades.Add(upgrade);
+            else
+            {
+                // New purchase (Tier 1)
+                m_upgradeTiers[upgrade] = 1;
+            }
         
             try
             {
-                OnUpgradeListChanged?.Invoke(m_upgrades.ToArray());
+                OnUpgradeListChanged?.Invoke(new List<PlayerUpgrade>(m_upgradeTiers.Keys).ToArray());
             }
             catch(Exception ex)
             {

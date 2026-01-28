@@ -140,11 +140,18 @@ namespace HolyRail.Scripts
             {
                 int previousScore = _currentScore;
                 _currentScore = value;
-                SyncToGameSession();
+
+                // Calculate points added and add to persistent money
+                // This ensures money only goes up with score, and doesn't get overwritten or reset
+                int pointsAdded = _currentScore - previousScore;
+                if (pointsAdded > 0 && GameSessionManager.Instance != null)
+                {
+                    GameSessionManager.Instance.Money += pointsAdded;
+                }
+
                 UpdateUI();
 
                 // Trigger score animation based on points added
-                int pointsAdded = _currentScore - previousScore;
                 if (pointsAdded > 0)
                 {
                     TriggerScoreAnimation(pointsAdded);
@@ -225,16 +232,8 @@ namespace HolyRail.Scripts
                 SetPopupAlpha(0f);
             }
 
-            // Sync with GameSessionManager on start
-            if (GameSessionManager.Instance != null)
-            {
-                _currentScore = GameSessionManager.Instance.Money;
-                UpdateUI();
-            }
-            else
-            {
-                UpdateUI();
-            }
+            // Initialize UI with starting score (0 for new run)
+            UpdateUI();
         }
 
         private void Update()
@@ -291,14 +290,6 @@ namespace HolyRail.Scripts
             if (_inNearMissZone && distanceToWall <= 0f)
             {
                 _inNearMissZone = false;
-            }
-        }
-
-        private void SyncToGameSession()
-        {
-            if (GameSessionManager.Instance != null)
-            {
-                GameSessionManager.Instance.Money = _currentScore;
             }
         }
 
@@ -540,7 +531,14 @@ namespace HolyRail.Scripts
             _grindingAccumulator = 0f;
             _isGrinding = false;
             _inNearMissZone = false;
-            SyncToGameSession();
+            
+            // Reset GameSessionManager money (player loses money on death)
+            if (GameSessionManager.Instance != null)
+            {
+                GameSessionManager.Instance.Money = 0;
+                GameSessionManager.Instance.RegenerateShopInventory();
+            }
+            
             UpdateUI();
 
             // Reset animations

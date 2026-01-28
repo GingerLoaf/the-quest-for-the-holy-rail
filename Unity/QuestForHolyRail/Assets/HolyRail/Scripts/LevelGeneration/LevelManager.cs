@@ -6,6 +6,7 @@ namespace HolyRail.Scripts.LevelGeneration
 {
     public class LevelManager : MonoBehaviour
     {
+        public static LevelManager Instance { get; private set; }
         [FormerlySerializedAs("ChunkPrefabs")]
         [Header("Level Chunks")]
         [Tooltip("Optional starter chunks that always spawn first in order")]
@@ -28,6 +29,20 @@ namespace HolyRail.Scripts.LevelGeneration
         private List<LevelChunk> _activeChunks = new();
         private int _nextChunkIndex;
         private float _nextSpawnZ;
+        private bool _isPaused;
+
+        private void Awake()
+        {
+            Instance = this;
+        }
+
+        private void OnDestroy()
+        {
+            if (Instance == this)
+            {
+                Instance = null;
+            }
+        }
 
         private void Start()
         {
@@ -116,6 +131,9 @@ namespace HolyRail.Scripts.LevelGeneration
 
         private void OnPlayerEnteredChunk(LevelChunk enteredChunk)
         {
+            if (_isPaused)
+                return;
+
             // Calculate how many chunks we should have ahead
             int targetLastChunkIndex = enteredChunk.ChunkIndex + chunksToKeepAhead;
 
@@ -143,6 +161,40 @@ namespace HolyRail.Scripts.LevelGeneration
                     Destroy(chunk.gameObject);
                     _activeChunks.RemoveAt(i);
                 }
+            }
+        }
+
+        public void Pause()
+        {
+            _isPaused = true;
+        }
+
+        public void Resume()
+        {
+            _isPaused = false;
+        }
+
+        public void ResetFromPosition(Vector3 playerPosition)
+        {
+            // Destroy all existing chunks
+            foreach (var chunk in _activeChunks)
+            {
+                if (chunk != null)
+                {
+                    chunk.PlayerEnteredFirstTime -= OnPlayerEnteredChunk;
+                    Destroy(chunk.gameObject);
+                }
+            }
+            _activeChunks.Clear();
+
+            // Reset spawn state from player's current position
+            _nextChunkIndex = 0;
+            _nextSpawnZ = playerPosition.z;
+
+            // Spawn initial chunks ahead of player
+            for (int i = 0; i <= chunksToKeepAhead; i++)
+            {
+                SpawnNextChunk();
             }
         }
     }

@@ -4,7 +4,10 @@ namespace HolyRail.Scripts
 {
     public enum UpgradeType
     {
-        SpeedUp
+        ParryAccuracy,
+        ParryTimeWindow,
+        SprayPaintRadius,
+        SprayPaintCapacity
     }
 
 // Represents an upgrade that the player can purchase. These upgrades will tune the way the game runs
@@ -16,6 +19,7 @@ namespace HolyRail.Scripts
         public int Cost = 100;
         public float Multiplier = 1.0f;
         public UpgradeType Type;
+        public int MaxTier = 3;
         public bool AllowInShop = true;
     }
 }
