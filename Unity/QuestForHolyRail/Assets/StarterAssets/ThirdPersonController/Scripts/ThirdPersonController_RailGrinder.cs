@@ -4,6 +4,7 @@
  using Unity.Splines.Examples;
  using Unity.Mathematics;
  using HolyRail.Scripts;
+ using HolyRail.Scripts.Enemies;
  using Random = UnityEngine.Random;
 #if ENABLE_INPUT_SYSTEM 
 using UnityEngine.InputSystem;
@@ -377,6 +378,7 @@ namespace StarterAssets
             {
                 _animator.SetTrigger(_animIDParry);
                 _input.parry = false;
+                TryDeflectBullet();
             }
         }
 
@@ -1303,6 +1305,18 @@ namespace StarterAssets
             GrindSpeed += amount;
 
             Debug.Log($"Speed increased! New speeds - Move: {MoveSpeed}, Sprint: {SprintSpeed}, Grind: {GrindSpeed}");
+        }
+
+        private void TryDeflectBullet()
+        {
+            var spawner = EnemySpawner.Instance;
+            if (spawner == null) return;
+
+            var bullet = spawner.GetNearestBulletInParryRange();
+            if (bullet != null)
+            {
+                bullet.Deflect();
+            }
         }
     }
 }
