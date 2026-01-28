@@ -438,14 +438,24 @@ namespace HolyRail.City
         {
             // Find all GameObjects with this name and destroy them
             // This handles orphaned containers from domain reloads/script recompilation
+            // Note: We collect objects first and rename them to avoid infinite loop,
+            // because Destroy() is deferred in play mode and GameObject.Find() would
+            // keep finding the same undestroyed object.
+            var toDestroy = new List<GameObject>();
             var existing = GameObject.Find(containerName);
             while (existing != null)
             {
-                if (Application.isPlaying)
-                    Destroy(existing);
-                else
-                    DestroyImmediate(existing);
+                toDestroy.Add(existing);
+                existing.name = existing.name + "_MarkedForDestroy";
                 existing = GameObject.Find(containerName);
+            }
+
+            foreach (var obj in toDestroy)
+            {
+                if (Application.isPlaying)
+                    Destroy(obj);
+                else
+                    DestroyImmediate(obj);
             }
         }
 
