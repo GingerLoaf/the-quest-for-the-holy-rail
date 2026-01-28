@@ -8,14 +8,13 @@ namespace HolyRail.City.Editor
     {
         private const string MaterialPath = "Assets/HolyRail/Materials/CityBuildings.mat";
         private const string ShaderPath = "Assets/HolyRail/Shaders/BuildingInstanced.shader";
-        private const string ComputePath = "Assets/HolyRail/Shaders/CityGenerator.compute";
         private const string RampMaterialPath = "Assets/HolyRail/Materials/RampMaterial.mat";
         private const string RampShaderPath = "Assets/HolyRail/Shaders/RampInstanced.shader";
 
         [MenuItem("HolyRail/Setup City Generator")]
         public static void SetupCityGenerator()
         {
-            // 1. Load or create material
+            // 1. Load or create building material
             var material = AssetDatabase.LoadAssetAtPath<Material>(MaterialPath);
             if (material == null)
             {
@@ -69,15 +68,7 @@ namespace HolyRail.City.Editor
                 Debug.Log($"CitySetup: Created ramp material at {RampMaterialPath}");
             }
 
-            // 3. Load compute shader
-            var computeShader = AssetDatabase.LoadAssetAtPath<ComputeShader>(ComputePath);
-            if (computeShader == null)
-            {
-                Debug.LogError($"CitySetup: Could not find CityGenerator compute shader at {ComputePath}");
-                return;
-            }
-
-            // 4. Get default cube mesh
+            // 3. Get default cube mesh
             var cubeMesh = GetDefaultCubeMesh();
             if (cubeMesh == null)
             {
@@ -85,18 +76,29 @@ namespace HolyRail.City.Editor
                 return;
             }
 
-            // 5. Create CityGenerator GameObject
+            // 4. Create CityGenerator GameObject with corridor layout children
             var cityGO = new GameObject("CityGenerator");
             var cityManager = cityGO.AddComponent<CityManager>();
 
-            // Use SerializedObject to set the private setter properties
-            var serializedObject = new SerializedObject(cityManager);
+            // 5. Create corridor layout GameObjects as children
+            var convergenceGO = new GameObject("ConvergencePoint");
+            convergenceGO.transform.SetParent(cityGO.transform);
+            convergenceGO.transform.localPosition = Vector3.zero;
 
-            var computeShaderProp = serializedObject.FindProperty("<CityGeneratorShader>k__BackingField");
-            if (computeShaderProp != null)
-            {
-                computeShaderProp.objectReferenceValue = computeShader;
-            }
+            var endpointA = new GameObject("EndpointA");
+            endpointA.transform.SetParent(cityGO.transform);
+            endpointA.transform.localPosition = new Vector3(0, 0, 300); // North
+
+            var endpointB = new GameObject("EndpointB");
+            endpointB.transform.SetParent(cityGO.transform);
+            endpointB.transform.localPosition = new Vector3(-260, 0, -150); // Southwest
+
+            var endpointC = new GameObject("EndpointC");
+            endpointC.transform.SetParent(cityGO.transform);
+            endpointC.transform.localPosition = new Vector3(260, 0, -150); // Southeast
+
+            // 6. Use SerializedObject to set the private setter properties
+            var serializedObject = new SerializedObject(cityManager);
 
             var meshProp = serializedObject.FindProperty("<BuildingMesh>k__BackingField");
             if (meshProp != null)
@@ -108,6 +110,31 @@ namespace HolyRail.City.Editor
             if (materialProp != null)
             {
                 materialProp.objectReferenceValue = material;
+            }
+
+            // Set corridor layout transforms
+            var convergenceProp = serializedObject.FindProperty("<ConvergencePoint>k__BackingField");
+            if (convergenceProp != null)
+            {
+                convergenceProp.objectReferenceValue = convergenceGO.transform;
+            }
+
+            var endpointAProp = serializedObject.FindProperty("<EndpointA>k__BackingField");
+            if (endpointAProp != null)
+            {
+                endpointAProp.objectReferenceValue = endpointA.transform;
+            }
+
+            var endpointBProp = serializedObject.FindProperty("<EndpointB>k__BackingField");
+            if (endpointBProp != null)
+            {
+                endpointBProp.objectReferenceValue = endpointB.transform;
+            }
+
+            var endpointCProp = serializedObject.FindProperty("<EndpointC>k__BackingField");
+            if (endpointCProp != null)
+            {
+                endpointCProp.objectReferenceValue = endpointC.transform;
             }
 
             // Set ramp properties
@@ -137,7 +164,7 @@ namespace HolyRail.City.Editor
 
             serializedObject.ApplyModifiedPropertiesWithoutUndo();
 
-            // 6. Add BuildingColliderPool component
+            // 7. Add BuildingColliderPool component
             var colliderPool = cityGO.AddComponent<BuildingColliderPool>();
             var poolSerializedObject = new SerializedObject(colliderPool);
 
@@ -182,25 +209,28 @@ namespace HolyRail.City.Editor
 
             poolSerializedObject.ApplyModifiedPropertiesWithoutUndo();
 
-            // 7. Register undo and select
+            // 8. Register undo and select
             Undo.RegisterCreatedObjectUndo(cityGO, "Create City Generator");
             Selection.activeGameObject = cityGO;
 
-            // 8. Log success
+            // 9. Log success
             var trackingInfo = trackingTarget != null
                 ? $"  - Tracking Target: {trackingTarget.name}\n"
                 : "  - Tracking Target: Not found (assign manually)\n";
 
-            Debug.Log($"CitySetup: Created CityGenerator GameObject\n" +
-                      $"  - Compute Shader: {computeShader.name}\n" +
+            Debug.Log($"CitySetup: Created CityGenerator with corridor layout\n" +
                       $"  - Building Mesh: {cubeMesh.name}\n" +
                       $"  - Building Material: {material.name}\n" +
+                      $"  - Convergence Point: Created at origin\n" +
+                      $"  - Endpoint A: Created at (0, 0, 300)\n" +
+                      $"  - Endpoint B: Created at (-260, 0, -150)\n" +
+                      $"  - Endpoint C: Created at (260, 0, -150)\n" +
                       $"  - Ramps: Enabled\n" +
                       $"  - Ramp Mesh: {cubeMesh.name}\n" +
                       $"  - Ramp Material: {rampMaterial.name}\n" +
                       $"  - BuildingColliderPool: Added\n" +
                       trackingInfo +
-                      $"\nEnter Play mode to generate the city, or use the context menu 'Generate City'.");
+                      $"\nMove the endpoint GameObjects to define corridor destinations, then click 'GENERATE CITY' in the inspector.");
         }
 
         private static Mesh GetDefaultCubeMesh()

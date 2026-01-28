@@ -37,7 +37,7 @@ Shader "HolyRail/BuildingInstanced"
                 float3 Position;
                 float3 Scale;
                 float4 Rotation;
-                int ZoneType;
+                int NeedsCollider;
                 int StyleIndex;
             };
 
@@ -130,7 +130,7 @@ Shader "HolyRail/BuildingInstanced"
 
                 #ifdef UNITY_PROCEDURAL_INSTANCING_ENABLED
                 BuildingData building = _BuildingBuffer[unity_InstanceID];
-                output.zoneType = building.ZoneType;
+                output.zoneType = 0; // Always use downtown style
                 output.styleIndex = building.StyleIndex;
                 output.scale = building.Scale;
                 #else
@@ -235,7 +235,7 @@ Shader "HolyRail/BuildingInstanced"
                 float3 Position;
                 float3 Scale;
                 float4 Rotation;
-                int ZoneType;
+                int NeedsCollider;
                 int StyleIndex;
             };
 
@@ -359,7 +359,7 @@ Shader "HolyRail/BuildingInstanced"
                 float3 Position;
                 float3 Scale;
                 float4 Rotation;
-                int ZoneType;
+                int NeedsCollider;
                 int StyleIndex;
             };
 

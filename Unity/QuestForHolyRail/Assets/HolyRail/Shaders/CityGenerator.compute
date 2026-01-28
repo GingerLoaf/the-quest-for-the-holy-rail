@@ -8,9 +8,9 @@ struct BuildingData
 {
     float3 Position;
     float3 Scale;
-    float4 Rotation;  // Quaternion
-    int ZoneType;     // 0 = Downtown, 1 = Industrial
-    int StyleIndex;   // Variation index
+    float4 Rotation;      // Quaternion
+    int NeedsCollider;    // 0 = Visual only, 1 = Needs collider
+    int StyleIndex;       // Variation index
 };
 
 // Output buffer
@@ -146,7 +146,7 @@ void GenerateCity(uint3 id : SV_DispatchThreadID)
     building.Position = float3(worldX, _CityCenter.y + height * 0.5, worldZ);
     building.Scale = float3(widthX, height, widthZ);
     building.Rotation = rotation;
-    building.ZoneType = zoneType;
+    building.NeedsCollider = 1; // All GPU-generated buildings need colliders
     building.StyleIndex = styleIndex;
 
     _BuildingBuffer[outputIndex] = building;

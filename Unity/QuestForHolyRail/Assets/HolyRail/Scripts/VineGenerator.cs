@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.Splines;
 using Unity.Mathematics;
 using StarterAssets;
+using HolyRail.City;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -14,7 +15,9 @@ namespace HolyRail.Vines
     {
         Surface,
         Volume,
-        Mixed
+        Mixed,
+        Free,  // Independent flowing splines without branching
+        Path   // Follows CityManager corridors
     }
 
     [ExecuteInEditMode]
@@ -42,16 +45,19 @@ namespace HolyRail.Vines
             public int Active;
         }
 
+        [Header("Editor")]
+        [field: SerializeField] public bool AutoRegenerate { get; set; } = false;
+
         [Header("Algorithm Settings")]
         [field: SerializeField] public ComputeShader VineComputeShader { get; private set; }
         [field: SerializeField] public int Seed { get; set; } = 12345;
         [field: SerializeField, Range(1, 500)] public int MaxIterations { get; set; } = 100;
-        [field: SerializeField, Range(0.01f, 2f)] public float StepSize { get; set; } = 0.3f;
-        [field: SerializeField, Range(0.1f, 20f)] public float AttractionRadius { get; set; } = 5f;
+        [field: SerializeField] public float StepSize { get; set; } = 0.3f;
+        [field: SerializeField] public float AttractionRadius { get; set; } = 5f;
         [field: SerializeField, Range(0.01f, 1f)] public float KillRadius { get; set; } = 0.2f;
 
         [Header("Attractor Generation")]
-        [field: SerializeField, Range(100, 50000)] public int AttractorCount { get; set; } = 5000;
+        [field: SerializeField] public int AttractorCount { get; set; } = 5000;
         [field: SerializeField] public LayerMask AttractorSurfaceLayers { get; set; } = ~0;
         [field: SerializeField] public Bounds AttractorBounds { get; set; } = new Bounds(Vector3.zero, Vector3.one * 10f);
         [field: SerializeField, Range(0f, 2f)] public float AttractorSurfaceOffset { get; set; } = 0.1f;
@@ -72,9 +78,29 @@ namespace HolyRail.Vines
         [Header("Branch Separation")]
         [field: SerializeField, Range(0f, 5f)] public float MinBranchSeparation { get; set; } = 0f;
 
+        [Header("Obstacle Avoidance")]
+        [field: SerializeField] public bool EnableObstacleAvoidance { get; set; } = false;
+        [field: SerializeField, Range(0.1f, 5f)] public float ObstacleAvoidanceDistance { get; set; } = 0.5f;
+
         [Header("Direction Bias")]
         [field: SerializeField] public Vector3 ForwardDirection { get; set; } = Vector3.forward;
         [field: SerializeField, Range(0f, 2f)] public float ForwardBias { get; set; } = 0.5f;
+
+        [Header("Free Mode Settings")]
+        [field: SerializeField] public int FreeSplineCount { get; set; } = 10;
+        [field: SerializeField] public Vector2 FreeLengthRange { get; set; } = new Vector2(20f, 50f);
+        [field: SerializeField] public int FreePointsPerSpline { get; set; } = 20;
+        [field: SerializeField] public Vector3 FreeNoiseAmplitude { get; set; } = new Vector3(2f, 2f, 0f);  // Right, Up, Forward
+        [field: SerializeField] public Vector3 FreeNoiseFrequency { get; set; } = new Vector3(0.5f, 0.3f, 0f);  // Right, Up, Forward
+
+        [Header("Path Mode Settings")]
+        [field: SerializeField] public CityManager CityManager { get; set; }
+        [field: SerializeField] public int VinesPerCorridor { get; set; } = 3;
+        [field: SerializeField] public Vector2 PathLengthRange { get; set; } = new Vector2(50f, 200f);
+        [field: SerializeField] public float PathCorridorWidth { get; set; } = 20f;
+        [field: SerializeField] public float PathStartOffset { get; set; } = 10f;
+        [field: SerializeField] public bool StartBelowGround { get; set; } = true;
+        [field: SerializeField] public float GroundStartDepth { get; set; } = 5f;
 
         [Header("Visualization")]
         [field: SerializeField] public bool ShowAttractors { get; set; } = true;
@@ -156,19 +182,34 @@ namespace HolyRail.Vines
 
         public void Regenerate()
         {
-            if (VineComputeShader == null)
+            if (AttractorGenerationMode != AttractorMode.Free && AttractorGenerationMode != AttractorMode.Path && VineComputeShader == null)
             {
                 Debug.LogError("VineGenerator: ComputeShader is not assigned!");
                 return;
             }
 
-            if (RootPoints.Count == 0)
+            if (AttractorGenerationMode != AttractorMode.Free && AttractorGenerationMode != AttractorMode.Path && RootPoints.Count == 0)
             {
                 Debug.LogError("VineGenerator: No root points assigned!");
                 return;
             }
 
             Clear();
+
+            // Free mode bypasses attractors and GPU algorithm
+            if (AttractorGenerationMode == AttractorMode.Free)
+            {
+                GenerateFreeSplines();
+                Debug.Log($"VineGenerator (Free): Generated {_generatedNodes.Count} nodes across {FreeSplineCount} splines");
+                return;
+            }
+
+            // Path mode follows CityManager corridors
+            if (AttractorGenerationMode == AttractorMode.Path)
+            {
+                GeneratePathSplines();
+                return;
+            }
 
             // Step 1: Generate attractors via raycasts
             GenerateAttractorsFromScene();
@@ -222,6 +263,24 @@ namespace HolyRail.Vines
                     GenerateVolumeAttractors(random, AttractorCount / 2);
                     break;
             }
+
+            // Filter out attractors that are inside or near obstacles
+            FilterAttractorsNearObstacles();
+        }
+
+        private void FilterAttractorsNearObstacles()
+        {
+            if (!EnableObstacleAvoidance)
+                return;
+
+            int originalCount = _generatedAttractors.Count;
+            _generatedAttractors = _generatedAttractors
+                .Where(a => !Physics.CheckSphere(a.Position, ObstacleAvoidanceDistance))
+                .ToList();
+
+            int removed = originalCount - _generatedAttractors.Count;
+            if (removed > 0)
+                Debug.Log($"VineGenerator: Filtered {removed} attractors near obstacles");
         }
 
         private void GenerateSurfaceAttractors(System.Random random, int count)
@@ -262,6 +321,217 @@ namespace HolyRail.Vines
                 {
                     Position = point,
                     Active = 1
+                });
+            }
+        }
+
+        private void GenerateFreeSplines()
+        {
+            var random = new System.Random(Seed);
+            _generatedNodes.Clear();
+            _generatedAttractors.Clear();  // Free mode doesn't use attractors
+
+            var forward = ForwardDirection.normalized;
+            // Handle case where forward is parallel to up
+            var right = Mathf.Abs(Vector3.Dot(forward, Vector3.up)) > 0.99f
+                ? Vector3.Cross(Vector3.forward, forward).normalized
+                : Vector3.Cross(Vector3.up, forward).normalized;
+            var up = Vector3.Cross(forward, right);
+
+            // Project bounds onto local axes to get extents
+            var boundsCenter = AttractorBounds.center;
+            var boundsSize = AttractorBounds.size;
+
+            // Calculate extent along each axis using absolute dot products
+            float forwardExtent = (Mathf.Abs(forward.x) * boundsSize.x +
+                                   Mathf.Abs(forward.y) * boundsSize.y +
+                                   Mathf.Abs(forward.z) * boundsSize.z) * 0.5f;
+            float rightExtent = (Mathf.Abs(right.x) * boundsSize.x +
+                                 Mathf.Abs(right.y) * boundsSize.y +
+                                 Mathf.Abs(right.z) * boundsSize.z) * 0.5f;
+            float upExtent = (Mathf.Abs(up.x) * boundsSize.x +
+                              Mathf.Abs(up.y) * boundsSize.y +
+                              Mathf.Abs(up.z) * boundsSize.z) * 0.5f;
+
+            for (int splineIdx = 0; splineIdx < FreeSplineCount; splineIdx++)
+            {
+                // Random length for this spline
+                float splineLength = Mathf.Lerp(FreeLengthRange.x, FreeLengthRange.y, (float)random.NextDouble());
+
+                // Random starting position within bounds
+                // Constrain forward position so spline fits: start can be anywhere from back to (front - length)
+                float maxForwardStart = forwardExtent - splineLength;
+                float forwardStart = Mathf.Lerp(-forwardExtent, maxForwardStart, (float)random.NextDouble());
+
+                // Random position on perpendicular plane (full bounds extent)
+                float rightPos = Mathf.Lerp(-rightExtent, rightExtent, (float)random.NextDouble());
+                float upPos = Mathf.Lerp(-upExtent, upExtent, (float)random.NextDouble());
+
+                var startPos = boundsCenter + forward * forwardStart + right * rightPos + up * upPos;
+
+                // Generate the spline path
+                int pointCount = FreePointsPerSpline;
+
+                // Noise offset unique to this spline for variation (different seed per axis)
+                float noiseOffsetRight = splineIdx * 100f;
+                float noiseOffsetUp = splineIdx * 100f + 33f;
+                float noiseOffsetForward = splineIdx * 100f + 67f;
+
+                int splineStartNodeIndex = _generatedNodes.Count;
+
+                for (int i = 0; i < pointCount; i++)
+                {
+                    float t = (float)i / (pointCount - 1);
+
+                    // Sample Perlin noise for each axis with independent frequency
+                    // Noise returns [0,1], remap to [-1,1] then multiply by amplitude
+                    float noiseRight = (Mathf.PerlinNoise(t * FreeNoiseFrequency.x + noiseOffsetRight, 0f) * 2f - 1f) * FreeNoiseAmplitude.x;
+                    float noiseUp = (Mathf.PerlinNoise(t * FreeNoiseFrequency.y + noiseOffsetUp, 100f) * 2f - 1f) * FreeNoiseAmplitude.y;
+                    float noiseForward = (Mathf.PerlinNoise(t * FreeNoiseFrequency.z + noiseOffsetForward, 200f) * 2f - 1f) * FreeNoiseAmplitude.z;
+
+                    var position = startPos
+                        + forward * (t * splineLength + noiseForward)
+                        + up * noiseUp
+                        + right * noiseRight;
+
+                    // Obstacle avoidance: push position away from obstacles
+                    if (EnableObstacleAvoidance && i > 0 && Physics.CheckSphere(position, ObstacleAvoidanceDistance))
+                    {
+                        var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
+                        var dir = (position - prevPos).normalized;
+                        float dist = Vector3.Distance(prevPos, position);
+
+                        if (Physics.SphereCast(prevPos, ObstacleAvoidanceDistance * 0.5f, dir, out var hit, dist + ObstacleAvoidanceDistance))
+                        {
+                            // Push position back along travel direction and away along surface normal
+                            position = hit.point - dir * ObstacleAvoidanceDistance + hit.normal * ObstacleAvoidanceDistance;
+                        }
+                    }
+
+                    _generatedNodes.Add(new VineNode
+                    {
+                        Position = position,
+                        ParentIndex = (i == 0) ? -1 : _generatedNodes.Count - 1,
+                        IsTip = (i == pointCount - 1) ? 1 : 0,
+                        LastGrowIteration = 0
+                    });
+                }
+            }
+        }
+
+        private void GeneratePathSplines()
+        {
+            if (CityManager == null)
+            {
+                Debug.LogError("VineGenerator: CityManager not assigned for Path mode!");
+                return;
+            }
+
+            if (!CityManager.HasValidCorridorSetup)
+            {
+                Debug.LogError("VineGenerator: CityManager does not have valid corridor setup!");
+                return;
+            }
+
+            var random = new System.Random(Seed);
+            _generatedNodes.Clear();
+            _generatedAttractors.Clear();
+
+            var convergence = CityManager.ConvergencePoint.position;
+            var endpoints = new[]
+            {
+                CityManager.EndpointA.position,
+                CityManager.EndpointB.position,
+                CityManager.EndpointC.position
+            };
+
+            for (int corridorIdx = 0; corridorIdx < 3; corridorIdx++)
+            {
+                var endpoint = endpoints[corridorIdx];
+                var corridorDir = (endpoint - convergence).normalized;
+                var corridorLength = Vector3.Distance(convergence, endpoint);
+
+                // Perpendicular direction for lateral distribution
+                var right = Vector3.Cross(Vector3.up, corridorDir).normalized;
+
+                for (int vineIdx = 0; vineIdx < VinesPerCorridor; vineIdx++)
+                {
+                    // Distribute vines across corridor width
+                    float lateralT = VinesPerCorridor == 1 ? 0.5f : (float)vineIdx / (VinesPerCorridor - 1);
+                    float lateralOffset = Mathf.Lerp(-PathCorridorWidth / 2, PathCorridorWidth / 2, lateralT);
+
+                    // Random length for this vine (clamped to available corridor length)
+                    float maxAvailableLength = corridorLength - PathStartOffset;
+                    float vineLength = Mathf.Lerp(PathLengthRange.x, PathLengthRange.y, (float)random.NextDouble());
+                    vineLength = Mathf.Min(vineLength, maxAvailableLength);
+
+                    // Generate path points
+                    GeneratePathVine(
+                        convergence + corridorDir * PathStartOffset + right * lateralOffset,
+                        corridorDir,
+                        vineLength,
+                        right,
+                        random,
+                        corridorIdx * 100 + vineIdx
+                    );
+                }
+            }
+
+            Debug.Log($"VineGenerator (Path): Generated {_generatedNodes.Count} nodes across {VinesPerCorridor * 3} vines");
+        }
+
+        private void GeneratePathVine(Vector3 start, Vector3 direction, float length, Vector3 right, System.Random random, int noiseOffset)
+        {
+            int pointCount = FreePointsPerSpline;
+
+            // If starting below ground, offset the start position
+            if (StartBelowGround)
+            {
+                start.y = -GroundStartDepth;
+            }
+
+            for (int i = 0; i < pointCount; i++)
+            {
+                float t = (float)i / (pointCount - 1);
+
+                // Sample noise for lateral and vertical movement
+                float noiseRight = (Mathf.PerlinNoise(t * FreeNoiseFrequency.x + noiseOffset, 0f) * 2f - 1f) * FreeNoiseAmplitude.x;
+                float noiseUp = (Mathf.PerlinNoise(t * FreeNoiseFrequency.y + noiseOffset + 33f, 100f) * 2f - 1f) * FreeNoiseAmplitude.y;
+
+                // Clamp lateral noise to stay within corridor bounds
+                float maxLateralOffset = PathCorridorWidth / 2;
+                noiseRight = Mathf.Clamp(noiseRight, -maxLateralOffset, maxLateralOffset);
+
+                var position = start
+                    + direction * (t * length)
+                    + right * noiseRight
+                    + Vector3.up * noiseUp;  // Use world up for vertical noise
+
+                // Clamp to stay above ground (y >= 0)
+                position.y = Mathf.Max(position.y, 0f);
+
+                // Apply obstacle avoidance if enabled
+                if (EnableObstacleAvoidance && i > 0 && Physics.CheckSphere(position, ObstacleAvoidanceDistance))
+                {
+                    var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
+                    var dir = (position - prevPos).normalized;
+                    float dist = Vector3.Distance(prevPos, position);
+
+                    if (Physics.SphereCast(prevPos, ObstacleAvoidanceDistance * 0.5f, dir, out var hit, dist + ObstacleAvoidanceDistance))
+                    {
+                        position = hit.point - dir * ObstacleAvoidanceDistance + hit.normal * ObstacleAvoidanceDistance;
+                    }
+                }
+
+                // Final ground clamp after obstacle avoidance
+                position.y = Mathf.Max(position.y, 0f);
+
+                _generatedNodes.Add(new VineNode
+                {
+                    Position = position,
+                    ParentIndex = (i == 0) ? -1 : _generatedNodes.Count - 1,
+                    IsTip = (i == pointCount - 1) ? 1 : 0,
+                    LastGrowIteration = 0
                 });
             }
         }
@@ -412,12 +682,63 @@ namespace HolyRail.Vines
                 var attractorArray = new VineAttractor[_generatedAttractors.Count];
                 _attractorBuffer.GetData(attractorArray);
                 _generatedAttractors = new List<VineAttractor>(attractorArray);
+
+                // Filter out nodes that are too close to obstacles
+                FilterNodesNearObstacles();
             }
             finally
             {
                 // Cleanup buffers
                 ReleaseBuffers();
             }
+        }
+
+        private void FilterNodesNearObstacles()
+        {
+            if (!EnableObstacleAvoidance)
+                return;
+
+            // Find nodes too close to obstacles
+            var nodesToRemove = new HashSet<int>();
+            for (int i = 0; i < _generatedNodes.Count; i++)
+            {
+                if (Physics.CheckSphere(_generatedNodes[i].Position, ObstacleAvoidanceDistance))
+                    nodesToRemove.Add(i);
+            }
+
+            if (nodesToRemove.Count == 0)
+                return;
+
+            // Rebuild node list with updated parent indices
+            var newNodes = new List<VineNode>();
+            var oldToNew = new Dictionary<int, int>();
+
+            for (int i = 0; i < _generatedNodes.Count; i++)
+            {
+                if (nodesToRemove.Contains(i))
+                    continue;
+
+                var node = _generatedNodes[i];
+                int newParent = -1;
+                if (node.ParentIndex >= 0 && !nodesToRemove.Contains(node.ParentIndex))
+                {
+                    oldToNew.TryGetValue(node.ParentIndex, out newParent);
+                    if (!oldToNew.ContainsKey(node.ParentIndex))
+                        newParent = -1;
+                }
+
+                oldToNew[i] = newNodes.Count;
+                newNodes.Add(new VineNode
+                {
+                    Position = node.Position,
+                    ParentIndex = newParent,
+                    IsTip = node.IsTip,
+                    LastGrowIteration = node.LastGrowIteration
+                });
+            }
+
+            Debug.Log($"VineGenerator: Filtered {nodesToRemove.Count} nodes near obstacles");
+            _generatedNodes = newNodes;
         }
 
         private void SetBuffersForKernel(int kernel)
@@ -452,7 +773,7 @@ namespace HolyRail.Vines
 
         public List<SplineContainer> ConvertToSplines()
         {
-            Debug.Log($"[VineSpline] ConvertToSplines called (segment-based). Application.isPlaying: {Application.isPlaying}");
+            Debug.Log($"[VineSpline] ConvertToSplines called (continuous path-based). Application.isPlaying: {Application.isPlaying}");
 
             if (_generatedNodes.Count == 0)
             {
@@ -481,40 +802,37 @@ namespace HolyRail.Vines
                 }
             }
 
-            // Identify segment start points:
-            // - Root nodes (parentIndex == -1)
-            // - Branch points (nodes with 2+ children)
-            var segmentStartNodes = new HashSet<int>();
-            var branchPoints = new HashSet<int>();
-
+            // Find all leaf nodes (nodes with no children)
+            var leafNodes = new List<int>();
             for (int i = 0; i < _generatedNodes.Count; i++)
             {
-                // Root nodes are segment starts
-                if (_generatedNodes[i].ParentIndex == -1)
+                if (childLookup[i].Count == 0)
                 {
-                    segmentStartNodes.Add(i);
-                }
-
-                // Branch points (2+ children) are also segment starts for their children
-                if (childLookup[i].Count >= 2)
-                {
-                    branchPoints.Add(i);
-                    // Each child of a branch point starts a new segment
-                    foreach (int child in childLookup[i])
-                    {
-                        segmentStartNodes.Add(child);
-                    }
+                    leafNodes.Add(i);
                 }
             }
 
-            // Log single root mode
-            int rootCount = segmentStartNodes.Count(n => _generatedNodes[n].ParentIndex == -1);
+            // Count roots and branch points for logging
+            int rootCount = 0;
+            var branchPoints = new HashSet<int>();
+            for (int i = 0; i < _generatedNodes.Count; i++)
+            {
+                if (_generatedNodes[i].ParentIndex == -1)
+                {
+                    rootCount++;
+                }
+                if (childLookup[i].Count >= 2)
+                {
+                    branchPoints.Add(i);
+                }
+            }
+
             if (rootCount == 1)
             {
                 Debug.Log("VineGenerator: Single root mode - 1 root point detected");
             }
 
-            Debug.Log($"VineGenerator: Found {segmentStartNodes.Count} segment start points, {branchPoints.Count} branch points, {rootCount} root(s)");
+            Debug.Log($"VineGenerator: Found {leafNodes.Count} leaf nodes, {branchPoints.Count} branch points, {rootCount} root(s)");
 
             // Optional: Filter close branches if MinBranchSeparation > 0
             if (MinBranchSeparation > 0f)
@@ -522,121 +840,84 @@ namespace HolyRail.Vines
                 FilterCloseBranches(branchPoints, childLookup);
             }
 
-            // Trace segments from each start point
-            // Each segment goes from a start point until it hits a leaf or another branch point
-            var segments = new List<List<int>>();
-            var segmentEndIsBranchPoint = new Dictionary<int, int>(); // segment index -> branch point node index
+            // Trace continuous paths from each leaf back to its root
+            // Each path is a complete spline from root to leaf tip
+            var paths = new List<List<int>>();
 
-            foreach (int startNode in segmentStartNodes)
+            foreach (int leaf in leafNodes)
             {
-                var segment = new List<int>();
-                int current = startNode;
+                var path = new List<int>();
+                int current = leaf;
 
-                // Check if this segment starts from a branch point (include the branch point)
-                int parentOfStart = _generatedNodes[startNode].ParentIndex;
-                if (parentOfStart >= 0 && branchPoints.Contains(parentOfStart))
-                {
-                    segment.Add(parentOfStart);
-                }
-
-                // Trace until we hit a leaf or a branch point
+                // Trace back to root
                 while (current >= 0)
                 {
-                    segment.Add(current);
-
-                    var children = childLookup[current];
-                    if (children.Count == 0)
-                    {
-                        // Leaf node - end of segment
-                        break;
-                    }
-                    else if (children.Count >= 2)
-                    {
-                        // Branch point - end of segment (children will start their own segments)
-                        segmentEndIsBranchPoint[segments.Count] = current;
-                        break;
-                    }
-                    else
-                    {
-                        // Single child - continue along the segment
-                        current = children[0];
-                    }
+                    path.Add(current);
+                    current = _generatedNodes[current].ParentIndex;
                 }
 
-                segments.Add(segment);
+                // Reverse to get root-to-leaf order
+                path.Reverse();
+                paths.Add(path);
             }
 
-            // Filter segments by length
-            // SMART FILTERING: Only filter terminal segments (end at leaves), keep connective segments
-            var validSegments = new List<(List<int> segment, float worldLength, int segmentIndex)>();
-            int filteredByNodeCount = 0;
-            int filteredByWorldLength = 0;
-            int keptConnectiveSegments = 0;
-
-            for (int segIdx = 0; segIdx < segments.Count; segIdx++)
+            // Calculate world length for each path
+            var pathsWithLength = new List<(List<int> path, float worldLength)>();
+            for (int i = 0; i < paths.Count; i++)
             {
-                var segment = segments[segIdx];
-
-                // Calculate world-space length
+                var path = paths[i];
                 float worldLength = 0f;
-                for (int i = 1; i < segment.Count; i++)
+                for (int j = 1; j < path.Count; j++)
                 {
                     worldLength += Vector3.Distance(
-                        _generatedNodes[segment[i - 1]].Position,
-                        _generatedNodes[segment[i]].Position);
+                        _generatedNodes[path[j - 1]].Position,
+                        _generatedNodes[path[j]].Position);
                 }
-
-                // Determine if segment ends at a leaf (terminal) or branch point (connective)
-                int endNode = segment[segment.Count - 1];
-                bool isTerminalSegment = childLookup[endNode].Count == 0;
-
-                // Only filter terminal segments - keep connective segments for branch continuity
-                if (isTerminalSegment)
-                {
-                    // Skip segments with too few nodes
-                    if (segment.Count < MinSplineLength)
-                    {
-                        filteredByNodeCount++;
-                        continue;
-                    }
-
-                    // Skip segments that are too short in world space
-                    if (worldLength < MinSplineWorldLength)
-                    {
-                        filteredByWorldLength++;
-                        continue;
-                    }
-                }
-                else
-                {
-                    // Connective segment - always keep to maintain branch connectivity
-                    keptConnectiveSegments++;
-                }
-
-                validSegments.Add((segment, worldLength, segIdx));
+                pathsWithLength.Add((path, worldLength));
             }
 
-            if (keptConnectiveSegments > 0)
+            // Sort by world length (longest first) so main trunk gets meshed first
+            pathsWithLength.Sort((a, b) => b.worldLength.CompareTo(a.worldLength));
+
+            // Filter paths by length requirements
+            var validPaths = new List<(List<int> path, float worldLength)>();
+            int filteredByNodeCount = 0;
+            int filteredByWorldLength = 0;
+
+            foreach (var (path, worldLength) in pathsWithLength)
             {
-                Debug.Log($"VineGenerator: Kept {keptConnectiveSegments} connective segments (branch continuity)");
+                // Skip paths with too few nodes
+                if (path.Count < MinSplineLength)
+                {
+                    filteredByNodeCount++;
+                    continue;
+                }
+
+                // Skip paths that are too short in world space
+                if (worldLength < MinSplineWorldLength)
+                {
+                    filteredByWorldLength++;
+                    continue;
+                }
+
+                validPaths.Add((path, worldLength));
             }
 
-            if (validSegments.Count == 0)
+            if (validPaths.Count == 0)
             {
-                Debug.LogWarning("VineGenerator: All segments filtered! Try lowering MinSplineLength or MinSplineWorldLength");
+                Debug.LogWarning("VineGenerator: All paths filtered! Try lowering MinSplineLength or MinSplineWorldLength");
             }
 
             if (filteredByNodeCount > 0 || filteredByWorldLength > 0)
             {
-                Debug.Log($"VineGenerator: Filtered {filteredByNodeCount} segments (< {MinSplineLength} nodes), {filteredByWorldLength} segments (< {MinSplineWorldLength}m world length)");
+                Debug.Log($"VineGenerator: Filtered {filteredByNodeCount} paths (< {MinSplineLength} nodes), {filteredByWorldLength} paths (< {MinSplineWorldLength}m world length)");
             }
 
-            // Sort by world length (longest first) and take top MaxSplineCount
-            validSegments.Sort((a, b) => b.worldLength.CompareTo(a.worldLength));
-            int validSegmentCount = validSegments.Count;
-            if (validSegments.Count > MaxSplineCount)
+            // Limit to MaxSplineCount
+            int validPathCount = validPaths.Count;
+            if (validPaths.Count > MaxSplineCount)
             {
-                validSegments = validSegments.GetRange(0, MaxSplineCount);
+                validPaths = validPaths.GetRange(0, MaxSplineCount);
             }
 
             // Ensure we have a material for mesh rendering
@@ -646,39 +927,45 @@ namespace HolyRail.Vines
                 materialToUse = CreateDefaultVineMaterial();
             }
 
-            // Map from segment index to created SplineContainer
-            var segmentToSpline = new Dictionary<int, SplineContainer>();
-            // Map from node index to splines that start/end at that node
-            var nodeToSplineAtStart = new Dictionary<int, List<SplineContainer>>(); // splines that START at this node
-            var nodeToSplineAtEnd = new Dictionary<int, List<SplineContainer>>();   // splines that END at this node
+            // Track which edges have been meshed to avoid z-fighting on shared trunk sections
+            // Key is (min node index, max node index) to make edge order-independent
+            var meshedEdges = new HashSet<(int, int)>();
 
             // Collect meshes for batching
             var meshesToCombine = new List<CombineInstance>();
             var tempSplineObjects = new List<GameObject>();
 
             int processedCount = 0;
-            int totalSegments = validSegments.Count;
+            int totalPaths = validPaths.Count;
             int totalOriginalPoints = 0;
             int totalSmoothedPoints = 0;
 
-            // Create splines for valid segments
-            foreach (var (segment, worldLength, segIdx) in validSegments)
+            // Create splines for valid paths
+            for (int pathIdx = 0; pathIdx < validPaths.Count; pathIdx++)
             {
+                var (path, worldLength) = validPaths[pathIdx];
+
 #if UNITY_EDITOR
-                if (totalSegments > 50)
+                if (totalPaths > 50)
                 {
-                    float progress = (float)processedCount / totalSegments;
+                    float progress = (float)processedCount / totalPaths;
                     EditorUtility.DisplayProgressBar("Converting Vines to Splines",
-                        $"Processing segment {processedCount + 1} of {totalSegments}...", progress);
+                        $"Processing path {processedCount + 1} of {totalPaths}...", progress);
                 }
 #endif
 
                 // Create SplineContainer at world origin so knot positions work correctly
-                var splineGO = new GameObject($"VineSegment_{_generatedSplines.Count}");
+                var splineGO = new GameObject($"VinePath_{_generatedSplines.Count}");
                 splineGO.transform.SetParent(transform, true);
                 splineGO.transform.position = Vector3.zero;
                 splineGO.transform.rotation = Quaternion.identity;
-                splineGO.transform.localScale = Vector3.one; // Ensure consistent world scale for grinding speed
+                // Ensure world scale is (1,1,1) regardless of parent's scale
+                var parentScale = transform.lossyScale;
+                splineGO.transform.localScale = new Vector3(
+                    1f / parentScale.x,
+                    1f / parentScale.y,
+                    1f / parentScale.z
+                );
 
                 var splineContainer = splineGO.AddComponent<SplineContainer>();
                 if (splineContainer.Splines.Count > 0)
@@ -688,7 +975,7 @@ namespace HolyRail.Vines
                 var spline = splineContainer.AddSpline();
 
                 // Convert node indices to positions
-                var positions = segment.Select(i => (float3)_generatedNodes[i].Position).ToList();
+                var positions = path.Select(i => (float3)_generatedNodes[i].Position).ToList();
                 totalOriginalPoints += positions.Count;
 
                 // Apply smoothing if enabled
@@ -714,43 +1001,87 @@ namespace HolyRail.Vines
                 }
 #endif
 
-                // Track segment -> spline mapping
-                segmentToSpline[segIdx] = splineContainer;
-
-                // Track node -> spline mappings for branch connections
-                int startNode = segment[0];
-                int endNode = segment[segment.Count - 1];
-
-                if (!nodeToSplineAtStart.ContainsKey(startNode))
-                    nodeToSplineAtStart[startNode] = new List<SplineContainer>();
-                nodeToSplineAtStart[startNode].Add(splineContainer);
-
-                if (!nodeToSplineAtEnd.ContainsKey(endNode))
-                    nodeToSplineAtEnd[endNode] = new List<SplineContainer>();
-                nodeToSplineAtEnd[endNode].Add(splineContainer);
-
-                // Generate mesh for batching
+                // Generate mesh for batching - only for un-meshed portions of the path
                 if (GenerateMeshes)
                 {
-                    var meshFilter = splineGO.AddComponent<MeshFilter>();
-                    var splineExtrude = splineGO.AddComponent<SplineExtrude>();
-                    splineExtrude.Container = splineContainer;
-                    splineExtrude.Radius = VineRadius;
-                    splineExtrude.Sides = VineSegments;
-                    splineExtrude.SegmentsPerUnit = VineSegmentsPerUnit;
-                    splineExtrude.Capped = true;
-                    splineExtrude.Rebuild();
-
-                    if (meshFilter.sharedMesh != null && meshFilter.sharedMesh.vertexCount > 0)
+                    // Find the first un-meshed edge in this path
+                    int meshStartIdx = 0;
+                    for (int i = 1; i < path.Count; i++)
                     {
-                        meshesToCombine.Add(new CombineInstance
+                        var edge = MakeEdgeKey(path[i - 1], path[i]);
+                        if (!meshedEdges.Contains(edge))
                         {
-                            mesh = meshFilter.sharedMesh,
-                            transform = splineGO.transform.localToWorldMatrix
-                        });
+                            meshStartIdx = i - 1;
+                            break;
+                        }
+                        meshStartIdx = i; // All edges so far are meshed, start from next
                     }
 
-                    tempSplineObjects.Add(splineGO);
+                    // Mark all edges from meshStartIdx onward as meshed
+                    for (int i = meshStartIdx + 1; i < path.Count; i++)
+                    {
+                        var edge = MakeEdgeKey(path[i - 1], path[i]);
+                        meshedEdges.Add(edge);
+                    }
+
+                    // Only create mesh if we have un-meshed portion
+                    if (meshStartIdx < path.Count - 1)
+                    {
+                        // Create a temporary spline for just the un-meshed portion
+                        var meshPositions = new List<float3>();
+                        for (int i = meshStartIdx; i < path.Count; i++)
+                        {
+                            meshPositions.Add((float3)_generatedNodes[path[i]].Position);
+                        }
+
+                        // Apply smoothing to mesh portion if enabled
+                        if (EnablePathSmoothing && SmoothingTolerance > 0)
+                        {
+                            var smoothed = new List<float3>();
+                            SplineUtility.ReducePoints(meshPositions, smoothed, SmoothingTolerance);
+                            meshPositions = smoothed;
+                        }
+
+                        // Create temporary spline container for mesh generation
+                        var tempMeshGO = new GameObject($"TempMesh_{pathIdx}");
+                        tempMeshGO.transform.SetParent(transform, true);
+                        tempMeshGO.transform.position = Vector3.zero;
+                        tempMeshGO.transform.rotation = Quaternion.identity;
+                        tempMeshGO.transform.localScale = Vector3.one;
+
+                        var tempSplineContainer = tempMeshGO.AddComponent<SplineContainer>();
+                        if (tempSplineContainer.Splines.Count > 0)
+                        {
+                            tempSplineContainer.RemoveSplineAt(0);
+                        }
+                        var tempSpline = tempSplineContainer.AddSpline();
+
+                        foreach (var pos in meshPositions)
+                        {
+                            var knot = new BezierKnot(pos);
+                            tempSpline.Add(knot, TangentMode.AutoSmooth);
+                        }
+
+                        var meshFilter = tempMeshGO.AddComponent<MeshFilter>();
+                        var splineExtrude = tempMeshGO.AddComponent<SplineExtrude>();
+                        splineExtrude.Container = tempSplineContainer;
+                        splineExtrude.Radius = VineRadius;
+                        splineExtrude.Sides = VineSegments;
+                        splineExtrude.SegmentsPerUnit = VineSegmentsPerUnit;
+                        splineExtrude.Capped = true;
+                        splineExtrude.Rebuild();
+
+                        if (meshFilter.sharedMesh != null && meshFilter.sharedMesh.vertexCount > 0)
+                        {
+                            meshesToCombine.Add(new CombineInstance
+                            {
+                                mesh = meshFilter.sharedMesh,
+                                transform = tempMeshGO.transform.localToWorldMatrix
+                            });
+                        }
+
+                        tempSplineObjects.Add(tempMeshGO);
+                    }
                 }
 
                 _generatedSplines.Add(splineContainer);
@@ -761,57 +1092,9 @@ namespace HolyRail.Vines
             EditorUtility.ClearProgressBar();
 #endif
 
-            // Build connections for ALL junction nodes
-            // (any node where splines end AND other splines start - includes both branches and linear continuations)
-            var junctionNodes = new HashSet<int>();
-            foreach (var kvp in nodeToSplineAtEnd)
-            {
-                if (nodeToSplineAtStart.ContainsKey(kvp.Key))
-                {
-                    junctionNodes.Add(kvp.Key);
-                }
-            }
-
-            foreach (int junctionNode in junctionNodes)
-            {
-                // Splines ending here connect to splines starting here (forward direction)
-                if (nodeToSplineAtEnd.TryGetValue(junctionNode, out var splinesEndingHere))
-                {
-                    if (nodeToSplineAtStart.TryGetValue(junctionNode, out var splinesStartingHere))
-                    {
-                        foreach (var endingSpline in splinesEndingHere)
-                        {
-                            var connection = new BranchConnection
-                            {
-                                FromSpline = endingSpline,
-                                FromEnd = true,
-                                ConnectedSplines = new List<SplineContainer>(splinesStartingHere)
-                            };
-                            _branchConnections.Add(connection);
-                        }
-                    }
-                }
-
-                // Reverse direction: splines starting here connect back to splines ending here
-                if (nodeToSplineAtStart.TryGetValue(junctionNode, out var splinesStartingHere2))
-                {
-                    if (nodeToSplineAtEnd.TryGetValue(junctionNode, out var splinesEndingHere2))
-                    {
-                        foreach (var startingSpline in splinesStartingHere2)
-                        {
-                            var connection = new BranchConnection
-                            {
-                                FromSpline = startingSpline,
-                                FromEnd = false,
-                                ConnectedSplines = new List<SplineContainer>(splinesEndingHere2)
-                            };
-                            _branchConnections.Add(connection);
-                        }
-                    }
-                }
-            }
-
-            Debug.Log($"VineGenerator: Created {_branchConnections.Count} connections ({junctionNodes.Count} junctions, {branchPoints.Count} branch points)");
+            // Branch connections are no longer needed since splines are now continuous from root to tip
+            // Each spline is a complete path - no junctions to track
+            Debug.Log($"VineGenerator: Created {_generatedSplines.Count} continuous splines (no branch connections needed)");
 
             // Combine all meshes into one for single draw call
             if (GenerateMeshes && meshesToCombine.Count > 0)
@@ -823,7 +1106,7 @@ namespace HolyRail.Vines
             var smoothingInfo = EnablePathSmoothing && SmoothingTolerance > 0
                 ? $", smoothed {totalOriginalPoints} -> {totalSmoothedPoints} points ({100 - (totalSmoothedPoints * 100 / Mathf.Max(1, totalOriginalPoints))}% reduction)"
                 : "";
-            Debug.Log($"VineGenerator: Created {_generatedSplines.Count} segment splines from {segments.Count} total segments ({validSegmentCount} valid, max {MaxSplineCount}, batched into 1 mesh{smoothingInfo})");
+            Debug.Log($"VineGenerator: Created {_generatedSplines.Count} continuous splines from {paths.Count} total paths ({validPathCount} valid, max {MaxSplineCount}, batched into 1 mesh{smoothingInfo})");
 
             // Validate generated splines
             int validSplines = 0;
@@ -848,6 +1131,12 @@ namespace HolyRail.Vines
             }
 
             return _generatedSplines;
+        }
+
+        // Helper to create an order-independent edge key for deduplication
+        private static (int, int) MakeEdgeKey(int a, int b)
+        {
+            return a < b ? (a, b) : (b, a);
         }
 
         private void FilterCloseBranches(HashSet<int> branchPoints, Dictionary<int, List<int>> childLookup)
@@ -921,24 +1210,16 @@ namespace HolyRail.Vines
             var meshRenderer = _combinedMeshObject.AddComponent<MeshRenderer>();
             meshRenderer.sharedMaterial = material;
 
-            // Remove individual mesh components from spline objects (keep SplineContainers for grinding)
-            foreach (var splineGO in tempObjects)
+            // Destroy temporary mesh generation objects (they are not spline containers, just temp mesh holders)
+            foreach (var tempGO in tempObjects)
             {
-                var filter = splineGO.GetComponent<MeshFilter>();
-                var extrude = splineGO.GetComponent<SplineExtrude>();
-                var renderer = splineGO.GetComponent<MeshRenderer>();
-
                 if (Application.isPlaying)
                 {
-                    if (extrude != null) Destroy(extrude);
-                    if (renderer != null) Destroy(renderer);
-                    if (filter != null) Destroy(filter);
+                    Destroy(tempGO);
                 }
                 else
                 {
-                    if (extrude != null) DestroyImmediate(extrude);
-                    if (renderer != null) DestroyImmediate(renderer);
-                    if (filter != null) DestroyImmediate(filter);
+                    DestroyImmediate(tempGO);
                 }
             }
 
