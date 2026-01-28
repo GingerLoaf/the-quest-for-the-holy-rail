@@ -736,8 +736,6 @@ namespace HolyRail.Vines
                 splineGO.transform.position = Vector3.zero;
                 splineGO.transform.rotation = Quaternion.identity;
                 // Ensure world scale is (1,1,1) regardless of parent's scale
-                // This is critical for grinding speed: GetLength() returns local-space length,
-                // but TransformPoint() uses world scale. If world scale != 1, grinding speed is wrong.
                 var parentScale = transform.lossyScale;
                 splineGO.transform.localScale = new Vector3(
                     1f / parentScale.x,
