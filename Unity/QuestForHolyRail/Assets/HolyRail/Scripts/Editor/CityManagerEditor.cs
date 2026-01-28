@@ -40,6 +40,10 @@ namespace HolyRail.City.Editor
             bool hasMissingRampReferences = manager.EnableRamps &&
                                             (manager.RampMesh == null || manager.RampMaterial == null);
 
+            // Check billboard references if billboards are enabled
+            bool hasMissingBillboardReferences = manager.EnableBillboards &&
+                                                  (manager.BillboardMesh == null || manager.BillboardMaterial == null);
+
             if (!hasAllReferences)
             {
                 EditorGUILayout.HelpBox(
@@ -68,6 +72,16 @@ namespace HolyRail.City.Editor
                     "Ramps enabled but missing references:\n" +
                     (manager.RampMesh == null ? "- Ramp Mesh (cube)\n" : "") +
                     (manager.RampMaterial == null ? "- Ramp Material" : ""),
+                    MessageType.Warning);
+                EditorGUILayout.Space(5);
+            }
+
+            if (hasMissingBillboardReferences)
+            {
+                EditorGUILayout.HelpBox(
+                    "Billboards enabled but missing references:\n" +
+                    (manager.BillboardMesh == null ? "- Billboard Mesh (cube)\n" : "") +
+                    (manager.BillboardMaterial == null ? "- Billboard Material" : ""),
                     MessageType.Warning);
                 EditorGUILayout.Space(5);
             }
@@ -200,6 +214,24 @@ namespace HolyRail.City.Editor
                 EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.LabelField("Ramp Target:", labelStyle, GUILayout.Width(140));
                 EditorGUILayout.LabelField(manager.RampCount.ToString("N0"), valueStyle);
+                EditorGUILayout.EndHorizontal();
+
+                EditorGUILayout.Space(5);
+            }
+
+            // Billboard statistics
+            if (manager.EnableBillboards)
+            {
+                EditorGUILayout.LabelField("Billboards", EditorStyles.boldLabel);
+
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("Billboards Generated:", labelStyle, GUILayout.Width(140));
+                EditorGUILayout.LabelField(manager.ActualBillboardCount.ToString("N0"), valueStyle);
+                EditorGUILayout.EndHorizontal();
+
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("Billboard Target:", labelStyle, GUILayout.Width(140));
+                EditorGUILayout.LabelField(manager.BillboardCount.ToString("N0"), valueStyle);
                 EditorGUILayout.EndHorizontal();
 
                 EditorGUILayout.Space(5);

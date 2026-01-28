@@ -8233,6 +8233,17 @@ MonoBehaviour:
   GrindJumpMomentumMultiplier: 2.65
   GrindEndJumpHeight: 0.6
   GrindStartBoost: 4
+  EnableWallRide: 1
+  WallRideLayers:
+    serializedVersion: 2
+    m_Bits: 128
+  WallRideDetectionRadius: 1.5
+  WallRideMagnetThreshold: 1
+  WallRideSpeed: 10
+  WallRideSpeedBoost: 3
+  WallRideHeightGainRate: 2
+  WallRideExitCooldown: 0.3
+  WallRideJumpHeight: 1
   GrindBoostDecayRate: 1
   GrindStartAudioClips:
   - {fileID: 8300000, guid: e4551fca0912cc047aacf644df52166b, type: 3}

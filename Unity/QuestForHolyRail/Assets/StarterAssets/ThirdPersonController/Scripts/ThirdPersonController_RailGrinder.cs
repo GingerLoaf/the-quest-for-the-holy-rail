@@ -101,6 +101,26 @@ namespace StarterAssets
         [Tooltip("Speed boost applied when starting a grind")]
         public float GrindStartBoost = 4f;
 
+        [Header("Wall Riding")]
+        [Tooltip("Enable wall ride mechanics")]
+        public bool EnableWallRide = true;
+        [Tooltip("Layer mask for billboard colliders")]
+        public LayerMask WallRideLayers;
+        [Tooltip("Detection radius for wall ride trigger")]
+        public float WallRideDetectionRadius = 1.5f;
+        [Tooltip("Distance threshold for magnet effect to snap to wall")]
+        public float WallRideMagnetThreshold = 1.0f;
+        [Tooltip("Horizontal speed while wall riding")]
+        public float WallRideSpeed = 10f;
+        [Tooltip("Speed boost applied when starting a wall ride")]
+        public float WallRideSpeedBoost = 3f;
+        [Tooltip("Vertical height gain rate while wall riding (m/s)")]
+        public float WallRideHeightGainRate = 2f;
+        [Tooltip("Cooldown before player can wall ride again after exiting")]
+        public float WallRideExitCooldown = 0.3f;
+        [Tooltip("Jump height when exiting wall ride with jump")]
+        public float WallRideJumpHeight = 1.0f;
+
         [Tooltip("How quickly the start boost decays toward base grind speed")]
         public float GrindBoostDecayRate = 8f;
 
@@ -124,6 +144,17 @@ namespace StarterAssets
         private float _grindSpeedCurrent;
         private float _grindRotationVelocity;
         private SplineTravelDirection _grindDirection;
+
+        // Wall ride state
+        private bool _isWallRiding;
+        private float _wallRideSpeedCurrent;
+        private Vector3 _wallRideVelocity;     // Projected velocity on wall plane
+        private Vector3 _wallRideNormal;       // Wall surface normal (pointing into corridor)
+        private Vector3 _wallRideRight;        // Right direction along wall
+        private Vector3 _currentBillboardCenter;
+        private Vector3 _currentBillboardScale;
+        private float _wallRideExitCooldownTimer;
+        private float _wallRideRotationVelocity;
 
         [Header("Grind Camera Effects")]
         [Tooltip("Reference to the Cinemachine Virtual Camera")]
@@ -292,11 +323,20 @@ namespace StarterAssets
             {
                 Grind();
             }
+            else if (_isWallRiding)
+            {
+                WallRide();
+            }
             else
             {
                 if (_grindExitCooldownTimer > 0f)
                 {
                     _grindExitCooldownTimer -= Time.deltaTime;
+                }
+
+                if (_wallRideExitCooldownTimer > 0f)
+                {
+                    _wallRideExitCooldownTimer -= Time.deltaTime;
                 }
 
                 if (_momentumPreservationTimer > 0f)
@@ -310,6 +350,15 @@ namespace StarterAssets
                     if (TryStartGrind())
                     {
                         return; // Exit Update - controller is now disabled for grinding
+                    }
+                }
+
+                // Wall ride detection: only when airborne and not grinding
+                if (EnableWallRide && !Grounded && _wallRideExitCooldownTimer <= 0f)
+                {
+                    if (TryStartWallRide())
+                    {
+                        return; // Exit Update - controller is now disabled for wall riding
                     }
                 }
 
@@ -698,6 +747,256 @@ namespace StarterAssets
                 _animator.SetFloat(_animIDSpeed, _grindSpeedCurrent);
                 _animator.SetFloat(_animIDMotionSpeed, 1f);
             }
+        }
+
+        private bool TryStartWallRide()
+        {
+            if (_isWallRiding || _isGrinding)
+                return false;
+
+            // SphereCast to find nearby billboard colliders
+            var hits = Physics.OverlapSphere(transform.position, WallRideDetectionRadius, WallRideLayers);
+
+            if (hits.Length == 0)
+            {
+                // Debug: Check if we're finding anything without the layer mask
+                var allHits = Physics.OverlapSphere(transform.position, WallRideDetectionRadius);
+                if (allHits.Length > 0 && Time.frameCount % 30 == 0)
+                {
+                    Debug.Log($"WallRide: No hits on WallRideLayers (mask={WallRideLayers.value}), but found {allHits.Length} colliders nearby. First: {allHits[0].gameObject.name} on layer {allHits[0].gameObject.layer}");
+                }
+                return false;
+            }
+
+            Debug.Log($"WallRide: Found {hits.Length} billboard colliders nearby");
+
+            // Find the closest billboard we can wall ride on
+            float closestDistance = float.MaxValue;
+            Collider closestCollider = null;
+            Vector3 closestNormal = Vector3.zero;
+            Vector3 closestCenter = Vector3.zero;
+            Vector3 closestScale = Vector3.zero;
+
+            foreach (var hit in hits)
+            {
+                // Get the billboard's world-space normal from its forward direction
+                // The billboard faces into the corridor, so its -Z (forward) is the normal
+                var billboardNormal = hit.transform.forward;
+
+                // Front-face check: player must be in front of the billboard
+                var toPlayer = transform.position - hit.transform.position;
+                float frontFaceDot = Vector3.Dot(toPlayer.normalized, billboardNormal);
+                if (frontFaceDot < 0.3f)
+                {
+                    Debug.Log($"WallRide: {hit.name} failed front-face check (dot={frontFaceDot:F2})");
+                    continue; // Player is behind or parallel to billboard
+                }
+
+                // Velocity check: player must be moving (have some horizontal velocity)
+                var horizontalVelocity = new Vector3(_controller.velocity.x, 0f, _controller.velocity.z);
+                if (horizontalVelocity.magnitude < 1f)
+                {
+                    Debug.Log($"WallRide: {hit.name} failed velocity check (vel={horizontalVelocity.magnitude:F2})");
+                    continue; // Not enough velocity to wall ride
+                }
+
+                // Check distance
+                var closestPoint = hit.ClosestPoint(transform.position);
+                float distance = Vector3.Distance(transform.position, closestPoint);
+
+                if (distance < closestDistance && distance <= WallRideMagnetThreshold)
+                {
+                    closestDistance = distance;
+                    closestCollider = hit;
+                    closestNormal = billboardNormal;
+                    closestCenter = hit.transform.position;
+
+                    // Get scale from box collider
+                    if (hit is BoxCollider box)
+                    {
+                        closestScale = box.size;
+                    }
+                    else
+                    {
+                        closestScale = hit.bounds.size;
+                    }
+                }
+            }
+
+            if (closestCollider == null)
+            {
+                Debug.Log("WallRide: No valid collider found (all failed front-face or velocity checks)");
+                return false;
+            }
+
+            // Project velocity onto wall plane (remove component perpendicular to wall)
+            var horizontalVel = new Vector3(_controller.velocity.x, 0f, _controller.velocity.z);
+            var projectedVelocity = horizontalVel - Vector3.Dot(horizontalVel, closestNormal) * closestNormal;
+
+            Debug.Log($"WallRide: Closest collider found. HorizVel={horizontalVel.magnitude:F2}, ProjectedVel={projectedVelocity.magnitude:F2}");
+
+            // Need meaningful velocity along wall
+            if (projectedVelocity.magnitude < 0.5f)
+            {
+                Debug.Log("WallRide: Not enough projected velocity along wall");
+                return false;
+            }
+
+            // Start wall ride
+            StartWallRide(closestNormal, closestCenter, closestScale, projectedVelocity.normalized);
+            return true;
+        }
+
+        private void StartWallRide(Vector3 wallNormal, Vector3 billboardCenter, Vector3 billboardScale, Vector3 travelDirection)
+        {
+            _isWallRiding = true;
+            _wallRideNormal = wallNormal;
+            _currentBillboardCenter = billboardCenter;
+            _currentBillboardScale = billboardScale;
+            _wallRideVelocity = travelDirection;
+            _wallRideRight = Vector3.Cross(Vector3.up, wallNormal).normalized;
+
+            // Apply speed boost
+            _wallRideSpeedCurrent = WallRideSpeed + WallRideSpeedBoost;
+            _verticalVelocity = 0f;
+
+            // Disable character controller - wall ride drives position
+            _controller.enabled = false;
+
+            // Update animator
+            if (_hasAnimator)
+            {
+                _animator.SetBool(_animIDJump, false);
+                _animator.SetBool(_animIDFreeFall, false);
+            }
+
+            Debug.Log("Wall ride started!");
+        }
+
+        private void WallRide()
+        {
+            // Check for jump input to exit
+            if (_input.jump)
+            {
+                ExitWallRideWithJump();
+                return;
+            }
+
+            // Apply height gain - player rises while wall riding
+            var currentPos = transform.position;
+            currentPos.y += WallRideHeightGainRate * Time.deltaTime;
+
+            // Move along wall
+            currentPos += _wallRideVelocity * _wallRideSpeedCurrent * Time.deltaTime;
+
+            // Keep player snapped to wall surface (offset by character radius)
+            // Push player slightly off the wall so they don't clip through
+            float snapDistance = 0.5f;
+            var toCenter = _currentBillboardCenter - currentPos;
+            toCenter.y = 0;
+            float distFromWall = Vector3.Dot(toCenter, _wallRideNormal);
+            currentPos += _wallRideNormal * (distFromWall + snapDistance);
+
+            // Edge detection - check if still on billboard
+            float localX = Vector3.Dot(currentPos - _currentBillboardCenter, _wallRideRight);
+            float localY = currentPos.y - _currentBillboardCenter.y;
+            float halfWidth = _currentBillboardScale.x * 0.5f;
+            float halfHeight = _currentBillboardScale.y * 0.5f;
+
+            bool onBillboard = Mathf.Abs(localX) <= halfWidth && Mathf.Abs(localY) <= halfHeight;
+
+            if (!onBillboard)
+            {
+                // Exit at edge with momentum
+                ExitWallRideAtEdge();
+                return;
+            }
+
+            // Apply position
+            transform.position = currentPos;
+
+            // Rotate player to face movement direction
+            if (_wallRideVelocity.sqrMagnitude > 0.0001f)
+            {
+                float targetYaw = Mathf.Atan2(_wallRideVelocity.x, _wallRideVelocity.z) * Mathf.Rad2Deg;
+                float yaw = Mathf.SmoothDampAngle(
+                    transform.eulerAngles.y,
+                    targetYaw,
+                    ref _wallRideRotationVelocity,
+                    GrindRotationSmoothTime
+                );
+                transform.rotation = Quaternion.Euler(0f, yaw, 0f);
+            }
+
+            // Update animator
+            if (_hasAnimator)
+            {
+                _animator.SetFloat(_animIDSpeed, _wallRideSpeedCurrent);
+                _animator.SetFloat(_animIDMotionSpeed, 1f);
+            }
+        }
+
+        private void ExitWallRideWithJump()
+        {
+            // Re-enable controller
+            _controller.enabled = true;
+            _isWallRiding = false;
+
+            // Set cooldown
+            _wallRideExitCooldownTimer = WallRideExitCooldown;
+            _momentumPreservationTimer = MomentumPreservationTime;
+
+            // Apply jump velocity (vertical) - jump away from wall
+            _verticalVelocity = Mathf.Sqrt(WallRideJumpHeight * -2f * Gravity);
+
+            // Preserve horizontal momentum in travel direction plus some push away from wall
+            var exitDirection = _wallRideVelocity + _wallRideNormal * 0.3f;
+            exitDirection.y = 0f;
+            exitDirection.Normalize();
+
+            _speed = _wallRideSpeedCurrent;
+            _targetRotation = Mathf.Atan2(exitDirection.x, exitDirection.z) * Mathf.Rad2Deg;
+
+            // Update animator
+            if (_hasAnimator)
+            {
+                _animator.SetBool(_animIDJump, true);
+            }
+
+            // Clear jump input
+            _input.jump = false;
+
+            Debug.Log("Wall ride exit with jump!");
+        }
+
+        private void ExitWallRideAtEdge()
+        {
+            // Re-enable controller
+            _controller.enabled = true;
+            _isWallRiding = false;
+
+            // Set cooldown
+            _wallRideExitCooldownTimer = WallRideExitCooldown;
+            _momentumPreservationTimer = MomentumPreservationTime;
+
+            // Small hop when exiting at edge
+            _verticalVelocity = Mathf.Sqrt(0.3f * -2f * Gravity);
+
+            // Preserve momentum in travel direction
+            var exitDirection = _wallRideVelocity;
+            exitDirection.y = 0f;
+            exitDirection.Normalize();
+
+            _speed = _wallRideSpeedCurrent;
+            _targetRotation = Mathf.Atan2(exitDirection.x, exitDirection.z) * Mathf.Rad2Deg;
+
+            // Update animator
+            if (_hasAnimator)
+            {
+                _animator.SetBool(_animIDJump, true);
+            }
+
+            Debug.Log("Wall ride exit at edge!");
         }
 
         private void Move()

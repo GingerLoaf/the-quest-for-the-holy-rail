@@ -47,6 +47,36 @@ namespace HolyRail.Vines.Editor
                 EditorGUILayout.PropertyField(serializedObject.FindProperty("<FreeNoiseAmplitude>k__BackingField"), new GUIContent("Amplitude"));
                 EditorGUILayout.PropertyField(serializedObject.FindProperty("<FreeNoiseFrequency>k__BackingField"), new GUIContent("Frequency"));
             }
+            else if (generator.AttractorGenerationMode == AttractorMode.Path)
+            {
+                // Path Mode Settings
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Path Mode Settings", EditorStyles.boldLabel);
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("<CityManager>k__BackingField"));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("<VinesPerCorridor>k__BackingField"));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("<PathLengthRange>k__BackingField"));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("<PathCorridorWidth>k__BackingField"));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("<PathStartOffset>k__BackingField"));
+
+                // Ground settings
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Ground Settings", EditorStyles.boldLabel);
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("<StartBelowGround>k__BackingField"));
+                if (generator.StartBelowGround)
+                {
+                    EditorGUI.indentLevel++;
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("<GroundStartDepth>k__BackingField"));
+                    EditorGUI.indentLevel--;
+                }
+                EditorGUILayout.HelpBox("Vines are clamped to stay above ground (Y >= 0)", MessageType.None);
+
+                // Reuse Free mode noise settings for undulation
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Undulation", EditorStyles.boldLabel);
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("<FreePointsPerSpline>k__BackingField"), new GUIContent("Points Per Vine"));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("<FreeNoiseAmplitude>k__BackingField"), new GUIContent("Amplitude"));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("<FreeNoiseFrequency>k__BackingField"), new GUIContent("Frequency"));
+            }
             else
             {
                 // Attractor-based settings
@@ -87,13 +117,16 @@ namespace HolyRail.Vines.Editor
                 EditorGUI.indentLevel--;
             }
 
-            // Direction Bias - shown for both modes (Free uses ForwardDirection)
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Direction Bias", EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(serializedObject.FindProperty("<ForwardDirection>k__BackingField"));
-            if (generator.AttractorGenerationMode != AttractorMode.Free)
+            // Direction Bias - shown for attractor-based modes and Free mode (Path mode gets direction from CityManager)
+            if (generator.AttractorGenerationMode != AttractorMode.Path)
             {
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("<ForwardBias>k__BackingField"));
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Direction Bias", EditorStyles.boldLabel);
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("<ForwardDirection>k__BackingField"));
+                if (generator.AttractorGenerationMode != AttractorMode.Free)
+                {
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("<ForwardBias>k__BackingField"));
+                }
             }
 
             // AttractorBounds is needed for Free mode too (defines generation volume)
@@ -143,6 +176,7 @@ namespace HolyRail.Vines.Editor
 
             // Auto-regenerate if enabled and properties changed
             bool canAutoRegenerate = generator.AttractorGenerationMode == AttractorMode.Free
+                || generator.AttractorGenerationMode == AttractorMode.Path
                 || (generator.VineComputeShader != null && generator.RootPoints.Count > 0);
 
             if (propertiesChanged && generator.AutoRegenerate && canAutoRegenerate)
@@ -245,6 +279,19 @@ namespace HolyRail.Vines.Editor
                     "6. Convert to splines for rail grinding",
                     MessageType.None);
             }
+            else if (generator.AttractorGenerationMode == AttractorMode.Path)
+            {
+                EditorGUILayout.HelpBox(
+                    "Path Mode Setup:\n" +
+                    "1. Assign a CityManager with valid corridor setup\n" +
+                    "2. Set VinesPerCorridor for density across each path\n" +
+                    "3. Adjust PathCorridorWidth for lateral spread\n" +
+                    "4. Configure undulation with Amplitude/Frequency\n" +
+                    "5. Enable Obstacle Avoidance to avoid buildings\n" +
+                    "6. Click REGENERATE VINES\n" +
+                    "7. Convert to splines for rail grinding",
+                    MessageType.None);
+            }
             else
             {
                 EditorGUILayout.HelpBox(
@@ -272,7 +319,7 @@ namespace HolyRail.Vines.Editor
             EditorGUILayout.LabelField(generator.NodeCount.ToString(), valueStyle);
             EditorGUILayout.EndHorizontal();
 
-            if (generator.AttractorGenerationMode != AttractorMode.Free)
+            if (generator.AttractorGenerationMode != AttractorMode.Free && generator.AttractorGenerationMode != AttractorMode.Path)
             {
                 EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.LabelField("Active Attractors:", labelStyle, GUILayout.Width(120));

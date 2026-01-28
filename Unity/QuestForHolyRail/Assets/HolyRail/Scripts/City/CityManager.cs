@@ -25,6 +25,18 @@ namespace HolyRail.City
         [field: SerializeField] public float RampAngleMax { get; set; } = 35f;
         [field: SerializeField] public float RampYOffset { get; set; } = -1f;
 
+        [Header("Billboard Settings")]
+        [field: SerializeField] public bool EnableBillboards { get; set; } = true;
+        [field: SerializeField] public Mesh BillboardMesh { get; set; }
+        [field: SerializeField] public Material BillboardMaterial { get; set; }
+        [field: SerializeField] public int BillboardCount { get; set; } = 30;
+        [field: SerializeField] public float BillboardWidthMin { get; set; } = 8f;
+        [field: SerializeField] public float BillboardWidthMax { get; set; } = 15f;
+        [field: SerializeField] public float BillboardHeightMin { get; set; } = 4f;
+        [field: SerializeField] public float BillboardHeightMax { get; set; } = 8f;
+        [field: SerializeField] public float BillboardYOffset { get; set; } = 3f;
+        [field: SerializeField] public float BillboardDepth { get; set; } = 0.3f;
+
         [Header("Generation Parameters")]
         [field: SerializeField] public int Seed { get; set; } = 12345;
 
@@ -65,6 +77,9 @@ namespace HolyRail.City
         [SerializeField, HideInInspector]
         private List<RampData> _generatedRamps = new List<RampData>();
 
+        [SerializeField, HideInInspector]
+        private List<BillboardData> _generatedBillboards = new List<BillboardData>();
+
         // Cached corridor paths for gizmo visualization
         [SerializeField, HideInInspector]
         private List<Vector3> _corridorPathA = new List<Vector3>();
@@ -83,6 +98,12 @@ namespace HolyRail.City
         private MaterialPropertyBlock _rampPropertyBlock;
         private bool _rampBuffersInitialized;
 
+        // Billboard GPU buffers
+        private GraphicsBuffer _billboardBuffer;
+        private GraphicsBuffer _billboardArgsBuffer;
+        private MaterialPropertyBlock _billboardPropertyBlock;
+        private bool _billboardBuffersInitialized;
+
         // Render state
         private Bounds _renderBounds;
         private MaterialPropertyBlock _propertyBlock;
@@ -93,11 +114,14 @@ namespace HolyRail.City
 
         public int ActualBuildingCount => _generatedBuildings.Count;
         public int ActualRampCount => _generatedRamps.Count;
+        public int ActualBillboardCount => _generatedBillboards.Count;
         public bool HasData => _generatedBuildings.Count > 0;
         public bool HasRampData => _generatedRamps.Count > 0;
+        public bool HasBillboardData => _generatedBillboards.Count > 0;
         public bool IsGenerated => HasData;
         public IReadOnlyList<BuildingData> Buildings => _generatedBuildings;
         public IReadOnlyList<RampData> Ramps => _generatedRamps;
+        public IReadOnlyList<BillboardData> Billboards => _generatedBillboards;
 
         public bool HasValidCorridorSetup =>
             ConvergencePoint != null &&
@@ -115,6 +139,10 @@ namespace HolyRail.City
             if (HasRampData && !_rampBuffersInitialized)
             {
                 InitializeRampBuffersFromSerializedData();
+            }
+            if (HasBillboardData && !_billboardBuffersInitialized)
+            {
+                InitializeBillboardBuffersFromSerializedData();
             }
         }
 
@@ -139,6 +167,11 @@ namespace HolyRail.City
                 InitializeRampBuffersFromSerializedData();
             }
 
+            if (HasBillboardData && !_billboardBuffersInitialized)
+            {
+                InitializeBillboardBuffersFromSerializedData();
+            }
+
             if (HasData && BuildingMesh != null && BuildingMaterial != null && _buffersInitialized)
             {
                 RenderBuildings();
@@ -147,6 +180,11 @@ namespace HolyRail.City
             if (HasRampData && RampMesh != null && RampMaterial != null && _rampBuffersInitialized)
             {
                 RenderRamps();
+            }
+
+            if (HasBillboardData && BillboardMesh != null && BillboardMaterial != null && _billboardBuffersInitialized)
+            {
+                RenderBillboards();
             }
         }
 
@@ -217,8 +255,29 @@ namespace HolyRail.City
                 InitializeRampBuffersFromSerializedData();
             }
 
+            // Generate billboards if enabled
+            if (EnableBillboards)
+            {
+                if (BillboardMesh == null)
+                {
+                    Debug.LogWarning("CityManager: Billboards enabled but BillboardMesh is not assigned! Assign a cube mesh.");
+                }
+                if (BillboardMaterial == null)
+                {
+                    Debug.LogWarning("CityManager: Billboards enabled but BillboardMaterial is not assigned! Assign the BillboardMaterial from Assets/HolyRail/Materials/");
+                }
+
+                Debug.Log($"CityManager: Starting billboard generation. Path lengths: A={_corridorPathA.Count}, B={_corridorPathB.Count}, C={_corridorPathC.Count}");
+                GenerateCorridorBillboards(_corridorPathA);
+                GenerateCorridorBillboards(_corridorPathB);
+                GenerateCorridorBillboards(_corridorPathC);
+                Debug.Log($"CityManager: Billboard generation complete. Total billboards: {_generatedBillboards.Count}");
+                InitializeBillboardBuffersFromSerializedData();
+            }
+
             var rampInfo = EnableRamps ? $", {_generatedRamps.Count} ramps" : "";
-            Debug.Log($"CityManager: Generated {_generatedBuildings.Count} buildings across 3 corridors{rampInfo}");
+            var billboardInfo = EnableBillboards ? $", {_generatedBillboards.Count} billboards" : "";
+            Debug.Log($"CityManager: Generated {_generatedBuildings.Count} buildings across 3 corridors{rampInfo}{billboardInfo}");
         }
 
         private List<Vector3> GenerateCurvedPath(Vector3 start, Vector3 end, int corridorIndex)
@@ -608,6 +667,132 @@ namespace HolyRail.City
             return true;
         }
 
+        private void GenerateCorridorBillboards(List<Vector3> path)
+        {
+            if (path.Count < 2)
+                return;
+
+            var convergencePos = ConvergencePoint.position;
+
+            // Calculate total path length for billboard distribution
+            float totalLength = 0f;
+            for (int i = 1; i < path.Count; i++)
+            {
+                totalLength += Vector3.Distance(path[i], path[i - 1]);
+            }
+
+            // Distribute billboards evenly along this corridor (1/3 of total billboards per corridor)
+            int billboardsPerCorridor = Mathf.Max(1, BillboardCount / 3);
+            float billboardSpacing = totalLength / (billboardsPerCorridor + 1);
+
+            float accumulatedDistance = billboardSpacing; // Start offset from convergence
+            int pathIndex = 0;
+            float segmentProgress = 0f;
+
+            for (int billboardNum = 0; billboardNum < billboardsPerCorridor && pathIndex < path.Count - 1; billboardNum++)
+            {
+                // Find the point along the path at this distance
+                while (pathIndex < path.Count - 1)
+                {
+                    float segmentLength = Vector3.Distance(path[pathIndex], path[pathIndex + 1]);
+                    float remaining = segmentLength - segmentProgress;
+
+                    if (accumulatedDistance <= remaining)
+                    {
+                        // Billboard position is within this segment
+                        float t = (segmentProgress + accumulatedDistance) / segmentLength;
+                        var billboardPos = Vector3.Lerp(path[pathIndex], path[pathIndex + 1], t);
+
+                        // Skip if too close to convergence
+                        if (Vector3.Distance(billboardPos, convergencePos) < ConvergenceRadius)
+                        {
+                            accumulatedDistance = billboardSpacing;
+                            segmentProgress += accumulatedDistance;
+                            continue;
+                        }
+
+                        // Calculate tangent at this point
+                        var tangent = (path[pathIndex + 1] - path[pathIndex]).normalized;
+
+                        // Alternate left and right sides
+                        bool placeOnLeft = billboardNum % 2 == 0;
+                        if (TryPlaceBillboard(billboardPos, tangent, placeOnLeft))
+                        {
+                            accumulatedDistance = billboardSpacing;
+                            segmentProgress += accumulatedDistance;
+                        }
+                        else
+                        {
+                            // Skip this position, try next
+                            accumulatedDistance = billboardSpacing * 0.5f;
+                            segmentProgress += accumulatedDistance;
+                        }
+                        break;
+                    }
+                    else
+                    {
+                        // Move to next segment
+                        accumulatedDistance -= remaining;
+                        segmentProgress = 0f;
+                        pathIndex++;
+                    }
+                }
+            }
+        }
+
+        private bool TryPlaceBillboard(Vector3 pathPosition, Vector3 tangent, bool placeOnLeft)
+        {
+            // Random dimensions
+            float width = RandomRange(BillboardWidthMin, BillboardWidthMax);
+            float height = RandomRange(BillboardHeightMin, BillboardHeightMax);
+            float depth = BillboardDepth;
+
+            // Calculate perpendicular direction (right of path)
+            var right = Vector3.Cross(Vector3.up, tangent).normalized;
+
+            // Billboard faces INWARD toward the corridor center
+            // If on left side, normal points right (+right)
+            // If on right side, normal points left (-right)
+            var normal = placeOnLeft ? right : -right;
+
+            // Position: offset from path center toward the corridor wall
+            // Place slightly inside the corridor (not at the wall edge to avoid building collision)
+            float sideOffset = CorridorWidth / 2 - 2f; // 2m inside corridor edge
+            var position = pathPosition + (placeOnLeft ? -right : right) * sideOffset;
+            position.y = pathPosition.y + BillboardYOffset + height * 0.5f;
+
+            // Rotation: face into corridor
+            // The billboard's forward (-Z) should point toward corridor center (same as normal)
+            float yaw = Mathf.Atan2(normal.x, normal.z) * Mathf.Rad2Deg;
+            var rotation = Quaternion.Euler(0f, yaw, 0f);
+
+            // Check if billboard intersects any existing billboards (simplified 2D check)
+            float billboardPadding = 2.0f;
+            foreach (var existingBillboard in _generatedBillboards)
+            {
+                float dx = Mathf.Abs(position.x - existingBillboard.Position.x);
+                float dz = Mathf.Abs(position.z - existingBillboard.Position.z);
+                float minDistX = (width + existingBillboard.Scale.x) * 0.5f + billboardPadding;
+                float minDistZ = (width + existingBillboard.Scale.x) * 0.5f + billboardPadding;
+
+                if (dx < minDistX && dz < minDistZ)
+                {
+                    return false;
+                }
+            }
+
+            var billboard = new BillboardData
+            {
+                Position = position,
+                Scale = new Vector3(width, height, depth),
+                Rotation = rotation,
+                Normal = normal
+            };
+
+            _generatedBillboards.Add(billboard);
+            return true;
+        }
+
         private float RandomRange(float min, float max)
         {
             return min + (float)_random.NextDouble() * (max - min);
@@ -755,6 +940,87 @@ namespace HolyRail.City
             Graphics.RenderMeshIndirect(renderParams, RampMesh, _rampArgsBuffer);
         }
 
+        private void InitializeBillboardBuffersFromSerializedData()
+        {
+            if (_generatedBillboards.Count == 0)
+            {
+                Debug.Log("CityManager: No billboards to initialize buffers for.");
+                return;
+            }
+
+            if (BillboardMesh == null)
+            {
+                Debug.LogWarning("CityManager: Cannot initialize billboard buffers - BillboardMesh is null. Assign a cube mesh.");
+                return;
+            }
+
+            if (BillboardMaterial == null)
+            {
+                Debug.LogWarning("CityManager: Cannot initialize billboard buffers - BillboardMaterial is null. Assign BillboardMaterial from Assets/HolyRail/Materials/");
+                return;
+            }
+
+            Debug.Log($"CityManager: Initializing billboard buffers for {_generatedBillboards.Count} billboards...");
+
+            // Release any existing billboard buffers
+            ReleaseBillboardBuffers();
+
+            int billboardStride = Marshal.SizeOf<BillboardData>();
+
+            // Create and populate billboard buffer from serialized data
+            _billboardBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, _generatedBillboards.Count, billboardStride);
+            _billboardBuffer.SetData(_generatedBillboards.ToArray());
+
+            // Create indirect args buffer for RenderMeshIndirect
+            _billboardArgsBuffer = new GraphicsBuffer(GraphicsBuffer.Target.IndirectArguments, 1, 5 * sizeof(uint));
+            uint[] args = new uint[]
+            {
+                BillboardMesh.GetIndexCount(0),
+                (uint)_generatedBillboards.Count,
+                BillboardMesh.GetIndexStart(0),
+                BillboardMesh.GetBaseVertex(0),
+                0
+            };
+            _billboardArgsBuffer.SetData(args);
+
+            // Create property block for billboard material
+            _billboardPropertyBlock = new MaterialPropertyBlock();
+            _billboardPropertyBlock.SetBuffer("_BillboardBuffer", _billboardBuffer);
+
+            _billboardBuffersInitialized = true;
+            Debug.Log($"CityManager: Billboard buffers initialized successfully. Mesh: {BillboardMesh.name}, Material: {BillboardMaterial.name}");
+        }
+
+        private void RenderBillboards()
+        {
+            if (_billboardArgsBuffer == null || _billboardPropertyBlock == null)
+                return;
+
+            // Update material buffer reference
+            _billboardPropertyBlock.SetBuffer("_BillboardBuffer", _billboardBuffer);
+
+            var renderParams = new RenderParams(BillboardMaterial)
+            {
+                worldBounds = _renderBounds,
+                matProps = _billboardPropertyBlock,
+                shadowCastingMode = ShadowCastingMode.On,
+                receiveShadows = true
+            };
+
+            Graphics.RenderMeshIndirect(renderParams, BillboardMesh, _billboardArgsBuffer);
+        }
+
+        private void ReleaseBillboardBuffers()
+        {
+            _billboardBuffer?.Release();
+            _billboardArgsBuffer?.Release();
+
+            _billboardBuffer = null;
+            _billboardArgsBuffer = null;
+
+            _billboardBuffersInitialized = false;
+        }
+
         private void ReleaseRampBuffers()
         {
             _rampBuffer?.Release();
@@ -782,8 +1048,10 @@ namespace HolyRail.City
         {
             ReleaseBuffers();
             ReleaseRampBuffers();
+            ReleaseBillboardBuffers();
             _generatedBuildings.Clear();
             _generatedRamps.Clear();
+            _generatedBillboards.Clear();
             _corridorPathA.Clear();
             _corridorPathB.Clear();
             _corridorPathC.Clear();
@@ -804,12 +1072,14 @@ namespace HolyRail.City
             // Only release GPU buffers, keep serialized data for persistence
             ReleaseBuffers();
             ReleaseRampBuffers();
+            ReleaseBillboardBuffers();
         }
 
         private void OnDestroy()
         {
             ReleaseBuffers();
             ReleaseRampBuffers();
+            ReleaseBillboardBuffers();
         }
 
         private void OnValidate()

@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.Splines;
 using Unity.Mathematics;
 using StarterAssets;
+using HolyRail.City;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -15,7 +16,8 @@ namespace HolyRail.Vines
         Surface,
         Volume,
         Mixed,
-        Free  // Independent flowing splines without branching
+        Free,  // Independent flowing splines without branching
+        Path   // Follows CityManager corridors
     }
 
     [ExecuteInEditMode]
@@ -90,6 +92,15 @@ namespace HolyRail.Vines
         [field: SerializeField] public int FreePointsPerSpline { get; set; } = 20;
         [field: SerializeField] public Vector3 FreeNoiseAmplitude { get; set; } = new Vector3(2f, 2f, 0f);  // Right, Up, Forward
         [field: SerializeField] public Vector3 FreeNoiseFrequency { get; set; } = new Vector3(0.5f, 0.3f, 0f);  // Right, Up, Forward
+
+        [Header("Path Mode Settings")]
+        [field: SerializeField] public CityManager CityManager { get; set; }
+        [field: SerializeField] public int VinesPerCorridor { get; set; } = 3;
+        [field: SerializeField] public Vector2 PathLengthRange { get; set; } = new Vector2(50f, 200f);
+        [field: SerializeField] public float PathCorridorWidth { get; set; } = 20f;
+        [field: SerializeField] public float PathStartOffset { get; set; } = 10f;
+        [field: SerializeField] public bool StartBelowGround { get; set; } = true;
+        [field: SerializeField] public float GroundStartDepth { get; set; } = 5f;
 
         [Header("Visualization")]
         [field: SerializeField] public bool ShowAttractors { get; set; } = true;
@@ -171,13 +182,13 @@ namespace HolyRail.Vines
 
         public void Regenerate()
         {
-            if (AttractorGenerationMode != AttractorMode.Free && VineComputeShader == null)
+            if (AttractorGenerationMode != AttractorMode.Free && AttractorGenerationMode != AttractorMode.Path && VineComputeShader == null)
             {
                 Debug.LogError("VineGenerator: ComputeShader is not assigned!");
                 return;
             }
 
-            if (AttractorGenerationMode != AttractorMode.Free && RootPoints.Count == 0)
+            if (AttractorGenerationMode != AttractorMode.Free && AttractorGenerationMode != AttractorMode.Path && RootPoints.Count == 0)
             {
                 Debug.LogError("VineGenerator: No root points assigned!");
                 return;
@@ -190,6 +201,13 @@ namespace HolyRail.Vines
             {
                 GenerateFreeSplines();
                 Debug.Log($"VineGenerator (Free): Generated {_generatedNodes.Count} nodes across {FreeSplineCount} splines");
+                return;
+            }
+
+            // Path mode follows CityManager corridors
+            if (AttractorGenerationMode == AttractorMode.Path)
+            {
+                GeneratePathSplines();
                 return;
             }
 
@@ -398,6 +416,123 @@ namespace HolyRail.Vines
                         LastGrowIteration = 0
                     });
                 }
+            }
+        }
+
+        private void GeneratePathSplines()
+        {
+            if (CityManager == null)
+            {
+                Debug.LogError("VineGenerator: CityManager not assigned for Path mode!");
+                return;
+            }
+
+            if (!CityManager.HasValidCorridorSetup)
+            {
+                Debug.LogError("VineGenerator: CityManager does not have valid corridor setup!");
+                return;
+            }
+
+            var random = new System.Random(Seed);
+            _generatedNodes.Clear();
+            _generatedAttractors.Clear();
+
+            var convergence = CityManager.ConvergencePoint.position;
+            var endpoints = new[]
+            {
+                CityManager.EndpointA.position,
+                CityManager.EndpointB.position,
+                CityManager.EndpointC.position
+            };
+
+            for (int corridorIdx = 0; corridorIdx < 3; corridorIdx++)
+            {
+                var endpoint = endpoints[corridorIdx];
+                var corridorDir = (endpoint - convergence).normalized;
+                var corridorLength = Vector3.Distance(convergence, endpoint);
+
+                // Perpendicular direction for lateral distribution
+                var right = Vector3.Cross(Vector3.up, corridorDir).normalized;
+
+                for (int vineIdx = 0; vineIdx < VinesPerCorridor; vineIdx++)
+                {
+                    // Distribute vines across corridor width
+                    float lateralT = VinesPerCorridor == 1 ? 0.5f : (float)vineIdx / (VinesPerCorridor - 1);
+                    float lateralOffset = Mathf.Lerp(-PathCorridorWidth / 2, PathCorridorWidth / 2, lateralT);
+
+                    // Random length for this vine (clamped to available corridor length)
+                    float maxAvailableLength = corridorLength - PathStartOffset;
+                    float vineLength = Mathf.Lerp(PathLengthRange.x, PathLengthRange.y, (float)random.NextDouble());
+                    vineLength = Mathf.Min(vineLength, maxAvailableLength);
+
+                    // Generate path points
+                    GeneratePathVine(
+                        convergence + corridorDir * PathStartOffset + right * lateralOffset,
+                        corridorDir,
+                        vineLength,
+                        right,
+                        random,
+                        corridorIdx * 100 + vineIdx
+                    );
+                }
+            }
+
+            Debug.Log($"VineGenerator (Path): Generated {_generatedNodes.Count} nodes across {VinesPerCorridor * 3} vines");
+        }
+
+        private void GeneratePathVine(Vector3 start, Vector3 direction, float length, Vector3 right, System.Random random, int noiseOffset)
+        {
+            int pointCount = FreePointsPerSpline;
+
+            // If starting below ground, offset the start position
+            if (StartBelowGround)
+            {
+                start.y = -GroundStartDepth;
+            }
+
+            for (int i = 0; i < pointCount; i++)
+            {
+                float t = (float)i / (pointCount - 1);
+
+                // Sample noise for lateral and vertical movement
+                float noiseRight = (Mathf.PerlinNoise(t * FreeNoiseFrequency.x + noiseOffset, 0f) * 2f - 1f) * FreeNoiseAmplitude.x;
+                float noiseUp = (Mathf.PerlinNoise(t * FreeNoiseFrequency.y + noiseOffset + 33f, 100f) * 2f - 1f) * FreeNoiseAmplitude.y;
+
+                // Clamp lateral noise to stay within corridor bounds
+                float maxLateralOffset = PathCorridorWidth / 2;
+                noiseRight = Mathf.Clamp(noiseRight, -maxLateralOffset, maxLateralOffset);
+
+                var position = start
+                    + direction * (t * length)
+                    + right * noiseRight
+                    + Vector3.up * noiseUp;  // Use world up for vertical noise
+
+                // Clamp to stay above ground (y >= 0)
+                position.y = Mathf.Max(position.y, 0f);
+
+                // Apply obstacle avoidance if enabled
+                if (EnableObstacleAvoidance && i > 0 && Physics.CheckSphere(position, ObstacleAvoidanceDistance))
+                {
+                    var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
+                    var dir = (position - prevPos).normalized;
+                    float dist = Vector3.Distance(prevPos, position);
+
+                    if (Physics.SphereCast(prevPos, ObstacleAvoidanceDistance * 0.5f, dir, out var hit, dist + ObstacleAvoidanceDistance))
+                    {
+                        position = hit.point - dir * ObstacleAvoidanceDistance + hit.normal * ObstacleAvoidanceDistance;
+                    }
+                }
+
+                // Final ground clamp after obstacle avoidance
+                position.y = Mathf.Max(position.y, 0f);
+
+                _generatedNodes.Add(new VineNode
+                {
+                    Position = position,
+                    ParentIndex = (i == 0) ? -1 : _generatedNodes.Count - 1,
+                    IsTip = (i == pointCount - 1) ? 1 : 0,
+                    LastGrowIteration = 0
+                });
             }
         }
 
