@@ -8,8 +8,7 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: ScrollingGradient
-  m_Shader: {fileID: 4800000, guid: 0, type: 3}
-  m_ShaderKeywords:
+  m_Shader: {fileID: 4800000, guid: 57fd6c34ac154476f838f1a08020c273, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
@@ -20,21 +19,29 @@ Material:
   m_CustomRenderQueue: 2000
   stringTagMap: {}
   disabledShaderPasses: []
-  m_LockedProperties:
+  m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
-    m_TexEnvs: []
+    m_TexEnvs:
+    - _MainTex:
+        m_Texture: {fileID: 2800000, guid: fc6291517881847ea825b1aca0b06cfa, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
-    - _EmissionIntensity: 1.93
-    - _Frequency: 0.07
     - _EdgeAmount: 1
-    - _EdgePower: 2
+    - _EdgePower: 1.2
+    - _EmissionIntensity: 25
+    - _Frequency: 0.07
     - _Power: 1.91
     - _ScrollSpeed: -0.61
+    - _TexBlend: 0.864
+    - _TexRotation: 0
     m_Colors:
-    - _BaseColor: {r: 0.018422928, g: 0.07787621, b: 0.16981131, a: 1}
+    - _BaseColor: {r: 0.051664297, g: 0.13403474, b: 0.254717, a: 1}
     - _EdgeColor: {r: 0, g: 0, b: 0, a: 1}
     - _GradientColor: {r: 0, g: 1, b: 1, a: 1}
+    - _TexScrollSpeed: {r: 0.01, g: 0.03, b: 0, a: 0}
+    - _TexTiling: {r: 0.1, g: 0.1, b: 0, a: 0}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
