@@ -53,6 +53,30 @@ namespace HolyRail.Vines.Editor
                 EditorGUILayout.Space();
                 EditorGUILayout.LabelField("Path Mode Settings", EditorStyles.boldLabel);
                 EditorGUILayout.PropertyField(serializedObject.FindProperty("<CityManager>k__BackingField"));
+
+                // Show corridor status if CityManager is assigned
+                if (generator.CityManager != null)
+                {
+                    EditorGUI.indentLevel++;
+                    string corridorStatus = "";
+                    if (generator.CityManager.EnableCorridorA) corridorStatus += "A ";
+                    if (generator.CityManager.EnableCorridorB) corridorStatus += "B ";
+                    if (generator.CityManager.EnableCorridorC) corridorStatus += "C ";
+                    if (string.IsNullOrEmpty(corridorStatus)) corridorStatus = "None";
+
+                    EditorGUILayout.LabelField("Enabled Corridors:", corridorStatus.Trim());
+
+                    if (generator.CityManager.ConvergenceEndPoint != null)
+                    {
+                        EditorGUILayout.LabelField("Mode:", "Two-segment (with End Point)");
+                    }
+                    else
+                    {
+                        EditorGUILayout.LabelField("Mode:", "Single-segment (waypoints only)");
+                    }
+                    EditorGUI.indentLevel--;
+                }
+
                 EditorGUILayout.PropertyField(serializedObject.FindProperty("<VinesPerCorridor>k__BackingField"));
                 EditorGUILayout.PropertyField(serializedObject.FindProperty("<PathLengthRange>k__BackingField"));
                 EditorGUILayout.PropertyField(serializedObject.FindProperty("<PathCorridorWidth>k__BackingField"));

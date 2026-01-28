@@ -46,6 +46,17 @@ namespace HolyRail.City
         [field: SerializeField] public Transform EndpointB { get; private set; }
         [field: SerializeField] public Transform EndpointC { get; private set; }
 
+        [Header("Corridor Toggles")]
+        [field: SerializeField] public bool EnableCorridorA { get; private set; } = true;
+        [field: SerializeField] public bool EnableCorridorB { get; private set; } = true;
+        [field: SerializeField] public bool EnableCorridorC { get; private set; } = true;
+
+        [Header("Convergence End Point")]
+        [field: SerializeField] public Transform ConvergenceEndPoint { get; private set; }
+        [field: SerializeField] public bool EnableConvergenceEndPlaza { get; private set; } = true;
+        [field: SerializeField] public float ConvergenceEndRadius { get; private set; } = 20f;
+        [field: SerializeField, Range(1, 3)] public int EndPlazaRingRows { get; private set; } = 2;
+
         [Header("Corridor Settings")]
         [field: SerializeField] public float CorridorWidth { get; set; } = 30f;
         [field: SerializeField] public float BuildingSetback { get; set; } = 2f;
@@ -123,11 +134,44 @@ namespace HolyRail.City
         public IReadOnlyList<RampData> Ramps => _generatedRamps;
         public IReadOnlyList<BillboardData> Billboards => _generatedBillboards;
 
-        public bool HasValidCorridorSetup =>
-            ConvergencePoint != null &&
-            EndpointA != null &&
-            EndpointB != null &&
-            EndpointC != null;
+        public bool HasValidCorridorSetup
+        {
+            get
+            {
+                // Must have convergence point
+                if (ConvergencePoint == null)
+                    return false;
+
+                // At least one corridor must be enabled
+                bool hasEnabledCorridor = EnableCorridorA || EnableCorridorB || EnableCorridorC;
+                if (!hasEnabledCorridor)
+                    return false;
+
+                // Each enabled corridor needs either its waypoint endpoint OR ConvergenceEndPoint
+                bool hasEndPoint = ConvergenceEndPoint != null;
+
+                if (EnableCorridorA && EndpointA == null && !hasEndPoint)
+                    return false;
+                if (EnableCorridorB && EndpointB == null && !hasEndPoint)
+                    return false;
+                if (EnableCorridorC && EndpointC == null && !hasEndPoint)
+                    return false;
+
+                return true;
+            }
+        }
+
+        public int EnabledCorridorCount
+        {
+            get
+            {
+                int count = 0;
+                if (EnableCorridorA) count++;
+                if (EnableCorridorB) count++;
+                if (EnableCorridorC) count++;
+                return count;
+            }
+        }
 
         private void OnEnable()
         {
@@ -214,24 +258,56 @@ namespace HolyRail.City
             // Initialize random generator with seed
             _random = new System.Random(Seed);
 
-            // Generate corridor paths
+            // Generate corridor paths (only for enabled corridors)
             var convergencePos = ConvergencePoint.position;
-            _corridorPathA = GenerateCurvedPath(convergencePos, EndpointA.position, 0);
-            _corridorPathB = GenerateCurvedPath(convergencePos, EndpointB.position, 1);
-            _corridorPathC = GenerateCurvedPath(convergencePos, EndpointC.position, 2);
 
-            // Collect all paths for overlap checking
-            var allPaths = new List<List<Vector3>> { _corridorPathA, _corridorPathB, _corridorPathC };
+            if (EnableCorridorA && EndpointA != null)
+                _corridorPathA = GenerateCurvedPath(convergencePos, EndpointA.position, 0);
 
-            // Generate buildings along corridors (with overlap checking)
-            GenerateCorridorBuildings(_corridorPathA, allPaths, 0);
-            GenerateCorridorBuildings(_corridorPathB, allPaths, 1);
-            GenerateCorridorBuildings(_corridorPathC, allPaths, 2);
+            if (EnableCorridorB && EndpointB != null)
+                _corridorPathB = GenerateCurvedPath(convergencePos, EndpointB.position, 1);
 
-            // Generate plaza ring around convergence point
+            if (EnableCorridorC && EndpointC != null)
+                _corridorPathC = GenerateCurvedPath(convergencePos, EndpointC.position, 2);
+
+            // Collect all enabled paths for overlap checking
+            var allPaths = new List<List<Vector3>>();
+            var pathToIndex = new Dictionary<List<Vector3>, int>();
+
+            if (EnableCorridorA && _corridorPathA.Count > 0)
+            {
+                pathToIndex[_corridorPathA] = allPaths.Count;
+                allPaths.Add(_corridorPathA);
+            }
+            if (EnableCorridorB && _corridorPathB.Count > 0)
+            {
+                pathToIndex[_corridorPathB] = allPaths.Count;
+                allPaths.Add(_corridorPathB);
+            }
+            if (EnableCorridorC && _corridorPathC.Count > 0)
+            {
+                pathToIndex[_corridorPathC] = allPaths.Count;
+                allPaths.Add(_corridorPathC);
+            }
+
+            // Generate buildings along enabled corridors (with overlap checking)
+            if (EnableCorridorA && _corridorPathA.Count > 0)
+                GenerateCorridorBuildings(_corridorPathA, allPaths, pathToIndex[_corridorPathA]);
+            if (EnableCorridorB && _corridorPathB.Count > 0)
+                GenerateCorridorBuildings(_corridorPathB, allPaths, pathToIndex[_corridorPathB]);
+            if (EnableCorridorC && _corridorPathC.Count > 0)
+                GenerateCorridorBuildings(_corridorPathC, allPaths, pathToIndex[_corridorPathC]);
+
+            // Generate plaza ring around convergence point (start plaza)
             if (EnablePlazaRing)
             {
                 GeneratePlazaRing(allPaths);
+            }
+
+            // Generate end plaza ring around ConvergenceEndPoint (if set and enabled)
+            if (ConvergenceEndPoint != null && EnableConvergenceEndPlaza)
+            {
+                GenerateEndPlazaRing(allPaths);
             }
 
             // Now initialize the rendering buffers from serialized data
@@ -249,9 +325,12 @@ namespace HolyRail.City
                     Debug.LogWarning("CityManager: Ramps enabled but RampMaterial is not assigned! Assign the RampMaterial from Assets/HolyRail/Materials/");
                 }
 
-                GenerateCorridorRamps(_corridorPathA);
-                GenerateCorridorRamps(_corridorPathB);
-                GenerateCorridorRamps(_corridorPathC);
+                if (EnableCorridorA && _corridorPathA.Count > 0)
+                    GenerateCorridorRamps(_corridorPathA);
+                if (EnableCorridorB && _corridorPathB.Count > 0)
+                    GenerateCorridorRamps(_corridorPathB);
+                if (EnableCorridorC && _corridorPathC.Count > 0)
+                    GenerateCorridorRamps(_corridorPathC);
                 InitializeRampBuffersFromSerializedData();
             }
 
@@ -268,19 +347,52 @@ namespace HolyRail.City
                 }
 
                 Debug.Log($"CityManager: Starting billboard generation. Path lengths: A={_corridorPathA.Count}, B={_corridorPathB.Count}, C={_corridorPathC.Count}");
-                GenerateCorridorBillboards(_corridorPathA);
-                GenerateCorridorBillboards(_corridorPathB);
-                GenerateCorridorBillboards(_corridorPathC);
+                if (EnableCorridorA && _corridorPathA.Count > 0)
+                    GenerateCorridorBillboards(_corridorPathA);
+                if (EnableCorridorB && _corridorPathB.Count > 0)
+                    GenerateCorridorBillboards(_corridorPathB);
+                if (EnableCorridorC && _corridorPathC.Count > 0)
+                    GenerateCorridorBillboards(_corridorPathC);
                 Debug.Log($"CityManager: Billboard generation complete. Total billboards: {_generatedBillboards.Count}");
                 InitializeBillboardBuffersFromSerializedData();
             }
 
             var rampInfo = EnableRamps ? $", {_generatedRamps.Count} ramps" : "";
             var billboardInfo = EnableBillboards ? $", {_generatedBillboards.Count} billboards" : "";
-            Debug.Log($"CityManager: Generated {_generatedBuildings.Count} buildings across 3 corridors{rampInfo}{billboardInfo}");
+            Debug.Log($"CityManager: Generated {_generatedBuildings.Count} buildings across {EnabledCorridorCount} corridors{rampInfo}{billboardInfo}");
         }
 
-        private List<Vector3> GenerateCurvedPath(Vector3 start, Vector3 end, int corridorIndex)
+        private List<Vector3> GenerateCurvedPath(Vector3 start, Vector3 waypoint, int corridorIndex)
+        {
+            // If ConvergenceEndPoint is set, create two-segment path: start -> waypoint -> end
+            if (ConvergenceEndPoint != null)
+            {
+                var path = new List<Vector3>();
+                var endPos = ConvergenceEndPoint.position;
+                endPos.y = start.y; // Maintain height
+
+                // Segment 1: start to waypoint
+                var segment1 = GenerateCurvedPathSegment(start, waypoint, corridorIndex, 0);
+                path.AddRange(segment1);
+
+                // Segment 2: waypoint to end (use different noise offset)
+                var segment2 = GenerateCurvedPathSegment(waypoint, endPos, corridorIndex, 1);
+                // Skip first point of segment 2 as it duplicates waypoint
+                for (int i = 1; i < segment2.Count; i++)
+                {
+                    path.Add(segment2[i]);
+                }
+
+                return path;
+            }
+            else
+            {
+                // Original behavior: single segment from start to waypoint (endpoint)
+                return GenerateCurvedPathSegment(start, waypoint, corridorIndex, 0);
+            }
+        }
+
+        private List<Vector3> GenerateCurvedPathSegment(Vector3 start, Vector3 end, int corridorIndex, int segmentIndex)
         {
             var path = new List<Vector3>();
             var baseDirection = (end - start);
@@ -289,7 +401,7 @@ namespace HolyRail.City
             baseDirection = baseDirection.normalized;
 
             var right = Vector3.Cross(Vector3.up, baseDirection).normalized;
-            float noiseOffset = corridorIndex * 1000f; // Unique noise per corridor
+            float noiseOffset = corridorIndex * 1000f + segmentIndex * 500f; // Unique noise per corridor and segment
 
             for (float d = 0; d <= distance; d += BuildingSpacing)
             {
@@ -324,9 +436,16 @@ namespace HolyRail.City
             {
                 var point = path[i];
 
-                // Skip buildings near convergence (open plaza)
+                // Skip buildings near start convergence plaza
                 if (Vector3.Distance(point, convergencePos) < ConvergenceRadius)
                     continue;
+
+                // Skip buildings near end convergence plaza (if enabled)
+                if (ConvergenceEndPoint != null && EnableConvergenceEndPlaza)
+                {
+                    if (Vector3.Distance(point, ConvergenceEndPoint.position) < ConvergenceEndRadius)
+                        continue;
+                }
 
                 // Calculate tangent direction from path
                 Vector3 tangent;
@@ -475,6 +594,68 @@ namespace HolyRail.City
             }
         }
 
+        private void GenerateEndPlazaRing(List<List<Vector3>> allPaths)
+        {
+            if (ConvergenceEndPoint == null)
+                return;
+
+            var endPlazaPos = ConvergenceEndPoint.position;
+            endPlazaPos.y = ConvergencePoint.position.y; // Maintain height consistency
+            float avgBuildingWidth = (BuildingWidthMin + BuildingWidthMax) * 0.5f;
+
+            // Calculate angular positions of corridor entrances to leave gaps
+            var corridorAngles = new List<float>();
+            foreach (var path in allPaths)
+            {
+                if (path.Count >= 2)
+                {
+                    // Get direction from end plaza toward corridor (use second-to-last point to get direction)
+                    var dir = path[path.Count - 2] - endPlazaPos;
+                    dir.y = 0;
+                    float angle = Mathf.Atan2(dir.x, dir.z);
+                    corridorAngles.Add(angle);
+                }
+            }
+
+            // Place buildings in a ring, skipping corridor entrances
+            float circumference = 2 * Mathf.PI * ConvergenceEndRadius;
+            int buildingCount = Mathf.FloorToInt(circumference / (avgBuildingWidth + BuildingSetback));
+            float angleStep = 2 * Mathf.PI / buildingCount;
+
+            // Half-width of corridor gap in radians
+            float corridorGapAngle = Mathf.Atan2(CorridorWidth / 2 + BuildingSetback, ConvergenceEndRadius);
+
+            for (int row = 0; row < EndPlazaRingRows; row++)
+            {
+                float ringRadius = ConvergenceEndRadius + BuildingSetback + row * (avgBuildingWidth + BuildingSetback);
+
+                for (int i = 0; i < buildingCount; i++)
+                {
+                    float angle = i * angleStep;
+
+                    // Check if this angle is within a corridor entrance gap
+                    bool inCorridorGap = false;
+                    foreach (float corridorAngle in corridorAngles)
+                    {
+                        float angleDiff = Mathf.Abs(Mathf.DeltaAngle(angle * Mathf.Rad2Deg, corridorAngle * Mathf.Rad2Deg)) * Mathf.Deg2Rad;
+                        if (angleDiff < corridorGapAngle)
+                        {
+                            inCorridorGap = true;
+                            break;
+                        }
+                    }
+
+                    if (inCorridorGap)
+                        continue;
+
+                    // Place building facing inward toward end plaza center (no collider needed for plaza ring)
+                    var pos = endPlazaPos + new Vector3(Mathf.Sin(angle), 0, Mathf.Cos(angle)) * ringRadius;
+                    var facingDir = (endPlazaPos - pos).normalized;
+                    PlaceBuilding(pos, facingDir, needsCollider: false);
+                }
+            }
+        }
+
         private void PlaceBuilding(Vector3 position, Vector3 corridorDirection, bool needsCollider = true)
         {
             // Random height and width
@@ -538,12 +719,23 @@ namespace HolyRail.City
                         float t = (segmentProgress + accumulatedDistance) / segmentLength;
                         var rampPos = Vector3.Lerp(path[pathIndex], path[pathIndex + 1], t);
 
-                        // Skip if too close to convergence
+                        // Skip if too close to start convergence plaza
                         if (Vector3.Distance(rampPos, convergencePos) < ConvergenceRadius)
                         {
                             accumulatedDistance = rampSpacing;
                             segmentProgress += accumulatedDistance;
                             continue;
+                        }
+
+                        // Skip if too close to end convergence plaza
+                        if (ConvergenceEndPoint != null && EnableConvergenceEndPlaza)
+                        {
+                            if (Vector3.Distance(rampPos, ConvergenceEndPoint.position) < ConvergenceEndRadius)
+                            {
+                                accumulatedDistance = rampSpacing;
+                                segmentProgress += accumulatedDistance;
+                                continue;
+                            }
                         }
 
                         // Calculate tangent at this point
@@ -703,12 +895,23 @@ namespace HolyRail.City
                         float t = (segmentProgress + accumulatedDistance) / segmentLength;
                         var billboardPos = Vector3.Lerp(path[pathIndex], path[pathIndex + 1], t);
 
-                        // Skip if too close to convergence
+                        // Skip if too close to start convergence plaza
                         if (Vector3.Distance(billboardPos, convergencePos) < ConvergenceRadius)
                         {
                             accumulatedDistance = billboardSpacing;
                             segmentProgress += accumulatedDistance;
                             continue;
+                        }
+
+                        // Skip if too close to end convergence plaza
+                        if (ConvergenceEndPoint != null && EnableConvergenceEndPlaza)
+                        {
+                            if (Vector3.Distance(billboardPos, ConvergenceEndPoint.position) < ConvergenceEndRadius)
+                            {
+                                accumulatedDistance = billboardSpacing;
+                                segmentProgress += accumulatedDistance;
+                                continue;
+                            }
                         }
 
                         // Calculate tangent at this point
@@ -1124,25 +1327,52 @@ namespace HolyRail.City
                 }
             }
 
-            // Draw endpoints
-            Gizmos.color = new Color(0f, 1f, 0.5f, 0.8f);
+            // Draw convergence end point and radius (destination plaza)
+            if (ConvergenceEndPoint != null)
+            {
+                // Inner end plaza radius (open area)
+                Gizmos.color = new Color(0f, 0.8f, 1f, 0.8f);
+                Gizmos.DrawWireSphere(ConvergenceEndPoint.position, ConvergenceEndRadius);
+                Gizmos.color = new Color(0f, 0.8f, 1f, 0.3f);
+                Gizmos.DrawSphere(ConvergenceEndPoint.position, 5f);
+
+                // End plaza ring outer edge (if enabled)
+                if (EnableConvergenceEndPlaza)
+                {
+                    float avgBuildingWidth = (BuildingWidthMin + BuildingWidthMax) * 0.5f;
+                    float outerRingRadius = ConvergenceEndRadius + BuildingSetback + (EndPlazaRingRows - 1) * (avgBuildingWidth + BuildingSetback) + avgBuildingWidth;
+                    Gizmos.color = new Color(0f, 0.5f, 1f, 0.5f);
+                    Gizmos.DrawWireSphere(ConvergenceEndPoint.position, outerRingRadius);
+                }
+            }
+
+            // Draw waypoint endpoints (enabled corridors shown brighter)
             if (EndpointA != null)
             {
+                Gizmos.color = EnableCorridorA ? new Color(0f, 1f, 0.5f, 0.8f) : new Color(0.5f, 0.5f, 0.5f, 0.4f);
                 Gizmos.DrawSphere(EndpointA.position, 3f);
                 if (ConvergencePoint != null)
                     Gizmos.DrawLine(ConvergencePoint.position, EndpointA.position);
+                if (ConvergenceEndPoint != null && EnableCorridorA)
+                    Gizmos.DrawLine(EndpointA.position, ConvergenceEndPoint.position);
             }
             if (EndpointB != null)
             {
+                Gizmos.color = EnableCorridorB ? new Color(0f, 1f, 0.5f, 0.8f) : new Color(0.5f, 0.5f, 0.5f, 0.4f);
                 Gizmos.DrawSphere(EndpointB.position, 3f);
                 if (ConvergencePoint != null)
                     Gizmos.DrawLine(ConvergencePoint.position, EndpointB.position);
+                if (ConvergenceEndPoint != null && EnableCorridorB)
+                    Gizmos.DrawLine(EndpointB.position, ConvergenceEndPoint.position);
             }
             if (EndpointC != null)
             {
+                Gizmos.color = EnableCorridorC ? new Color(0f, 1f, 0.5f, 0.8f) : new Color(0.5f, 0.5f, 0.5f, 0.4f);
                 Gizmos.DrawSphere(EndpointC.position, 3f);
                 if (ConvergencePoint != null)
                     Gizmos.DrawLine(ConvergencePoint.position, EndpointC.position);
+                if (ConvergenceEndPoint != null && EnableCorridorC)
+                    Gizmos.DrawLine(EndpointC.position, ConvergenceEndPoint.position);
             }
 
             // Draw generated corridor paths with width

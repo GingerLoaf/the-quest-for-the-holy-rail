@@ -56,13 +56,26 @@ namespace HolyRail.City.Editor
 
             if (hasMissingCorridorReferences)
             {
-                EditorGUILayout.HelpBox(
-                    "Corridor layout not configured! Assign:\n" +
-                    (manager.ConvergencePoint == null ? "- Convergence Point (center plaza)\n" : "") +
-                    (manager.EndpointA == null ? "- Endpoint A\n" : "") +
-                    (manager.EndpointB == null ? "- Endpoint B\n" : "") +
-                    (manager.EndpointC == null ? "- Endpoint C" : ""),
-                    MessageType.Warning);
+                string missingMsg = "Corridor layout not configured! ";
+
+                if (manager.ConvergencePoint == null)
+                    missingMsg += "\n- Convergence Point (start plaza)";
+
+                // Check enabled corridors for missing waypoints (only if no end point)
+                if (manager.ConvergenceEndPoint == null)
+                {
+                    if (manager.EnableCorridorA && manager.EndpointA == null)
+                        missingMsg += "\n- Endpoint A (waypoint)";
+                    if (manager.EnableCorridorB && manager.EndpointB == null)
+                        missingMsg += "\n- Endpoint B (waypoint)";
+                    if (manager.EnableCorridorC && manager.EndpointC == null)
+                        missingMsg += "\n- Endpoint C (waypoint)";
+                }
+
+                if (!manager.EnableCorridorA && !manager.EnableCorridorB && !manager.EnableCorridorC)
+                    missingMsg += "\n- Enable at least one corridor";
+
+                EditorGUILayout.HelpBox(missingMsg, MessageType.Warning);
                 EditorGUILayout.Space(5);
             }
 
@@ -143,10 +156,10 @@ namespace HolyRail.City.Editor
             EditorGUILayout.Space(10);
             EditorGUILayout.HelpBox(
                 "Corridor-Based City Setup:\n" +
-                "1. Create 4 empty GameObjects in scene\n" +
-                "2. Position 1 as Convergence Point (center plaza)\n" +
-                "3. Position 3 as Endpoints (corridor destinations)\n" +
-                "4. Assign all transforms to this component\n" +
+                "1. Create GameObjects for Convergence Point (start plaza)\n" +
+                "2. Create Endpoint A/B/C as corridor waypoints\n" +
+                "3. (Optional) Create Convergence End Point (destination plaza)\n" +
+                "4. Toggle corridors A/B/C on/off as needed\n" +
                 "5. Assign building mesh and material\n" +
                 "6. Click GENERATE CITY\n" +
                 "7. Adjust corridor parameters and regenerate as needed",
@@ -167,8 +180,12 @@ namespace HolyRail.City.Editor
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("Corridors:", labelStyle, GUILayout.Width(140));
-            EditorGUILayout.LabelField("3", valueStyle);
+            EditorGUILayout.LabelField("Enabled Corridors:", labelStyle, GUILayout.Width(140));
+            string corridorList = "";
+            if (manager.EnableCorridorA) corridorList += "A ";
+            if (manager.EnableCorridorB) corridorList += "B ";
+            if (manager.EnableCorridorC) corridorList += "C ";
+            EditorGUILayout.LabelField($"{manager.EnabledCorridorCount} ({corridorList.Trim()})", valueStyle);
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.Space(5);
@@ -195,9 +212,23 @@ namespace HolyRail.City.Editor
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("Plaza Ring:", labelStyle, GUILayout.Width(140));
+            EditorGUILayout.LabelField("Start Plaza Ring:", labelStyle, GUILayout.Width(140));
             EditorGUILayout.LabelField(manager.EnablePlazaRing ? $"{manager.PlazaRingRows} row(s)" : "Disabled", valueStyle);
             EditorGUILayout.EndHorizontal();
+
+            // End plaza info
+            if (manager.ConvergenceEndPoint != null)
+            {
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("End Plaza Radius:", labelStyle, GUILayout.Width(140));
+                EditorGUILayout.LabelField($"{manager.ConvergenceEndRadius:F0}m", valueStyle);
+                EditorGUILayout.EndHorizontal();
+
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("End Plaza Ring:", labelStyle, GUILayout.Width(140));
+                EditorGUILayout.LabelField(manager.EnableConvergenceEndPlaza ? $"{manager.EndPlazaRingRows} row(s)" : "Disabled", valueStyle);
+                EditorGUILayout.EndHorizontal();
+            }
 
             EditorGUILayout.Space(5);
 

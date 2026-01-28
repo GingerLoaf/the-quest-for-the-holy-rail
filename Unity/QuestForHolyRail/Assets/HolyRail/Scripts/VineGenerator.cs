@@ -438,46 +438,219 @@ namespace HolyRail.Vines
             _generatedAttractors.Clear();
 
             var convergence = CityManager.ConvergencePoint.position;
-            var endpoints = new[]
+            var hasEndPoint = CityManager.ConvergenceEndPoint != null;
+            var endPointPos = hasEndPoint ? CityManager.ConvergenceEndPoint.position : Vector3.zero;
+
+            // Build list of enabled corridors with their waypoints
+            var enabledCorridors = new List<(Transform waypoint, int index)>();
+            if (CityManager.EnableCorridorA && CityManager.EndpointA != null)
+                enabledCorridors.Add((CityManager.EndpointA, 0));
+            if (CityManager.EnableCorridorB && CityManager.EndpointB != null)
+                enabledCorridors.Add((CityManager.EndpointB, 1));
+            if (CityManager.EnableCorridorC && CityManager.EndpointC != null)
+                enabledCorridors.Add((CityManager.EndpointC, 2));
+
+            if (enabledCorridors.Count == 0)
             {
-                CityManager.EndpointA.position,
-                CityManager.EndpointB.position,
-                CityManager.EndpointC.position
-            };
+                Debug.LogWarning("VineGenerator: No enabled corridors with valid waypoints!");
+                return;
+            }
 
-            for (int corridorIdx = 0; corridorIdx < 3; corridorIdx++)
+            int totalVines = 0;
+
+            foreach (var (waypoint, corridorIdx) in enabledCorridors)
             {
-                var endpoint = endpoints[corridorIdx];
-                var corridorDir = (endpoint - convergence).normalized;
-                var corridorLength = Vector3.Distance(convergence, endpoint);
-
-                // Perpendicular direction for lateral distribution
-                var right = Vector3.Cross(Vector3.up, corridorDir).normalized;
-
-                for (int vineIdx = 0; vineIdx < VinesPerCorridor; vineIdx++)
+                // If ConvergenceEndPoint exists, path goes: convergence -> waypoint -> end point
+                // Otherwise: convergence -> waypoint
+                if (hasEndPoint)
                 {
-                    // Distribute vines across corridor width
-                    float lateralT = VinesPerCorridor == 1 ? 0.5f : (float)vineIdx / (VinesPerCorridor - 1);
-                    float lateralOffset = Mathf.Lerp(-PathCorridorWidth / 2, PathCorridorWidth / 2, lateralT);
-
-                    // Random length for this vine (clamped to available corridor length)
-                    float maxAvailableLength = corridorLength - PathStartOffset;
-                    float vineLength = Mathf.Lerp(PathLengthRange.x, PathLengthRange.y, (float)random.NextDouble());
-                    vineLength = Mathf.Min(vineLength, maxAvailableLength);
-
-                    // Generate path points
-                    GeneratePathVine(
-                        convergence + corridorDir * PathStartOffset + right * lateralOffset,
-                        corridorDir,
-                        vineLength,
-                        right,
+                    // Two-segment path: convergence to waypoint, then waypoint to end point
+                    GeneratePathForTwoSegmentCorridor(
+                        convergence,
+                        waypoint.position,
+                        endPointPos,
                         random,
-                        corridorIdx * 100 + vineIdx
+                        corridorIdx,
+                        ref totalVines
                     );
+                }
+                else
+                {
+                    // Original single-segment path: convergence to waypoint
+                    var corridorDir = (waypoint.position - convergence).normalized;
+                    var corridorLength = Vector3.Distance(convergence, waypoint.position);
+
+                    // Perpendicular direction for lateral distribution
+                    var right = Vector3.Cross(Vector3.up, corridorDir).normalized;
+
+                    for (int vineIdx = 0; vineIdx < VinesPerCorridor; vineIdx++)
+                    {
+                        // Distribute vines across corridor width
+                        float lateralT = VinesPerCorridor == 1 ? 0.5f : (float)vineIdx / (VinesPerCorridor - 1);
+                        float lateralOffset = Mathf.Lerp(-PathCorridorWidth / 2, PathCorridorWidth / 2, lateralT);
+
+                        // Random length for this vine (clamped to available corridor length)
+                        float maxAvailableLength = corridorLength - PathStartOffset;
+                        float vineLength = Mathf.Lerp(PathLengthRange.x, PathLengthRange.y, (float)random.NextDouble());
+                        vineLength = Mathf.Min(vineLength, maxAvailableLength);
+
+                        // Generate path points
+                        GeneratePathVine(
+                            convergence + corridorDir * PathStartOffset + right * lateralOffset,
+                            corridorDir,
+                            vineLength,
+                            right,
+                            random,
+                            corridorIdx * 100 + vineIdx
+                        );
+                        totalVines++;
+                    }
                 }
             }
 
-            Debug.Log($"VineGenerator (Path): Generated {_generatedNodes.Count} nodes across {VinesPerCorridor * 3} vines");
+            Debug.Log($"VineGenerator (Path): Generated {_generatedNodes.Count} nodes across {totalVines} vines ({enabledCorridors.Count} corridors)");
+        }
+
+        private void GeneratePathForTwoSegmentCorridor(
+            Vector3 convergence,
+            Vector3 waypoint,
+            Vector3 endPoint,
+            System.Random random,
+            int corridorIdx,
+            ref int totalVines)
+        {
+            // Calculate full path length (convergence -> waypoint -> end point)
+            float segment1Length = Vector3.Distance(convergence, waypoint);
+            float segment2Length = Vector3.Distance(waypoint, endPoint);
+            float totalCorridorLength = segment1Length + segment2Length;
+
+            // Direction vectors for each segment
+            var dir1 = (waypoint - convergence).normalized;
+            var dir2 = (endPoint - waypoint).normalized;
+
+            // Perpendicular direction (use first segment's direction for lateral offset)
+            var right = Vector3.Cross(Vector3.up, dir1).normalized;
+
+            for (int vineIdx = 0; vineIdx < VinesPerCorridor; vineIdx++)
+            {
+                // Distribute vines across corridor width
+                float lateralT = VinesPerCorridor == 1 ? 0.5f : (float)vineIdx / (VinesPerCorridor - 1);
+                float lateralOffset = Mathf.Lerp(-PathCorridorWidth / 2, PathCorridorWidth / 2, lateralT);
+
+                // Random length for this vine (clamped to available corridor length)
+                float maxAvailableLength = totalCorridorLength - PathStartOffset;
+                float vineLength = Mathf.Lerp(PathLengthRange.x, PathLengthRange.y, (float)random.NextDouble());
+                vineLength = Mathf.Min(vineLength, maxAvailableLength);
+
+                // Generate path points for two-segment corridor
+                GenerateTwoSegmentPathVine(
+                    convergence,
+                    waypoint,
+                    endPoint,
+                    segment1Length,
+                    segment2Length,
+                    lateralOffset,
+                    vineLength,
+                    random,
+                    corridorIdx * 100 + vineIdx
+                );
+                totalVines++;
+            }
+        }
+
+        private void GenerateTwoSegmentPathVine(
+            Vector3 convergence,
+            Vector3 waypoint,
+            Vector3 endPoint,
+            float segment1Length,
+            float segment2Length,
+            float lateralOffset,
+            float vineLength,
+            System.Random random,
+            int noiseOffset)
+        {
+            int pointCount = FreePointsPerSpline;
+            float totalLength = segment1Length + segment2Length;
+
+            // Direction vectors
+            var dir1 = (waypoint - convergence).normalized;
+            var dir2 = (endPoint - waypoint).normalized;
+            var right1 = Vector3.Cross(Vector3.up, dir1).normalized;
+            var right2 = Vector3.Cross(Vector3.up, dir2).normalized;
+
+            // Starting position with lateral offset
+            var start = convergence + dir1 * PathStartOffset + right1 * lateralOffset;
+
+            if (StartBelowGround)
+            {
+                start.y = -GroundStartDepth;
+            }
+
+            for (int i = 0; i < pointCount; i++)
+            {
+                float t = (float)i / (pointCount - 1);
+                float distanceAlongPath = t * vineLength + PathStartOffset;
+
+                // Determine which segment we're in and calculate position
+                Vector3 basePosition;
+                Vector3 currentDir;
+                Vector3 currentRight;
+
+                if (distanceAlongPath <= segment1Length)
+                {
+                    // In first segment: convergence -> waypoint
+                    currentDir = dir1;
+                    currentRight = right1;
+                    basePosition = convergence + dir1 * distanceAlongPath + currentRight * lateralOffset;
+                }
+                else
+                {
+                    // In second segment: waypoint -> end point
+                    float distInSegment2 = distanceAlongPath - segment1Length;
+                    currentDir = dir2;
+                    currentRight = right2;
+                    basePosition = waypoint + dir2 * distInSegment2 + currentRight * lateralOffset;
+                }
+
+                // Sample noise for lateral and vertical movement
+                float noiseRight = (Mathf.PerlinNoise(t * FreeNoiseFrequency.x + noiseOffset, 0f) * 2f - 1f) * FreeNoiseAmplitude.x;
+                float noiseUp = (Mathf.PerlinNoise(t * FreeNoiseFrequency.y + noiseOffset + 33f, 100f) * 2f - 1f) * FreeNoiseAmplitude.y;
+
+                // Clamp lateral noise to stay within corridor bounds
+                float maxLateralOffset = PathCorridorWidth / 2;
+                noiseRight = Mathf.Clamp(noiseRight, -maxLateralOffset, maxLateralOffset);
+
+                var position = basePosition
+                    + currentRight * noiseRight
+                    + Vector3.up * noiseUp;
+
+                // Clamp to stay above ground (y >= 0)
+                position.y = Mathf.Max(position.y, 0f);
+
+                // Apply obstacle avoidance if enabled
+                if (EnableObstacleAvoidance && i > 0 && Physics.CheckSphere(position, ObstacleAvoidanceDistance))
+                {
+                    var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
+                    var dir = (position - prevPos).normalized;
+                    float dist = Vector3.Distance(prevPos, position);
+
+                    if (Physics.SphereCast(prevPos, ObstacleAvoidanceDistance * 0.5f, dir, out var hit, dist + ObstacleAvoidanceDistance))
+                    {
+                        position = hit.point - dir * ObstacleAvoidanceDistance + hit.normal * ObstacleAvoidanceDistance;
+                    }
+                }
+
+                // Final ground clamp after obstacle avoidance
+                position.y = Mathf.Max(position.y, 0f);
+
+                _generatedNodes.Add(new VineNode
+                {
+                    Position = position,
+                    ParentIndex = (i == 0) ? -1 : _generatedNodes.Count - 1,
+                    IsTip = (i == pointCount - 1) ? 1 : 0,
+                    LastGrowIteration = 0
+                });
+            }
         }
 
         private void GeneratePathVine(Vector3 start, Vector3 direction, float length, Vector3 right, System.Random random, int noiseOffset)
