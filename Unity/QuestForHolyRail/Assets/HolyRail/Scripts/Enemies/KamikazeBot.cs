@@ -70,7 +70,7 @@ namespace HolyRail.Scripts.Enemies
         private void Explode()
         {
             _isExploding = true;
-            
+
             if (ExplosionEffect)
             {
                 Instantiate(ExplosionEffect, transform.position, Quaternion.identity);
@@ -86,6 +86,15 @@ namespace HolyRail.Scripts.Enemies
             }
 
             if(Spawner) Spawner.RecycleBot(this, true);
+        }
+
+        protected override void OnValidate()
+        {
+            base.OnValidate();
+            if (Application.isPlaying)
+            {
+                Debug.Log($"KamikazeBot [{name}]: Parameters updated - ExplosionRadius={ExplosionRadius}, SlowdownMultiplier={SlowdownMultiplier}");
+            }
         }
     }
 }

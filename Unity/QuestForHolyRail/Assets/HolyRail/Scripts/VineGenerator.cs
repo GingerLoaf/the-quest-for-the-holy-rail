@@ -20,6 +20,26 @@ namespace HolyRail.Vines
         Path   // Follows CityManager corridors
     }
 
+    // Level chunk spline characteristics as RANGES (extracted from LevelChunk prefabs)
+    public static class LevelChunkRules
+    {
+        // Height variation range (Y span per spline)
+        public const float HeightVariationMin = 0.7f;
+        public const float HeightVariationMax = 7.5f;
+
+        // Lateral span range (X displacement)
+        public const float LateralSpanMin = 9.5f;
+        public const float LateralSpanMax = 20f;
+
+        // Noise frequency range (lower = smoother curves)
+        public const float FrequencyMin = 0.08f;
+        public const float FrequencyMax = 0.2f;
+
+        // Curviness ratio range (lateral/forward)
+        public const float CurvinessMin = 0.5f;
+        public const float CurvinessMax = 0.65f;
+    }
+
     [ExecuteInEditMode]
     public class VineGenerator : MonoBehaviour
     {
@@ -101,6 +121,26 @@ namespace HolyRail.Vines
         [field: SerializeField] public float PathStartOffset { get; set; } = 10f;
         [field: SerializeField] public bool StartBelowGround { get; set; } = true;
         [field: SerializeField] public float GroundStartDepth { get; set; } = 5f;
+
+        [Header("Level Chunk Influence")]
+        [field: SerializeField, Range(0f, 1f)]
+        public float LevelChunkInfluence { get; set; } = 0f;
+
+        [Header("Volume Height")]
+        [field: SerializeField]
+        public Vector2 VolumeHeightRange { get; set; } = new Vector2(2f, 15f);  // Min/max Y height for vine spawning
+
+        [Header("Vine Spacing")]
+        [field: SerializeField]
+        public float MinVineSpacing { get; set; } = 5f;  // Minimum distance between vine start points
+
+        [Header("Ground Vines")]
+        [field: SerializeField, Range(0f, 1f)]
+        public float GroundVineRatio { get; set; } = 0f;  // Ratio of vines that emerge from ground level
+
+        [HideInInspector]
+        [field: SerializeField]
+        public float VineStartRange { get; set; } = 0.8f;  // Legacy - kept for old methods
 
         [Header("Visualization")]
         [field: SerializeField] public bool ShowAttractors { get; set; } = true;
@@ -482,59 +522,162 @@ namespace HolyRail.Vines
                 return;
             }
 
-            int totalVines = 0;
-
-            foreach (var (waypoint, corridorIdx) in enabledCorridors)
+            // Calculate the overall corridor bounds for volume-based spawning
+            var allPoints = new List<Vector3> { convergence };
+            foreach (var (waypoint, _) in enabledCorridors)
             {
-                // If ConvergenceEndPoint exists, path goes: convergence -> waypoint -> end point
-                // Otherwise: convergence -> waypoint
-                if (hasEndPoint)
+                allPoints.Add(waypoint.position);
+            }
+            if (hasEndPoint)
+            {
+                allPoints.Add(endPointPos);
+            }
+
+            // Find min/max bounds
+            Vector3 minBounds = allPoints[0];
+            Vector3 maxBounds = allPoints[0];
+            foreach (var p in allPoints)
+            {
+                minBounds = Vector3.Min(minBounds, p);
+                maxBounds = Vector3.Max(maxBounds, p);
+            }
+
+            // Expand bounds by corridor width and set height range
+            minBounds -= new Vector3(PathCorridorWidth / 2, 0, PathCorridorWidth / 2);
+            maxBounds += new Vector3(PathCorridorWidth / 2, 0, PathCorridorWidth / 2);
+
+            // Apply explicit height constraints
+            minBounds.y = VolumeHeightRange.x;
+            maxBounds.y = VolumeHeightRange.y;
+
+            int totalVines = 0;
+            int skippedDueToSpacing = 0;
+            var vineStartPositions = new List<Vector3>();
+
+            // Pre-calculate average direction for all vines
+            Vector3 avgDir = Vector3.zero;
+            foreach (var (waypoint, _) in enabledCorridors)
+            {
+                avgDir += (waypoint.position - convergence).normalized;
+            }
+            if (hasEndPoint)
+            {
+                avgDir += (endPointPos - convergence).normalized;
+            }
+            avgDir = avgDir.normalized;
+
+            // Volume-based spawning: scatter vines throughout the corridor bounds
+            for (int vineIdx = 0; vineIdx < VinesPerCorridor; vineIdx++)
+            {
+                // Determine if this is a ground vine (for climbing back up when you fall)
+                bool isGroundVine = (float)random.NextDouble() < GroundVineRatio;
+
+                // Try to find a valid position that respects minimum spacing
+                Vector3 startPos = Vector3.zero;
+                bool foundValidPosition = false;
+                int maxAttempts = 20;
+
+                for (int attempt = 0; attempt < maxAttempts; attempt++)
                 {
-                    // Two-segment path: convergence to waypoint, then waypoint to end point
-                    GeneratePathForTwoSegmentCorridor(
-                        convergence,
-                        waypoint.position,
-                        endPointPos,
-                        random,
-                        corridorIdx,
-                        ref totalVines
-                    );
+                    if (isGroundVine)
+                    {
+                        // Ground vines start at ground level
+                        startPos = new Vector3(
+                            Mathf.Lerp(minBounds.x, maxBounds.x, (float)random.NextDouble()),
+                            0f,  // Start at ground
+                            Mathf.Lerp(minBounds.z, maxBounds.z, (float)random.NextDouble())
+                        );
+                    }
+                    else
+                    {
+                        // Regular vines spawn anywhere in volume
+                        startPos = new Vector3(
+                            Mathf.Lerp(minBounds.x, maxBounds.x, (float)random.NextDouble()),
+                            Mathf.Lerp(minBounds.y, maxBounds.y, (float)random.NextDouble()),
+                            Mathf.Lerp(minBounds.z, maxBounds.z, (float)random.NextDouble())
+                        );
+                    }
+
+                    // Check distance to all existing vine start positions
+                    bool tooClose = false;
+                    foreach (var existingPos in vineStartPositions)
+                    {
+                        if (Vector3.Distance(startPos, existingPos) < MinVineSpacing)
+                        {
+                            tooClose = true;
+                            break;
+                        }
+                    }
+
+                    if (!tooClose)
+                    {
+                        foundValidPosition = true;
+                        break;
+                    }
+                }
+
+                if (!foundValidPosition)
+                {
+                    skippedDueToSpacing++;
+                    continue;
+                }
+
+                // Track this vine's start position
+                vineStartPositions.Add(startPos);
+
+                // Random vine length
+                float vineLength = Mathf.Lerp(PathLengthRange.x, PathLengthRange.y, (float)random.NextDouble());
+
+                Vector3 vineDir;
+                if (isGroundVine)
+                {
+                    // Ground vines go primarily upward with some forward/lateral variation
+                    // Target height is roughly 1/4 of the height range
+                    float targetHeight = VolumeHeightRange.y * 0.25f;
+                    float horizontalDist = vineLength * 0.5f;  // Some horizontal travel
+
+                    // Direction goes up and slightly forward
+                    vineDir = new Vector3(
+                        (float)(random.NextDouble() * 2 - 1) * 0.3f,  // Slight lateral
+                        targetHeight / vineLength,  // Upward component
+                        avgDir.z * 0.5f + (float)(random.NextDouble() * 2 - 1) * 0.2f  // Mostly forward
+                    ).normalized;
                 }
                 else
                 {
-                    // Original single-segment path: convergence to waypoint
-                    var corridorDir = (waypoint.position - convergence).normalized;
-                    var corridorLength = Vector3.Distance(convergence, waypoint.position);
-
-                    // Perpendicular direction for lateral distribution
-                    var right = Vector3.Cross(Vector3.up, corridorDir).normalized;
-
-                    for (int vineIdx = 0; vineIdx < VinesPerCorridor; vineIdx++)
-                    {
-                        // Distribute vines across corridor width
-                        float lateralT = VinesPerCorridor == 1 ? 0.5f : (float)vineIdx / (VinesPerCorridor - 1);
-                        float lateralOffset = Mathf.Lerp(-PathCorridorWidth / 2, PathCorridorWidth / 2, lateralT);
-
-                        // Random length for this vine (clamped to available corridor length)
-                        float maxAvailableLength = corridorLength - PathStartOffset;
-                        float vineLength = Mathf.Lerp(PathLengthRange.x, PathLengthRange.y, (float)random.NextDouble());
-                        vineLength = Mathf.Min(vineLength, maxAvailableLength);
-
-                        // Generate path points
-                        GeneratePathVine(
-                            convergence + corridorDir * PathStartOffset + right * lateralOffset,
-                            corridorDir,
-                            vineLength,
-                            right,
-                            random,
-                            corridorIdx * 100 + vineIdx
-                        );
-                        totalVines++;
-                    }
+                    // Regular vines go mostly forward with variation
+                    float dirVariation = 0.3f;
+                    vineDir = (avgDir + new Vector3(
+                        (float)(random.NextDouble() * 2 - 1) * dirVariation,
+                        (float)(random.NextDouble() * 2 - 1) * dirVariation * 0.5f,
+                        (float)(random.NextDouble() * 2 - 1) * dirVariation
+                    )).normalized;
                 }
+
+                // Perpendicular direction for undulation
+                var right = Vector3.Cross(Vector3.up, vineDir).normalized;
+                if (right.sqrMagnitude < 0.01f)
+                {
+                    right = Vector3.Cross(Vector3.forward, vineDir).normalized;
+                }
+
+                // Generate the vine segment
+                GenerateVolumePathVine(
+                    startPos,
+                    vineDir,
+                    vineLength,
+                    right,
+                    random,
+                    vineIdx
+                );
+                totalVines++;
             }
 
-            Debug.Log($"VineGenerator (Path): Generated {_generatedNodes.Count} nodes across {totalVines} vines ({enabledCorridors.Count} corridors)");
+            if (skippedDueToSpacing > 0)
+            {
+                Debug.Log($"VineGenerator (Path): Skipped {skippedDueToSpacing} vines due to MinVineSpacing ({MinVineSpacing}m)");
+            }
+            Debug.Log($"VineGenerator (Path): Generated {_generatedNodes.Count} nodes across {totalVines} vines (volume-based)");
         }
 
         private void GeneratePathForTwoSegmentCorridor(
@@ -559,14 +702,21 @@ namespace HolyRail.Vines
 
             for (int vineIdx = 0; vineIdx < VinesPerCorridor; vineIdx++)
             {
-                // Distribute vines across corridor width
-                float lateralT = VinesPerCorridor == 1 ? 0.5f : (float)vineIdx / (VinesPerCorridor - 1);
-                float lateralOffset = Mathf.Lerp(-PathCorridorWidth / 2, PathCorridorWidth / 2, lateralT);
+                // Random lateral offset within corridor width
+                float lateralOffset = Mathf.Lerp(-PathCorridorWidth / 2, PathCorridorWidth / 2, (float)random.NextDouble());
 
-                // Random length for this vine (clamped to available corridor length)
-                float maxAvailableLength = totalCorridorLength - PathStartOffset;
+                // Random start position along the corridor (based on VineStartRange)
+                float maxStartDistance = (totalCorridorLength - PathLengthRange.x) * VineStartRange;
+                float startDistance = PathStartOffset + (float)random.NextDouble() * Mathf.Max(0, maxStartDistance);
+
+                // Random length for this vine (clamped to remaining corridor length)
+                float maxAvailableLength = totalCorridorLength - startDistance;
                 float vineLength = Mathf.Lerp(PathLengthRange.x, PathLengthRange.y, (float)random.NextDouble());
                 vineLength = Mathf.Min(vineLength, maxAvailableLength);
+
+                // Skip if vine would be too short
+                if (vineLength < PathLengthRange.x * 0.5f)
+                    continue;
 
                 // Generate path points for two-segment corridor
                 GenerateTwoSegmentPathVine(
@@ -576,6 +726,7 @@ namespace HolyRail.Vines
                     segment1Length,
                     segment2Length,
                     lateralOffset,
+                    startDistance,
                     vineLength,
                     random,
                     corridorIdx * 100 + vineIdx
@@ -591,6 +742,7 @@ namespace HolyRail.Vines
             float segment1Length,
             float segment2Length,
             float lateralOffset,
+            float startDistance,
             float vineLength,
             System.Random random,
             int noiseOffset)
@@ -604,18 +756,37 @@ namespace HolyRail.Vines
             var right1 = Vector3.Cross(Vector3.up, dir1).normalized;
             var right2 = Vector3.Cross(Vector3.up, dir2).normalized;
 
-            // Starting position with lateral offset
-            var start = convergence + dir1 * PathStartOffset + right1 * lateralOffset;
+            // Per-vine: sample random target values within level chunk ranges
+            // Use noiseOffset as seed for consistency across regenerations
+            float vineRandom = Mathf.PerlinNoise(noiseOffset * 0.1f, 0f);
+            float vineRandomY = Mathf.PerlinNoise(noiseOffset * 0.1f, 50f);
 
-            if (StartBelowGround)
-            {
-                start.y = -GroundStartDepth;
-            }
+            // Target amplitude from level chunk ranges (half span = amplitude)
+            float targetAmplitudeX = Mathf.Lerp(
+                LevelChunkRules.LateralSpanMin / 2f,
+                LevelChunkRules.LateralSpanMax / 2f,
+                vineRandom
+            );
+            float targetAmplitudeY = Mathf.Lerp(
+                LevelChunkRules.HeightVariationMin / 2f,
+                LevelChunkRules.HeightVariationMax / 2f,
+                vineRandomY
+            );
+
+            // Target frequency from level chunk range (smoother curves)
+            float targetFreqX = Mathf.Lerp(LevelChunkRules.FrequencyMin, LevelChunkRules.FrequencyMax, vineRandom);
+            float targetFreqY = Mathf.Lerp(LevelChunkRules.FrequencyMin, LevelChunkRules.FrequencyMax, 1f - vineRandom);
+
+            // Blend current settings toward randomized level chunk targets
+            float influencedAmplitudeX = Mathf.Lerp(FreeNoiseAmplitude.x, targetAmplitudeX, LevelChunkInfluence);
+            float influencedAmplitudeY = Mathf.Lerp(FreeNoiseAmplitude.y, targetAmplitudeY, LevelChunkInfluence);
+            float influencedFreqX = Mathf.Lerp(FreeNoiseFrequency.x, targetFreqX, LevelChunkInfluence);
+            float influencedFreqY = Mathf.Lerp(FreeNoiseFrequency.y, targetFreqY, LevelChunkInfluence);
 
             for (int i = 0; i < pointCount; i++)
             {
                 float t = (float)i / (pointCount - 1);
-                float distanceAlongPath = t * vineLength + PathStartOffset;
+                float distanceAlongPath = startDistance + t * vineLength;
 
                 // Determine which segment we're in and calculate position
                 Vector3 basePosition;
@@ -638,9 +809,9 @@ namespace HolyRail.Vines
                     basePosition = waypoint + dir2 * distInSegment2 + currentRight * lateralOffset;
                 }
 
-                // Sample noise for lateral and vertical movement
-                float noiseRight = (Mathf.PerlinNoise(t * FreeNoiseFrequency.x + noiseOffset, 0f) * 2f - 1f) * FreeNoiseAmplitude.x;
-                float noiseUp = (Mathf.PerlinNoise(t * FreeNoiseFrequency.y + noiseOffset + 33f, 100f) * 2f - 1f) * FreeNoiseAmplitude.y;
+                // Sample noise for lateral and vertical movement using influenced values
+                float noiseRight = (Mathf.PerlinNoise(t * influencedFreqX + noiseOffset, 0f) * 2f - 1f) * influencedAmplitudeX;
+                float noiseUp = (Mathf.PerlinNoise(t * influencedFreqY + noiseOffset + 33f, 100f) * 2f - 1f) * influencedAmplitudeY;
 
                 // Clamp lateral noise to stay within corridor bounds
                 float maxLateralOffset = PathCorridorWidth / 2;
@@ -689,13 +860,40 @@ namespace HolyRail.Vines
                 start.y = -GroundStartDepth;
             }
 
+            // Per-vine: sample random target values within level chunk ranges
+            // Use noiseOffset as seed for consistency across regenerations
+            float vineRandom = Mathf.PerlinNoise(noiseOffset * 0.1f, 0f);
+            float vineRandomY = Mathf.PerlinNoise(noiseOffset * 0.1f, 50f);
+
+            // Target amplitude from level chunk ranges (half span = amplitude)
+            float targetAmplitudeX = Mathf.Lerp(
+                LevelChunkRules.LateralSpanMin / 2f,
+                LevelChunkRules.LateralSpanMax / 2f,
+                vineRandom
+            );
+            float targetAmplitudeY = Mathf.Lerp(
+                LevelChunkRules.HeightVariationMin / 2f,
+                LevelChunkRules.HeightVariationMax / 2f,
+                vineRandomY
+            );
+
+            // Target frequency from level chunk range (smoother curves)
+            float targetFreqX = Mathf.Lerp(LevelChunkRules.FrequencyMin, LevelChunkRules.FrequencyMax, vineRandom);
+            float targetFreqY = Mathf.Lerp(LevelChunkRules.FrequencyMin, LevelChunkRules.FrequencyMax, 1f - vineRandom);
+
+            // Blend current settings toward randomized level chunk targets
+            float influencedAmplitudeX = Mathf.Lerp(FreeNoiseAmplitude.x, targetAmplitudeX, LevelChunkInfluence);
+            float influencedAmplitudeY = Mathf.Lerp(FreeNoiseAmplitude.y, targetAmplitudeY, LevelChunkInfluence);
+            float influencedFreqX = Mathf.Lerp(FreeNoiseFrequency.x, targetFreqX, LevelChunkInfluence);
+            float influencedFreqY = Mathf.Lerp(FreeNoiseFrequency.y, targetFreqY, LevelChunkInfluence);
+
             for (int i = 0; i < pointCount; i++)
             {
                 float t = (float)i / (pointCount - 1);
 
-                // Sample noise for lateral and vertical movement
-                float noiseRight = (Mathf.PerlinNoise(t * FreeNoiseFrequency.x + noiseOffset, 0f) * 2f - 1f) * FreeNoiseAmplitude.x;
-                float noiseUp = (Mathf.PerlinNoise(t * FreeNoiseFrequency.y + noiseOffset + 33f, 100f) * 2f - 1f) * FreeNoiseAmplitude.y;
+                // Sample noise for lateral and vertical movement using influenced values
+                float noiseRight = (Mathf.PerlinNoise(t * influencedFreqX + noiseOffset, 0f) * 2f - 1f) * influencedAmplitudeX;
+                float noiseUp = (Mathf.PerlinNoise(t * influencedFreqY + noiseOffset + 33f, 100f) * 2f - 1f) * influencedAmplitudeY;
 
                 // Clamp lateral noise to stay within corridor bounds
                 float maxLateralOffset = PathCorridorWidth / 2;
@@ -705,6 +903,78 @@ namespace HolyRail.Vines
                     + direction * (t * length)
                     + right * noiseRight
                     + Vector3.up * noiseUp;  // Use world up for vertical noise
+
+                // Clamp to stay above ground (y >= 0)
+                position.y = Mathf.Max(position.y, 0f);
+
+                // Apply obstacle avoidance if enabled
+                if (EnableObstacleAvoidance && i > 0 && Physics.CheckSphere(position, ObstacleAvoidanceDistance))
+                {
+                    var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
+                    var dir = (position - prevPos).normalized;
+                    float dist = Vector3.Distance(prevPos, position);
+
+                    if (Physics.SphereCast(prevPos, ObstacleAvoidanceDistance * 0.5f, dir, out var hit, dist + ObstacleAvoidanceDistance))
+                    {
+                        position = hit.point - dir * ObstacleAvoidanceDistance + hit.normal * ObstacleAvoidanceDistance;
+                    }
+                }
+
+                // Final ground clamp after obstacle avoidance
+                position.y = Mathf.Max(position.y, 0f);
+
+                _generatedNodes.Add(new VineNode
+                {
+                    Position = position,
+                    ParentIndex = (i == 0) ? -1 : _generatedNodes.Count - 1,
+                    IsTip = (i == pointCount - 1) ? 1 : 0,
+                    LastGrowIteration = 0
+                });
+            }
+        }
+
+        private void GenerateVolumePathVine(Vector3 start, Vector3 direction, float length, Vector3 right, System.Random random, int noiseOffset)
+        {
+            int pointCount = FreePointsPerSpline;
+
+            // Per-vine: sample random target values within level chunk ranges
+            float vineRandom = Mathf.PerlinNoise(noiseOffset * 0.1f, 0f);
+            float vineRandomY = Mathf.PerlinNoise(noiseOffset * 0.1f, 50f);
+
+            // Target amplitude from level chunk ranges (half span = amplitude)
+            float targetAmplitudeX = Mathf.Lerp(
+                LevelChunkRules.LateralSpanMin / 2f,
+                LevelChunkRules.LateralSpanMax / 2f,
+                vineRandom
+            );
+            float targetAmplitudeY = Mathf.Lerp(
+                LevelChunkRules.HeightVariationMin / 2f,
+                LevelChunkRules.HeightVariationMax / 2f,
+                vineRandomY
+            );
+
+            // Target frequency from level chunk range
+            float targetFreqX = Mathf.Lerp(LevelChunkRules.FrequencyMin, LevelChunkRules.FrequencyMax, vineRandom);
+            float targetFreqY = Mathf.Lerp(LevelChunkRules.FrequencyMin, LevelChunkRules.FrequencyMax, 1f - vineRandom);
+
+            // Blend current settings toward randomized level chunk targets
+            float influencedAmplitudeX = Mathf.Lerp(FreeNoiseAmplitude.x, targetAmplitudeX, LevelChunkInfluence);
+            float influencedAmplitudeY = Mathf.Lerp(FreeNoiseAmplitude.y, targetAmplitudeY, LevelChunkInfluence);
+            float influencedFreqX = Mathf.Lerp(FreeNoiseFrequency.x, targetFreqX, LevelChunkInfluence);
+            float influencedFreqY = Mathf.Lerp(FreeNoiseFrequency.y, targetFreqY, LevelChunkInfluence);
+
+            for (int i = 0; i < pointCount; i++)
+            {
+                float t = (float)i / (pointCount - 1);
+
+                // Sample noise for lateral and vertical undulation
+                float noiseRight = (Mathf.PerlinNoise(t * influencedFreqX + noiseOffset, 0f) * 2f - 1f) * influencedAmplitudeX;
+                float noiseUp = (Mathf.PerlinNoise(t * influencedFreqY + noiseOffset + 33f, 100f) * 2f - 1f) * influencedAmplitudeY;
+
+                var position = start
+                    + direction * (t * length)
+                    + right * noiseRight
+                    + Vector3.up * noiseUp;
 
                 // Clamp to stay above ground (y >= 0)
                 position.y = Mathf.Max(position.y, 0f);

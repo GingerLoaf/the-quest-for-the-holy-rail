@@ -16,6 +16,9 @@ namespace HolyRail.City
         [field: SerializeField] public float ActivationRadius { get; private set; } = 150f;
         [field: SerializeField] public float UpdateDistanceThreshold { get; private set; } = 25f;
 
+        [Header("Layer Settings")]
+        [field: SerializeField] public int BillboardLayerFallback { get; private set; } = 7;
+
         [Header("Debug")]
         [field: SerializeField] public bool ShowDebugGizmos { get; private set; }
 
@@ -201,8 +204,8 @@ namespace HolyRail.City
             _billboardsLayer = LayerMask.NameToLayer("Billboards");
             if (_billboardsLayer == -1)
             {
-                Debug.LogWarning("BuildingColliderPool: 'Billboards' layer not found. Using Default layer. Create a 'Billboards' layer for wall ride detection.");
-                _billboardsLayer = 0;
+                _billboardsLayer = BillboardLayerFallback;
+                Debug.Log($"BuildingColliderPool: Using fallback billboard layer {_billboardsLayer}");
             }
 
             _billboardSpatialGrid = new BillboardSpatialGrid(DefaultCellSize, CityManager.transform.position);

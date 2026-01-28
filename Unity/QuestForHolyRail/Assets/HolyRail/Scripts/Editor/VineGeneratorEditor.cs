@@ -65,22 +65,34 @@ namespace HolyRail.Vines.Editor
                     if (string.IsNullOrEmpty(corridorStatus)) corridorStatus = "None";
 
                     EditorGUILayout.LabelField("Enabled Corridors:", corridorStatus.Trim());
-
-                    if (generator.CityManager.ConvergenceEndPoint != null)
-                    {
-                        EditorGUILayout.LabelField("Mode:", "Two-segment (with End Point)");
-                    }
-                    else
-                    {
-                        EditorGUILayout.LabelField("Mode:", "Single-segment (waypoints only)");
-                    }
+                    EditorGUILayout.LabelField("Mode:", "Volume-based (scattered segments)");
                     EditorGUI.indentLevel--;
                 }
 
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("<VinesPerCorridor>k__BackingField"));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("<PathLengthRange>k__BackingField"));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("<PathCorridorWidth>k__BackingField"));
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("<PathStartOffset>k__BackingField"));
+                EditorGUILayout.PropertyField(
+                    serializedObject.FindProperty("<VinesPerCorridor>k__BackingField"),
+                    new GUIContent("Total Vines", "Number of vine segments to scatter in the volume")
+                );
+                EditorGUILayout.PropertyField(
+                    serializedObject.FindProperty("<PathLengthRange>k__BackingField"),
+                    new GUIContent("Vine Length Range", "Min/max length of each vine segment")
+                );
+                EditorGUILayout.PropertyField(
+                    serializedObject.FindProperty("<PathCorridorWidth>k__BackingField"),
+                    new GUIContent("Volume Width", "Lateral extent of spawn volume")
+                );
+                EditorGUILayout.PropertyField(
+                    serializedObject.FindProperty("<VolumeHeightRange>k__BackingField"),
+                    new GUIContent("Volume Height", "Min/max Y height for vine spawning")
+                );
+                EditorGUILayout.PropertyField(
+                    serializedObject.FindProperty("<MinVineSpacing>k__BackingField"),
+                    new GUIContent("Min Spacing", "Minimum distance between vine start points (tune for jumpable gaps)")
+                );
+                EditorGUILayout.PropertyField(
+                    serializedObject.FindProperty("<GroundVineRatio>k__BackingField"),
+                    new GUIContent("Ground Vine Ratio", "Ratio of vines that start at ground and go up (for recovery when falling)")
+                );
 
                 // Ground settings
                 EditorGUILayout.Space();
@@ -100,6 +112,25 @@ namespace HolyRail.Vines.Editor
                 EditorGUILayout.PropertyField(serializedObject.FindProperty("<FreePointsPerSpline>k__BackingField"), new GUIContent("Points Per Vine"));
                 EditorGUILayout.PropertyField(serializedObject.FindProperty("<FreeNoiseAmplitude>k__BackingField"), new GUIContent("Amplitude"));
                 EditorGUILayout.PropertyField(serializedObject.FindProperty("<FreeNoiseFrequency>k__BackingField"), new GUIContent("Frequency"));
+
+                // Level Chunk Influence
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Level Chunk Influence", EditorStyles.boldLabel);
+                EditorGUILayout.PropertyField(
+                    serializedObject.FindProperty("<LevelChunkInfluence>k__BackingField"),
+                    new GUIContent("Influence", "Blend toward level chunk spline characteristics (0=current, 1=chunk-like)")
+                );
+                if (generator.LevelChunkInfluence > 0.01f)
+                {
+                    EditorGUILayout.HelpBox(
+                        $"Blending toward level chunk ranges:\n" +
+                        $"  Height: {LevelChunkRules.HeightVariationMin:F1}-{LevelChunkRules.HeightVariationMax:F1}m\n" +
+                        $"  Lateral: {LevelChunkRules.LateralSpanMin:F1}-{LevelChunkRules.LateralSpanMax:F1}m\n" +
+                        $"  Frequency: {LevelChunkRules.FrequencyMin:F2}-{LevelChunkRules.FrequencyMax:F2} (smoother curves)",
+                        MessageType.Info
+                    );
+                }
+
             }
             else
             {
@@ -322,12 +353,12 @@ namespace HolyRail.Vines.Editor
             else if (generator.AttractorGenerationMode == AttractorMode.Path)
             {
                 EditorGUILayout.HelpBox(
-                    "Path Mode Setup:\n" +
-                    "1. Assign a CityManager with valid corridor setup\n" +
-                    "2. Set VinesPerCorridor for density across each path\n" +
-                    "3. Adjust PathCorridorWidth for lateral spread\n" +
-                    "4. Configure undulation with Amplitude/Frequency\n" +
-                    "5. Enable Obstacle Avoidance to avoid buildings\n" +
+                    "Path Mode (Volume-Based):\n" +
+                    "1. Assign a CityManager to define the corridor bounds\n" +
+                    "2. Set Total Vines for number of segments to scatter\n" +
+                    "3. Set Vine Length Range (e.g., 10-20 for short rails)\n" +
+                    "4. Adjust Volume Width for lateral spread\n" +
+                    "5. Use Level Chunk Influence to match hand-crafted feel\n" +
                     "6. Click REGENERATE VINES\n" +
                     "7. Convert to splines for rail grinding",
                     MessageType.None);

@@ -55,7 +55,7 @@ SphereCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Radius: 1.5
+  m_Radius: 0.84
   m_Center: {x: 0, y: 0, z: 0}
 --- !u!54 &54000000000000000
 Rigidbody:
@@ -96,20 +96,22 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 58183f4dc9308a6429e4a01d6d255a21, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  <BotAcceleration>k__BackingField: 44
-  <BotMaxSpeed>k__BackingField: 77
-  <SmoothTime>k__BackingField: 0.1
+  <BotAcceleration>k__BackingField: 111
+  <BotMaxSpeed>k__BackingField: 111
+  <SmoothTime>k__BackingField: 0.5
   <RotationSmoothTime>k__BackingField: 0.3
-  <BotNoiseAmount>k__BackingField: 6.88
-  <BotNoiseSpeed>k__BackingField: 0.1
-  <BotAvoidanceRadius>k__BackingField: 3
+  <BotNoiseAmount>k__BackingField: 1.96
+  <BotNoiseSpeed>k__BackingField: 0.62
+  <BotAvoidanceRadius>k__BackingField: 1
   <BotAvoidanceStrength>k__BackingField: 10.7
   <BotCollisionRadius>k__BackingField: 1.93
-  <DesiredOffsetFromPlayer>k__BackingField: {x: 0, y: 2, z: 15.7}
-  <FireRate>k__BackingField: 111
+  <FireRate>k__BackingField: 1111
   <FiringRange>k__BackingField: 111
   <FlashDuration>k__BackingField: 0.3
   <FlashIntensity>k__BackingField: 22.3
+  <FireFlashDuration>k__BackingField: 0.15
+  <FireFlashIntensity>k__BackingField: 8
+  <FireFlashColor>k__BackingField: {r: 1, g: 1, b: 1, a: 1}
   <OffsetRangeX>k__BackingField: {x: -13, y: 13}
   <OffsetRangeY>k__BackingField: {x: -5, y: 11}
   <OffsetRangeZ>k__BackingField: {x: 4, y: 11}

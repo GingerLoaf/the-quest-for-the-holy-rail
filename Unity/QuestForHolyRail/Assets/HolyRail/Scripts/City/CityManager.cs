@@ -34,7 +34,8 @@ namespace HolyRail.City
         [field: SerializeField] public float BillboardWidthMax { get; set; } = 15f;
         [field: SerializeField] public float BillboardHeightMin { get; set; } = 4f;
         [field: SerializeField] public float BillboardHeightMax { get; set; } = 8f;
-        [field: SerializeField] public float BillboardYOffset { get; set; } = 3f;
+        [field: SerializeField] public float BillboardYOffsetMin { get; set; } = 3f;
+        [field: SerializeField] public float BillboardYOffsetMax { get; set; } = 15f;
         [field: SerializeField] public float BillboardDepth { get; set; } = 0.3f;
 
         [Header("Generation Parameters")]
@@ -586,10 +587,10 @@ namespace HolyRail.City
                     if (inCorridorGap)
                         continue;
 
-                    // Place building facing inward toward plaza center (no collider needed for plaza ring)
+                    // Place building facing inward toward plaza center
                     var pos = convergencePos + new Vector3(Mathf.Sin(angle), 0, Mathf.Cos(angle)) * ringRadius;
                     var facingDir = (convergencePos - pos).normalized;
-                    PlaceBuilding(pos, facingDir, needsCollider: false);
+                    PlaceBuilding(pos, facingDir, needsCollider: true);
                 }
             }
         }
@@ -648,10 +649,10 @@ namespace HolyRail.City
                     if (inCorridorGap)
                         continue;
 
-                    // Place building facing inward toward end plaza center (no collider needed for plaza ring)
+                    // Place building facing inward toward end plaza center
                     var pos = endPlazaPos + new Vector3(Mathf.Sin(angle), 0, Mathf.Cos(angle)) * ringRadius;
                     var facingDir = (endPlazaPos - pos).normalized;
-                    PlaceBuilding(pos, facingDir, needsCollider: false);
+                    PlaceBuilding(pos, facingDir, needsCollider: true);
                 }
             }
         }
@@ -958,11 +959,13 @@ namespace HolyRail.City
             // If on right side, normal points left (-right)
             var normal = placeOnLeft ? right : -right;
 
-            // Position: offset from path center toward the corridor wall
-            // Place slightly inside the corridor (not at the wall edge to avoid building collision)
-            float sideOffset = CorridorWidth / 2 - 2f; // 2m inside corridor edge
+            // Position: on the inner surface of buildings (building edge is at CorridorWidth/2 + BuildingSetback)
+            float sideOffset = CorridorWidth / 2 + BuildingSetback;
             var position = pathPosition + (placeOnLeft ? -right : right) * sideOffset;
-            position.y = pathPosition.y + BillboardYOffset + height * 0.5f;
+
+            // Randomize Y offset within range
+            float yOffset = RandomRange(BillboardYOffsetMin, BillboardYOffsetMax);
+            position.y = pathPosition.y + yOffset + height * 0.5f;
 
             // Rotation: face into corridor
             // The billboard's forward (-Z) should point toward corridor center (same as normal)

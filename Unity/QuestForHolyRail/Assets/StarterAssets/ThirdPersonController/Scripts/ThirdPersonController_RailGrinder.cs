@@ -138,6 +138,10 @@ namespace StarterAssets
         [Tooltip("Particle systems to enable emission while grinding")]
         public ParticleSystem[] GrindParticleSystems;
 
+        [Header("Parry VFX")]
+        [Tooltip("Trail renderers to enable during parry window")]
+        [SerializeField] private TrailRenderer[] _parryTrailRenderers;
+
         public GrindGlowLight GrindGlowLight;
 
         private AudioSource _grindLoopAudioSource;
@@ -161,6 +165,9 @@ namespace StarterAssets
         private Vector3 _currentBillboardScale;
         private float _wallRideExitCooldownTimer;
         private float _wallRideRotationVelocity;
+
+        private float _parryWindowTimer;
+        private bool _parryWindowActive;
 
         [Header("Grind Camera Effects")]
         [Tooltip("Reference to the Cinemachine Virtual Camera")]
@@ -373,12 +380,24 @@ namespace StarterAssets
                 Move();
             }
 
-            // Handle parry input
+            // Handle parry input - start parry window
             if (_input.parry && _hasAnimator)
             {
                 _animator.SetTrigger(_animIDParry);
                 _input.parry = false;
+                _parryWindowActive = true;
+                _parryWindowTimer = EnemySpawner.Instance != null ? EnemySpawner.Instance.ParryWindowDuration : 0.3f;
+            }
+
+            // Process active parry window
+            if (_parryWindowActive)
+            {
+                _parryWindowTimer -= Time.deltaTime;
                 TryDeflectBullet();
+                if (_parryWindowTimer <= 0f)
+                {
+                    _parryWindowActive = false;
+                }
             }
         }
 
@@ -822,8 +841,17 @@ namespace StarterAssets
             if (_isWallRiding || _isGrinding)
                 return false;
 
+            // Fallback: if WallRideLayers not configured, try to find Billboards layer
+            LayerMask effectiveLayers = WallRideLayers;
+            if (effectiveLayers.value == 0)
+            {
+                int billboardLayer = LayerMask.NameToLayer("Billboards");
+                if (billboardLayer == -1) billboardLayer = 7; // hardcoded fallback
+                effectiveLayers = 1 << billboardLayer;
+            }
+
             // SphereCast to find nearby billboard colliders
-            var hits = Physics.OverlapSphere(transform.position, WallRideDetectionRadius, WallRideLayers);
+            var hits = Physics.OverlapSphere(transform.position, WallRideDetectionRadius, effectiveLayers);
 
             if (hits.Length == 0)
             {
@@ -831,7 +859,7 @@ namespace StarterAssets
                 var allHits = Physics.OverlapSphere(transform.position, WallRideDetectionRadius);
                 if (allHits.Length > 0 && Time.frameCount % 30 == 0)
                 {
-                    Debug.Log($"WallRide: No hits on WallRideLayers (mask={WallRideLayers.value}), but found {allHits.Length} colliders nearby. First: {allHits[0].gameObject.name} on layer {allHits[0].gameObject.layer}");
+                    Debug.Log($"WallRide: No hits on WallRideLayers (mask={effectiveLayers.value}), but found {allHits.Length} colliders nearby. First: {allHits[0].gameObject.name} on layer {allHits[0].gameObject.layer}");
                 }
                 return false;
             }
@@ -938,6 +966,9 @@ namespace StarterAssets
                 _animator.SetBool(_animIDFreeFall, false);
             }
 
+            // Enable grind particle emission for wall riding
+            SetGrindParticleEmission(true);
+
             Debug.Log("Wall ride started!");
         }
 
@@ -1034,6 +1065,9 @@ namespace StarterAssets
             // Clear jump input
             _input.jump = false;
 
+            // Disable grind particle emission
+            SetGrindParticleEmission(false);
+
             Debug.Log("Wall ride exit with jump!");
         }
 
@@ -1063,6 +1097,9 @@ namespace StarterAssets
             {
                 _animator.SetBool(_animIDJump, true);
             }
+
+            // Disable grind particle emission
+            SetGrindParticleEmission(false);
 
             Debug.Log("Wall ride exit at edge!");
         }
@@ -1312,8 +1349,8 @@ namespace StarterAssets
             var spawner = EnemySpawner.Instance;
             if (spawner == null) return;
 
-            var bullet = spawner.GetNearestBulletInParryRange();
-            if (bullet != null)
+            var bullets = spawner.GetAllBulletsInParryRange();
+            foreach (var bullet in bullets)
             {
                 bullet.Deflect();
             }

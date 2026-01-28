@@ -5,7 +5,15 @@ namespace HolyRail.Scripts.Enemies
     public abstract class BaseEnemyBot : MonoBehaviour
     {
         protected EnemySpawner Spawner;
-        private Vector3 _velocity;
+
+        // Which side of the player this bot prefers for avoidance (-1 = left, +1 = right)
+        public float PreferredSide { get; set; }
+
+        // Avoidance system velocity suggestion (applied by derived classes in UpdateMovement)
+        public Vector3 AvoidanceVelocity { get; set; }
+
+        // Whether the bot is currently in the avoidance zone
+        public bool IsInAvoidanceZone { get; set; }
 
         [Header("Bot Settings")]
         [field: Tooltip("How quickly bots accelerate toward the player")]
@@ -43,12 +51,8 @@ namespace HolyRail.Scripts.Enemies
         [field: Tooltip("Collision radius of the bot for physics queries")]
         [field: SerializeField]
         public float BotCollisionRadius { get; private set; } = 1.5f;
-    
-        [field: Tooltip("The offset from the player to position the bot")]
-        [field: SerializeField]
-        public Vector3 DesiredOffsetFromPlayer { get; private set; } = new(0, 2, 15);
 
-        private Camera _mainCamera;
+        protected Camera MainCamera { get; private set; }
 
         public void Initialize(EnemySpawner spawner)
         {
@@ -57,8 +61,8 @@ namespace HolyRail.Scripts.Enemies
 
         protected virtual void Awake()
         {
-            _mainCamera = Camera.main;
-            if (_mainCamera == null)
+            MainCamera = Camera.main;
+            if (MainCamera == null)
             {
                 Debug.LogError("Main Camera not found. Make sure a camera is tagged as 'Main Camera'");
             }
@@ -66,15 +70,10 @@ namespace HolyRail.Scripts.Enemies
 
         public virtual void OnSpawn()
         {
-            _velocity = Vector3.zero;
-            Random.Range(0f, 1000f);
-            Random.Range(0f, 1000f);
-            Random.Range(0f, 1000f);
         }
 
         public virtual void OnRecycle()
         {
-            _velocity = Vector3.zero;
         }
 
         protected virtual void Update()
@@ -87,36 +86,7 @@ namespace HolyRail.Scripts.Enemies
             UpdateMovement();
         }
 
-        protected virtual void UpdateMovement()
-        {
-            if (!_mainCamera || !Spawner || !Spawner.Player)
-            {
-                return;
-            }
-
-            var playerTransform = Spawner.Player;
-            var camTransform = _mainCamera.transform;
-
-            // Desired position calculations based on camera view
-            Vector3 forwardDirection = Vector3.ProjectOnPlane(camTransform.forward, Vector3.up).normalized;
-            Vector3 targetPosition = playerTransform.position +
-                                     (camTransform.right * DesiredOffsetFromPlayer.x) +
-                                     (Vector3.up * DesiredOffsetFromPlayer.y) +
-                                     (forwardDirection * DesiredOffsetFromPlayer.z);
-
-
-            // Smoothly move towards the target position with collision check
-            Vector3 smoothTarget = Vector3.SmoothDamp(transform.position, targetPosition, ref _velocity, SmoothTime, BotMaxSpeed);
-            transform.position = GetCollisionSafePosition(transform.position, smoothTarget);
-
-            // Smoothly rotate to face the player
-            var toPlayer = playerTransform.position - transform.position;
-            if (toPlayer.sqrMagnitude > 0.001f)
-            {
-                Quaternion targetRotation = Quaternion.LookRotation(toPlayer);
-                transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime / RotationSmoothTime);
-            }
-        }
+        protected abstract void UpdateMovement();
 
         protected Vector3 GetCollisionSafePosition(Vector3 currentPos, Vector3 targetPos)
         {
@@ -134,6 +104,14 @@ namespace HolyRail.Scripts.Enemies
             }
 
             return targetPos;
+        }
+
+        protected virtual void OnValidate()
+        {
+            if (Application.isPlaying)
+            {
+                Debug.Log($"BaseEnemyBot [{name}]: Base parameters updated - BotMaxSpeed={BotMaxSpeed}, BotCollisionRadius={BotCollisionRadius}");
+            }
         }
     }
 }

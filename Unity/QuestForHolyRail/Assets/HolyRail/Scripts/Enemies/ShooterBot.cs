@@ -8,13 +8,16 @@ namespace HolyRail.Scripts.Enemies
         private float _fireTimer;
 
         [Header("Shooter Settings")]
-        [field: Tooltip("Seconds between each shot fired by a bot")]
+        [field: Tooltip("Seconds between each shot fired by a bot (can be overridden by EnemySpawner)")]
         [field: SerializeField]
         public float FireRate { get; private set; } = 1.5f;
 
-        [field: Tooltip("Bots only fire when player is within this distance")]
+        [field: Tooltip("Bots only fire when player is within this distance (can be overridden by EnemySpawner)")]
         [field: SerializeField]
         public float FiringRange { get; private set; } = 30f;
+
+        private float EffectiveFireRate => Spawner && Spawner.OverrideFireRate ? Spawner.GlobalFireRate : FireRate;
+        private float EffectiveFiringRange => Spawner && Spawner.OverrideFiringRange ? Spawner.GlobalFiringRange : FiringRange;
 
         [Header("Flash Settings")]
         [field: Tooltip("Duration of the flash warning before firing")]
@@ -24,6 +27,19 @@ namespace HolyRail.Scripts.Enemies
         [field: Tooltip("Emission intensity multiplier during flash")]
         [field: SerializeField]
         public float FlashIntensity { get; private set; } = 5f;
+
+        [Header("Fire Flash Settings")]
+        [field: Tooltip("Duration of the flash at moment of firing")]
+        [field: SerializeField]
+        public float FireFlashDuration { get; private set; } = 0.15f;
+
+        [field: Tooltip("Emission intensity multiplier during fire flash")]
+        [field: SerializeField]
+        public float FireFlashIntensity { get; private set; } = 8f;
+
+        [field: Tooltip("Color of the flash at moment of firing")]
+        [field: SerializeField]
+        public Color FireFlashColor { get; private set; } = Color.white;
 
         [Header("Position Spread")]
         [field: Tooltip("Random X offset range (left/right spread)")]
@@ -40,33 +56,35 @@ namespace HolyRail.Scripts.Enemies
 
         private Vector3 _randomizedOffset;
         private Vector3 _velocity;
-        private Camera _mainCamera;
         private float _noiseOffsetX;
         private float _noiseOffsetY;
         private float _noiseOffsetZ;
 
         private Renderer _renderer;
-        private Material _material;
-        private Color _baseEmissionColor;
+        private MaterialPropertyBlock _propertyBlock;
+        private static readonly int EmissionColorID = Shader.PropertyToID("_EmissionColor");
+        private Color _originalEmissionColor;
         private Coroutine _flashCoroutine;
+        private Coroutine _fireFlashCoroutine;
 
         protected override void Awake()
         {
             base.Awake();
-            _mainCamera = Camera.main;
             _renderer = GetComponentInChildren<Renderer>();
             if (_renderer != null)
             {
-                _material = _renderer.material;
-                _baseEmissionColor = _material.GetColor("_EmissionColor");
+                _propertyBlock = new MaterialPropertyBlock();
+                _originalEmissionColor = _renderer.sharedMaterial.GetColor(EmissionColorID);
             }
         }
 
         public override void OnSpawn()
         {
             base.OnSpawn();
-            _fireTimer = Random.Range(0f, FireRate);
+            _fireTimer = Random.Range(0f, EffectiveFireRate);
             _velocity = Vector3.zero;
+
+            Debug.Log($"ShooterBot [{name}]: Spawned with FireRate={EffectiveFireRate}s, FiringRange={EffectiveFiringRange}m, first shot in {_fireTimer:F1}s");
 
             // Randomize position offset within configured ranges
             _randomizedOffset = new Vector3(
@@ -83,13 +101,13 @@ namespace HolyRail.Scripts.Enemies
 
         protected override void UpdateMovement()
         {
-            if (!_mainCamera || !Spawner || !Spawner.Player)
+            if (!MainCamera || !Spawner || !Spawner.Player)
             {
                 return;
             }
 
             var playerTransform = Spawner.Player;
-            var camTransform = _mainCamera.transform;
+            var camTransform = MainCamera.transform;
 
             // Calculate target position using randomized offset
             Vector3 forwardDirection = Vector3.ProjectOnPlane(camTransform.forward, Vector3.up).normalized;
@@ -104,6 +122,9 @@ namespace HolyRail.Scripts.Enemies
             float noiseY = (Mathf.PerlinNoise(time + _noiseOffsetY, 100f) - 0.5f) * 2f * BotNoiseAmount;
             float noiseZ = (Mathf.PerlinNoise(time + _noiseOffsetZ, 200f) - 0.5f) * 2f * BotNoiseAmount;
             targetPosition += new Vector3(noiseX, noiseY, noiseZ);
+
+            // Apply avoidance velocity from spawner (pushes bot out of camera frustum)
+            targetPosition += AvoidanceVelocity * Time.deltaTime;
 
             // Smoothly move towards the target position with collision check
             Vector3 smoothTarget = Vector3.SmoothDamp(transform.position, targetPosition, ref _velocity, SmoothTime, BotMaxSpeed);
@@ -126,10 +147,23 @@ namespace HolyRail.Scripts.Enemies
                 StopCoroutine(_flashCoroutine);
                 _flashCoroutine = null;
             }
-            if (_material != null)
+            if (_fireFlashCoroutine != null)
             {
-                _material.SetColor("_EmissionColor", _baseEmissionColor);
+                StopCoroutine(_fireFlashCoroutine);
+                _fireFlashCoroutine = null;
             }
+            // Clear property block to reset to shared material defaults
+            if (_renderer != null && _propertyBlock != null)
+            {
+                _propertyBlock.Clear();
+                _renderer.SetPropertyBlock(_propertyBlock);
+            }
+        }
+
+        public void ResetFireTimer()
+        {
+            _fireTimer = 0f;
+            Debug.Log($"ShooterBot [{name}]: Fire timer reset, will fire immediately");
         }
 
         protected override void Update()
@@ -140,18 +174,27 @@ namespace HolyRail.Scripts.Enemies
 
         private void UpdateFiring()
         {
-            if (!Spawner || !Spawner.Player)
+            if (!Spawner)
             {
+                Debug.LogWarning("ShooterBot: No Spawner reference!");
+                return;
+            }
+            if (!Spawner.Player)
+            {
+                Debug.LogWarning("ShooterBot: No Player reference on Spawner!");
                 return;
             }
 
             _fireTimer -= Time.deltaTime;
 
+            float effectiveRange = EffectiveFiringRange;
+            float effectiveRate = EffectiveFireRate;
+
             // Start flash warning before firing
             if (_fireTimer <= FlashDuration && _flashCoroutine == null)
             {
                 float dist = Vector3.Distance(transform.position, Spawner.Player.position);
-                if (dist <= FiringRange)
+                if (dist <= effectiveRange)
                 {
                     _flashCoroutine = StartCoroutine(FlashCoroutine());
                 }
@@ -162,30 +205,58 @@ namespace HolyRail.Scripts.Enemies
                 var playerPos = Spawner.Player.position;
                 float distanceToPlayer = Vector3.Distance(transform.position, playerPos);
 
-                Debug.Log($"ShooterBot: Fire timer elapsed. Distance to player: {distanceToPlayer:F1}, FiringRange: {FiringRange}");
+                Debug.Log($"ShooterBot [{name}]: Fire timer elapsed. Distance={distanceToPlayer:F1}m, FiringRange={effectiveRange}m, MyPos={transform.position}");
 
-                if (distanceToPlayer <= FiringRange)
+                if (distanceToPlayer <= effectiveRange)
                 {
                     var direction = (playerPos - transform.position).normalized;
-                    Debug.Log($"ShooterBot: Attempting to fire bullet!");
+                    Debug.Log($"ShooterBot [{name}]: FIRING bullet toward player at {playerPos}");
                     Spawner.SpawnBullet(transform.position, direction, this);
+
+                    // Trigger fire flash at moment of shooting
+                    if (_fireFlashCoroutine != null)
+                    {
+                        StopCoroutine(_fireFlashCoroutine);
+                    }
+                    _fireFlashCoroutine = StartCoroutine(FireFlashCoroutine());
                 }
                 else
                 {
-                    Debug.Log($"ShooterBot: Player out of range, not firing.");
+                    Debug.Log($"ShooterBot [{name}]: Player out of range ({distanceToPlayer:F1}m > {effectiveRange}m), not firing.");
                 }
 
-                _fireTimer = FireRate;
+                _fireTimer = effectiveRate;
                 _flashCoroutine = null;
             }
         }
 
         private IEnumerator FlashCoroutine()
         {
-            if (_material == null) yield break;
-            _material.SetColor("_EmissionColor", Color.red * FlashIntensity);
+            if (_renderer == null || _propertyBlock == null) yield break;
+            _propertyBlock.SetColor(EmissionColorID, Color.red * FlashIntensity);
+            _renderer.SetPropertyBlock(_propertyBlock);
             yield return new WaitForSeconds(FlashDuration);
-            _material.SetColor("_EmissionColor", _baseEmissionColor);
+            _propertyBlock.SetColor(EmissionColorID, _originalEmissionColor);
+            _renderer.SetPropertyBlock(_propertyBlock);
+        }
+
+        private IEnumerator FireFlashCoroutine()
+        {
+            if (_renderer == null || _propertyBlock == null) yield break;
+            _propertyBlock.SetColor(EmissionColorID, FireFlashColor * FireFlashIntensity);
+            _renderer.SetPropertyBlock(_propertyBlock);
+            yield return new WaitForSeconds(FireFlashDuration);
+            _propertyBlock.SetColor(EmissionColorID, _originalEmissionColor);
+            _renderer.SetPropertyBlock(_propertyBlock);
+        }
+
+        protected override void OnValidate()
+        {
+            base.OnValidate();
+            if (Application.isPlaying)
+            {
+                Debug.Log($"ShooterBot [{name}]: Parameters updated - FireRate={FireRate}, FiringRange={FiringRange}");
+            }
         }
     }
 }
