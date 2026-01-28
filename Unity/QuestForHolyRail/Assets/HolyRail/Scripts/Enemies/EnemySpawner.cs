@@ -71,10 +71,20 @@ namespace HolyRail.Scripts.Enemies
         [field: SerializeField]
         public bool BulletsKnockOffRail { get; private set; } = true;
 
+        [Header("Parry Settings")]
+        [field: Tooltip("Distance from player at which bullets can be parried")]
+        [field: SerializeField]
+        public float ParryThresholdDistance { get; private set; } = 5f;
+
+        [field: Tooltip("Explosion effect prefab spawned when a bot is killed by deflection")]
+        [field: SerializeField]
+        public GameObject ExplosionEffectPrefab { get; private set; }
+
         private Dictionary<GameObject, Queue<BaseEnemyBot>> _enemyPools;
         private Dictionary<int, GameObject> _instanceIdToPrefabMap;
         private Queue<EnemyBullet> _bulletPool;
         private List<BaseEnemyBot> _activeBots;
+        private List<EnemyBullet> _activeBullets = new();
         private float _spawnTimer;
         private float _totalSpawnWeight;
 
@@ -121,13 +131,21 @@ namespace HolyRail.Scripts.Enemies
 
             _totalSpawnWeight = EnemyTypes.Sum(e => e.SpawnWeight);
 
-            for (int i = 0; i < BulletPoolSize; i++)
+            if (BulletPrefab == null)
             {
-                var bulletObj = Instantiate(BulletPrefab, transform);
-                var bullet = bulletObj.GetComponent<EnemyBullet>();
-                bullet.Initialize(this);
-                bulletObj.SetActive(false);
-                _bulletPool.Enqueue(bullet);
+                Debug.LogError("EnemySpawner: BulletPrefab is not assigned!");
+            }
+            else
+            {
+                for (int i = 0; i < BulletPoolSize; i++)
+                {
+                    var bulletObj = Instantiate(BulletPrefab, transform);
+                    var bullet = bulletObj.GetComponent<EnemyBullet>();
+                    bullet.Initialize(this);
+                    bulletObj.SetActive(false);
+                    _bulletPool.Enqueue(bullet);
+                }
+                Debug.Log($"EnemySpawner: Created bullet pool with {_bulletPool.Count} bullets");
             }
         }
 
@@ -145,6 +163,14 @@ namespace HolyRail.Scripts.Enemies
                 SpawnBot();
                 _spawnTimer = 0f;
             }
+
+            // Check bullet proximity for parry threshold
+            foreach (var bullet in _activeBullets)
+            {
+                if (bullet == null || !bullet.gameObject.activeInHierarchy) continue;
+                float dist = Vector3.Distance(bullet.transform.position, Player.position);
+                bullet.SetInParryThreshold(dist <= ParryThresholdDistance);
+            }
         }
 
         public void SpawnBot()
@@ -152,11 +178,30 @@ namespace HolyRail.Scripts.Enemies
             var chosenPrefab = GetRandomEnemyPrefab();
             if (!chosenPrefab) return;
 
-            var pool = _enemyPools[chosenPrefab];
+            if (!_enemyPools.TryGetValue(chosenPrefab, out var pool))
+            {
+                Debug.LogError($"EnemySpawner: No pool found for prefab {chosenPrefab.name}");
+                return;
+            }
+
             if (pool.Count == 0)
             {
-                // Optional: Instantiate a new one if the pool is empty
-                return;
+                Debug.LogWarning($"EnemySpawner: Pool empty for {chosenPrefab.name}, trying another type");
+                // Try other enemy types
+                foreach (var enemyType in EnemyTypes)
+                {
+                    if (_enemyPools.TryGetValue(enemyType.Prefab, out var altPool) && altPool.Count > 0)
+                    {
+                        pool = altPool;
+                        chosenPrefab = enemyType.Prefab;
+                        break;
+                    }
+                }
+                if (pool.Count == 0)
+                {
+                    Debug.LogWarning("EnemySpawner: All pools empty, cannot spawn");
+                    return;
+                }
             }
 
             var bot = pool.Dequeue();
@@ -232,17 +277,26 @@ namespace HolyRail.Scripts.Enemies
             }
         }
 
-        public void SpawnBullet(Vector3 position, Vector3 direction)
+        public void SpawnBullet(Vector3 position, Vector3 direction, BaseEnemyBot sourceBot = null)
         {
-            if (_bulletPool.Count == 0)
+            if (_bulletPool == null)
             {
+                Debug.LogError("EnemySpawner: Bullet pool is null!");
                 return;
             }
 
+            if (_bulletPool.Count == 0)
+            {
+                Debug.LogWarning("EnemySpawner: Bullet pool is empty!");
+                return;
+            }
+
+            Debug.Log($"EnemySpawner: Spawning bullet from {position} in direction {direction}");
             var bullet = _bulletPool.Dequeue();
             bullet.transform.position = position;
-            bullet.OnSpawn(direction);
+            bullet.OnSpawn(direction, sourceBot);
             bullet.gameObject.SetActive(true);
+            _activeBullets.Add(bullet);
         }
 
         public void RecycleBullet(EnemyBullet bullet)
@@ -255,6 +309,34 @@ namespace HolyRail.Scripts.Enemies
             bullet.OnRecycle();
             bullet.gameObject.SetActive(false);
             _bulletPool.Enqueue(bullet);
+            _activeBullets.Remove(bullet);
+        }
+
+        public EnemyBullet GetNearestBulletInParryRange()
+        {
+            EnemyBullet nearest = null;
+            float nearestDist = float.MaxValue;
+            foreach (var bullet in _activeBullets)
+            {
+                if (bullet == null || !bullet.gameObject.activeInHierarchy || bullet.IsDeflected) continue;
+                float dist = Vector3.Distance(bullet.transform.position, Player.position);
+                if (dist <= ParryThresholdDistance && dist < nearestDist)
+                {
+                    nearest = bullet;
+                    nearestDist = dist;
+                }
+            }
+            return nearest;
+        }
+
+        public void KillBotWithExplosion(BaseEnemyBot bot)
+        {
+            if (bot == null) return;
+            if (ExplosionEffectPrefab != null)
+            {
+                Instantiate(ExplosionEffectPrefab, bot.transform.position, Quaternion.identity);
+            }
+            RecycleBot(bot, true);
         }
 
         public IReadOnlyList<BaseEnemyBot> GetActiveBots()

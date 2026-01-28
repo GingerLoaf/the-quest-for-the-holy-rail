@@ -5,7 +5,7 @@ using UnityEngine.Splines;
 [ExecuteAlways]
 public class SplineMeshController : MonoBehaviour
 {
-    [field: SerializeField] public MeshRenderer MeshTarget { get; private set; }
+    [field: SerializeField] public MeshRenderer MeshTarget { get; set; }
 
     public LevelChunk levelChunk;
     public bool flip = false;

@@ -20,6 +20,29 @@ namespace HolyRail.Scripts.Enemies
 
         private bool _isExploding;
 
+        protected override void UpdateMovement()
+        {
+            if (!Spawner || !Spawner.Player)
+            {
+                return;
+            }
+
+            // Move directly toward player position
+            Vector3 targetPosition = Spawner.Player.position;
+            Vector3 direction = (targetPosition - transform.position).normalized;
+
+            // Move toward player at max speed with collision check
+            Vector3 desiredPosition = transform.position + direction * BotMaxSpeed * Time.deltaTime;
+            transform.position = GetCollisionSafePosition(transform.position, desiredPosition);
+
+            // Face the player
+            if (direction.sqrMagnitude > 0.001f)
+            {
+                Quaternion targetRotation = Quaternion.LookRotation(direction);
+                transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime / RotationSmoothTime);
+            }
+        }
+
         public override void OnSpawn()
         {
             base.OnSpawn();

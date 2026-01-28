@@ -128,6 +128,17 @@ namespace HolyRail.Vines
         [field: SerializeField, Range(4, 64)] public int VineSegmentsPerUnit { get; set; } = 4;
         [field: SerializeField] public bool GenerateMeshes { get; set; } = true;
 
+        [Header("Pickup Spawning")]
+        [field: SerializeField] public GameObject PickUpPrefab { get; set; }
+        [field: SerializeField] public int PickUpCount { get; set; } = 3;
+        [field: SerializeField, Range(0.05f, 0.45f)] public float MinPickUpSpacing { get; set; } = 0.1f;
+        [field: SerializeField] public float PickUpHeightOffset { get; set; } = 1.0f;
+
+        [Header("Glow Effects")]
+        [field: SerializeField] public float GlowLength { get; set; } = 8f;
+        [field: SerializeField] public float GlowBrightness { get; set; } = 1f;
+        [field: SerializeField] public float GlowShowHideDuration { get; set; } = 0.25f;
+
         // Branch connection data for rail grinding transitions
         [System.Serializable]
         public class BranchConnection
@@ -161,6 +172,21 @@ namespace HolyRail.Vines
         private int _voteKernel;
         private int _growKernel;
         private int _pruneKernel;
+
+        // Cached glow material (loaded from Assets)
+        private Material _scrollingGradientMaterial;
+
+        private Material GetScrollingGradientMaterial()
+        {
+            if (_scrollingGradientMaterial == null)
+            {
+#if UNITY_EDITOR
+                _scrollingGradientMaterial = AssetDatabase.LoadAssetAtPath<Material>(
+                    "Assets/HolyRail/Materials/ScrollingGradient.mat");
+#endif
+            }
+            return _scrollingGradientMaterial;
+        }
 
         public int NodeCount => _generatedNodes.Count;
         public int AttractorCount_Active => _generatedAttractors.FindAll(a => a.Active == 1).Count;
@@ -1171,6 +1197,7 @@ namespace HolyRail.Vines
                 {
                     var meshFilter = splineGO.AddComponent<MeshFilter>();
                     var meshRenderer = splineGO.AddComponent<MeshRenderer>();
+
                     meshRenderer.sharedMaterial = materialToUse;
 
                     var splineExtrude = splineGO.AddComponent<SplineExtrude>();
@@ -1180,6 +1207,15 @@ namespace HolyRail.Vines
                     splineExtrude.SegmentsPerUnit = VineSegmentsPerUnit;
                     splineExtrude.Capped = true;
                     splineExtrude.Rebuild();
+
+                    // Always add SplineMeshController for glow effects
+                    var meshController = splineGO.AddComponent<SplineMeshController>();
+                    meshController.MeshTarget = meshRenderer;
+                    meshController.glowLength = GlowLength;
+                    meshController.glowBrightness = GlowBrightness;
+                    meshController.showHideDuration = GlowShowHideDuration;
+                    meshController.glowMix = 0f; // Start hidden
+                    meshController.glowLocation = 0f;
                 }
 
                 _generatedSplines.Add(splineContainer);
@@ -1222,6 +1258,9 @@ namespace HolyRail.Vines
             {
                 Debug.LogWarning("[VineSpline] ThirdPersonController_RailGrinder.Instance is null - splines won't be grindable until player spawns");
             }
+
+            // Spawn pickups on generated splines
+            SpawnPickUpsOnSplines();
 
             return _generatedSplines;
         }
@@ -1304,6 +1343,44 @@ namespace HolyRail.Vines
             material.SetFloat("_Smoothness", 0.3f);
 
             return material;
+        }
+
+        private void SpawnPickUpsOnSplines()
+        {
+            if (PickUpPrefab == null || PickUpCount <= 0 || _generatedSplines.Count == 0)
+                return;
+
+            var random = new System.Random(Seed + 12345); // Different seed for pickups
+
+            for (int i = 0; i < PickUpCount; i++)
+            {
+                int splineIndex = random.Next(_generatedSplines.Count);
+                var randomSpline = _generatedSplines[splineIndex];
+
+                if (randomSpline == null || randomSpline.Spline == null)
+                    continue;
+
+                float randomT = MinPickUpSpacing + (float)random.NextDouble() * (1f - 2f * MinPickUpSpacing);
+
+                randomSpline.Evaluate(randomT, out float3 position, out float3 tangent, out float3 upVector);
+
+                var rotation = math.lengthsq(tangent) < float.Epsilon || math.lengthsq(upVector) < float.Epsilon
+                    ? Quaternion.identity
+                    : Quaternion.LookRotation(tangent, upVector);
+
+                var spawnPos = (Vector3)position + (Vector3)math.normalize(upVector) * PickUpHeightOffset;
+
+                var pickupInstance = Instantiate(PickUpPrefab, spawnPos, rotation, randomSpline.transform);
+
+                // Set collection radius to account for height offset so player can collect while grinding
+                var pickupScript = pickupInstance.GetComponent<HolyRail.Scripts.PickUp>();
+                if (pickupScript != null)
+                {
+                    pickupScript.CollectionRadius = PickUpHeightOffset + 0.5f;
+                }
+            }
+
+            Debug.Log($"VineGenerator: Spawned {PickUpCount} pickups across {_generatedSplines.Count} splines");
         }
 
         public void Clear()

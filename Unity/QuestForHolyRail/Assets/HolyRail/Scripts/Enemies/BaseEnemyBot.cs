@@ -93,7 +93,7 @@ namespace HolyRail.Scripts.Enemies
             {
                 return;
             }
-        
+
             var playerTransform = Spawner.Player;
             var camTransform = _mainCamera.transform;
 
@@ -105,8 +105,9 @@ namespace HolyRail.Scripts.Enemies
                                      (forwardDirection * DesiredOffsetFromPlayer.z);
 
 
-            // Smoothly move towards the target position
-            transform.position = Vector3.SmoothDamp(transform.position, targetPosition, ref _velocity, SmoothTime, BotMaxSpeed);
+            // Smoothly move towards the target position with collision check
+            Vector3 smoothTarget = Vector3.SmoothDamp(transform.position, targetPosition, ref _velocity, SmoothTime, BotMaxSpeed);
+            transform.position = GetCollisionSafePosition(transform.position, smoothTarget);
 
             // Smoothly rotate to face the player
             var toPlayer = playerTransform.position - transform.position;
@@ -115,6 +116,24 @@ namespace HolyRail.Scripts.Enemies
                 Quaternion targetRotation = Quaternion.LookRotation(toPlayer);
                 transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime / RotationSmoothTime);
             }
+        }
+
+        protected Vector3 GetCollisionSafePosition(Vector3 currentPos, Vector3 targetPos)
+        {
+            Vector3 direction = targetPos - currentPos;
+            float distance = direction.magnitude;
+
+            if (distance < 0.01f) return targetPos;
+
+            // Raycast to check for obstacles (ignore triggers)
+            if (Physics.SphereCast(currentPos, BotCollisionRadius, direction.normalized, out RaycastHit hit, distance, ~0, QueryTriggerInteraction.Ignore))
+            {
+                // Stop short of the obstacle with a small buffer
+                float safeDistance = Mathf.Max(0f, hit.distance - 0.1f);
+                return currentPos + direction.normalized * safeDistance;
+            }
+
+            return targetPos;
         }
     }
 }

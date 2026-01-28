@@ -195,6 +195,22 @@ namespace HolyRail.Vines.Editor
             EditorGUILayout.PropertyField(serializedObject.FindProperty("<VineSegmentsPerUnit>k__BackingField"));
             EditorGUILayout.PropertyField(serializedObject.FindProperty("<GenerateMeshes>k__BackingField"));
 
+            // Pickup Spawning
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Pickup Spawning", EditorStyles.boldLabel);
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("<PickUpPrefab>k__BackingField"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("<PickUpCount>k__BackingField"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("<MinPickUpSpacing>k__BackingField"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("<PickUpHeightOffset>k__BackingField"));
+
+            // Glow Effects (always uses ScrollingGradient material)
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Glow Effects", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox("Uses ScrollingGradient material automatically", MessageType.None);
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("<GlowLength>k__BackingField"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("<GlowBrightness>k__BackingField"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("<GlowShowHideDuration>k__BackingField"));
+
             bool propertiesChanged = EditorGUI.EndChangeCheck();
             serializedObject.ApplyModifiedProperties();
 
