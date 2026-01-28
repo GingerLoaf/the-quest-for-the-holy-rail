@@ -324,6 +324,12 @@ namespace StarterAssets
             _skateLoopAudioSource.loop = true;
             _skateLoopAudioSource.playOnAwake = false;
             _skateLoopAudioSource.spatialBlend = 0f; // 2D sound
+
+            // Ensure parry trail renderers start disabled
+            foreach (var trail in _parryTrailRenderers)
+            {
+                if (trail != null) trail.emitting = false;
+            }
         }
 
         private void Update()
@@ -387,6 +393,12 @@ namespace StarterAssets
                 _input.parry = false;
                 _parryWindowActive = true;
                 _parryWindowTimer = EnemySpawner.Instance != null ? EnemySpawner.Instance.ParryWindowDuration : 0.3f;
+
+                // Enable parry trail effect
+                foreach (var trail in _parryTrailRenderers)
+                {
+                    if (trail != null) trail.emitting = true;
+                }
             }
 
             // Process active parry window
@@ -397,6 +409,12 @@ namespace StarterAssets
                 if (_parryWindowTimer <= 0f)
                 {
                     _parryWindowActive = false;
+
+                    // Disable parry trail effect
+                    foreach (var trail in _parryTrailRenderers)
+                    {
+                        if (trail != null) trail.emitting = false;
+                    }
                 }
             }
         }
