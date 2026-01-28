@@ -14,7 +14,8 @@ namespace HolyRail.Vines
     {
         Surface,
         Volume,
-        Mixed
+        Mixed,
+        Free  // Independent flowing splines without branching
     }
 
     [ExecuteInEditMode]
@@ -78,6 +79,13 @@ namespace HolyRail.Vines
         [Header("Direction Bias")]
         [field: SerializeField] public Vector3 ForwardDirection { get; set; } = Vector3.forward;
         [field: SerializeField, Range(0f, 2f)] public float ForwardBias { get; set; } = 0.5f;
+
+        [Header("Free Mode Settings")]
+        [field: SerializeField] public int FreeSplineCount { get; set; } = 10;
+        [field: SerializeField] public Vector2 FreeLengthRange { get; set; } = new Vector2(20f, 50f);
+        [field: SerializeField] public int FreePointsPerSpline { get; set; } = 20;
+        [field: SerializeField] public Vector3 FreeNoiseAmplitude { get; set; } = new Vector3(2f, 2f, 0f);  // Right, Up, Forward
+        [field: SerializeField] public Vector3 FreeNoiseFrequency { get; set; } = new Vector3(0.5f, 0.3f, 0f);  // Right, Up, Forward
 
         [Header("Visualization")]
         [field: SerializeField] public bool ShowAttractors { get; set; } = true;
@@ -159,19 +167,27 @@ namespace HolyRail.Vines
 
         public void Regenerate()
         {
-            if (VineComputeShader == null)
+            if (AttractorGenerationMode != AttractorMode.Free && VineComputeShader == null)
             {
                 Debug.LogError("VineGenerator: ComputeShader is not assigned!");
                 return;
             }
 
-            if (RootPoints.Count == 0)
+            if (AttractorGenerationMode != AttractorMode.Free && RootPoints.Count == 0)
             {
                 Debug.LogError("VineGenerator: No root points assigned!");
                 return;
             }
 
             Clear();
+
+            // Free mode bypasses attractors and GPU algorithm
+            if (AttractorGenerationMode == AttractorMode.Free)
+            {
+                GenerateFreeSplines();
+                Debug.Log($"VineGenerator (Free): Generated {_generatedNodes.Count} nodes across {FreeSplineCount} splines");
+                return;
+            }
 
             // Step 1: Generate attractors via raycasts
             GenerateAttractorsFromScene();
@@ -266,6 +282,84 @@ namespace HolyRail.Vines
                     Position = point,
                     Active = 1
                 });
+            }
+        }
+
+        private void GenerateFreeSplines()
+        {
+            var random = new System.Random(Seed);
+            _generatedNodes.Clear();
+            _generatedAttractors.Clear();  // Free mode doesn't use attractors
+
+            var forward = ForwardDirection.normalized;
+            // Handle case where forward is parallel to up
+            var right = Mathf.Abs(Vector3.Dot(forward, Vector3.up)) > 0.99f
+                ? Vector3.Cross(Vector3.forward, forward).normalized
+                : Vector3.Cross(Vector3.up, forward).normalized;
+            var up = Vector3.Cross(forward, right);
+
+            // Project bounds onto local axes to get extents
+            var boundsCenter = AttractorBounds.center;
+            var boundsSize = AttractorBounds.size;
+
+            // Calculate extent along each axis using absolute dot products
+            float forwardExtent = (Mathf.Abs(forward.x) * boundsSize.x +
+                                   Mathf.Abs(forward.y) * boundsSize.y +
+                                   Mathf.Abs(forward.z) * boundsSize.z) * 0.5f;
+            float rightExtent = (Mathf.Abs(right.x) * boundsSize.x +
+                                 Mathf.Abs(right.y) * boundsSize.y +
+                                 Mathf.Abs(right.z) * boundsSize.z) * 0.5f;
+            float upExtent = (Mathf.Abs(up.x) * boundsSize.x +
+                              Mathf.Abs(up.y) * boundsSize.y +
+                              Mathf.Abs(up.z) * boundsSize.z) * 0.5f;
+
+            for (int splineIdx = 0; splineIdx < FreeSplineCount; splineIdx++)
+            {
+                // Random length for this spline
+                float splineLength = Mathf.Lerp(FreeLengthRange.x, FreeLengthRange.y, (float)random.NextDouble());
+
+                // Random starting position within bounds
+                // Constrain forward position so spline fits: start can be anywhere from back to (front - length)
+                float maxForwardStart = forwardExtent - splineLength;
+                float forwardStart = Mathf.Lerp(-forwardExtent, maxForwardStart, (float)random.NextDouble());
+
+                // Random position on perpendicular plane (full bounds extent)
+                float rightPos = Mathf.Lerp(-rightExtent, rightExtent, (float)random.NextDouble());
+                float upPos = Mathf.Lerp(-upExtent, upExtent, (float)random.NextDouble());
+
+                var startPos = boundsCenter + forward * forwardStart + right * rightPos + up * upPos;
+
+                // Generate the spline path
+                int pointCount = FreePointsPerSpline;
+
+                // Noise offset unique to this spline for variation (different seed per axis)
+                float noiseOffsetRight = splineIdx * 100f;
+                float noiseOffsetUp = splineIdx * 100f + 33f;
+                float noiseOffsetForward = splineIdx * 100f + 67f;
+
+                for (int i = 0; i < pointCount; i++)
+                {
+                    float t = (float)i / (pointCount - 1);
+
+                    // Sample Perlin noise for each axis with independent frequency
+                    // Noise returns [0,1], remap to [-1,1] then multiply by amplitude
+                    float noiseRight = (Mathf.PerlinNoise(t * FreeNoiseFrequency.x + noiseOffsetRight, 0f) * 2f - 1f) * FreeNoiseAmplitude.x;
+                    float noiseUp = (Mathf.PerlinNoise(t * FreeNoiseFrequency.y + noiseOffsetUp, 100f) * 2f - 1f) * FreeNoiseAmplitude.y;
+                    float noiseForward = (Mathf.PerlinNoise(t * FreeNoiseFrequency.z + noiseOffsetForward, 200f) * 2f - 1f) * FreeNoiseAmplitude.z;
+
+                    var position = startPos
+                        + forward * (t * splineLength + noiseForward)
+                        + up * noiseUp
+                        + right * noiseRight;
+
+                    _generatedNodes.Add(new VineNode
+                    {
+                        Position = position,
+                        ParentIndex = (i == 0) ? -1 : _generatedNodes.Count - 1,
+                        IsTip = (i == pointCount - 1) ? 1 : 0,
+                        LastGrowIteration = 0
+                    });
+                }
             }
         }
 
@@ -641,7 +735,15 @@ namespace HolyRail.Vines
                 splineGO.transform.SetParent(transform, true);
                 splineGO.transform.position = Vector3.zero;
                 splineGO.transform.rotation = Quaternion.identity;
-                splineGO.transform.localScale = Vector3.one; // Ensure consistent world scale for grinding speed
+                // Ensure world scale is (1,1,1) regardless of parent's scale
+                // This is critical for grinding speed: GetLength() returns local-space length,
+                // but TransformPoint() uses world scale. If world scale != 1, grinding speed is wrong.
+                var parentScale = transform.lossyScale;
+                splineGO.transform.localScale = new Vector3(
+                    1f / parentScale.x,
+                    1f / parentScale.y,
+                    1f / parentScale.z
+                );
 
                 var splineContainer = splineGO.AddComponent<SplineContainer>();
                 if (splineContainer.Splines.Count > 0)
