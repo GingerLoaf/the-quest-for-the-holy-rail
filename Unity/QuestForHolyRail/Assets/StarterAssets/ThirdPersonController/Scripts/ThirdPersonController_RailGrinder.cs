@@ -759,7 +759,7 @@ namespace StarterAssets
 
             if (GrindGlowLight != null)
             {
-                GrindGlowLight.transform.position = position;
+                GrindGlowLight.transform.position = position;z
             }
 
             // Flip tangent when grinding in reverse direction so character faces movement direction
