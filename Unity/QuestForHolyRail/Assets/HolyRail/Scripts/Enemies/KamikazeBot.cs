@@ -62,7 +62,7 @@ namespace HolyRail.Scripts.Enemies
                 }
             }
 
-            if(Spawner) Spawner.RecycleBot(this);
+            if(Spawner) Spawner.RecycleBot(this, true);
         }
     }
 }

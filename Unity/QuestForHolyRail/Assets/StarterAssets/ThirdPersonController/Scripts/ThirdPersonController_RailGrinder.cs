@@ -3,6 +3,7 @@
  using UnityEngine.Splines;
  using Unity.Splines.Examples;
  using Unity.Mathematics;
+ using HolyRail.Scripts;
  using Random = UnityEngine.Random;
 #if ENABLE_INPUT_SYSTEM 
 using UnityEngine.InputSystem;
@@ -564,6 +565,12 @@ namespace StarterAssets
 
             // Enable grind particle emission
             SetGrindParticleEmission(true);
+
+            // Notify score manager
+            if (ScoreManager.Instance != null)
+            {
+                ScoreManager.Instance.OnGrindStarted();
+            }
         }
 
         private void SetGrindParticleEmission(bool enabled)
@@ -627,6 +634,12 @@ namespace StarterAssets
             // Disable grind particle emission
             SetGrindParticleEmission(false);
 
+            // Notify score manager
+            if (ScoreManager.Instance != null)
+            {
+                ScoreManager.Instance.OnGrindEnded();
+            }
+
             // Preserve horizontal momentum from grind
             _speed = _grindSpeedCurrent * GrindJumpMomentumMultiplier;
             _targetRotation = Mathf.Atan2(exitDirection.x, exitDirection.z) * Mathf.Rad2Deg;
@@ -681,6 +694,12 @@ namespace StarterAssets
 
             // Disable grind particle emission
             SetGrindParticleEmission(false);
+
+            // Notify score manager
+            if (ScoreManager.Instance != null)
+            {
+                ScoreManager.Instance.OnGrindEnded();
+            }
 
             // Apply jump velocity (vertical)
             _verticalVelocity = Mathf.Sqrt(actualJumpHeight * -2f * Gravity);

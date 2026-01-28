@@ -199,9 +199,20 @@ namespace HolyRail.Scripts.Enemies
 
         public void RecycleBot(BaseEnemyBot bot)
         {
+            RecycleBot(bot, false);
+        }
+
+        public void RecycleBot(BaseEnemyBot bot, bool killedByPlayer)
+        {
             if (!bot)
             {
                 return;
+            }
+
+            // Award score if killed by player
+            if (killedByPlayer && ScoreManager.Instance != null)
+            {
+                ScoreManager.Instance.AwardEnemyDestroyed();
             }
 
             bot.OnRecycle();
