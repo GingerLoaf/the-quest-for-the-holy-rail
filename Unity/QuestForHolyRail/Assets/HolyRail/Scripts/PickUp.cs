@@ -1,5 +1,6 @@
 using UnityEngine;
 using StarterAssets;
+using HolyRail.Scripts.FX;
 
 namespace HolyRail.Scripts
 {
@@ -47,6 +48,12 @@ namespace HolyRail.Scripts
             if (ThirdPersonController_RailGrinder.Instance != null)
             {
                 ThirdPersonController_RailGrinder.Instance.IncreaseMaxSpeed(SpeedIncrease);
+
+                var display = ThirdPersonController_RailGrinder.Instance.GetComponent<OrbitalPickupDisplay>();
+                if (display != null)
+                {
+                    display.AddOrb();
+                }
             }
 
             // Hide or destroy the pickup
