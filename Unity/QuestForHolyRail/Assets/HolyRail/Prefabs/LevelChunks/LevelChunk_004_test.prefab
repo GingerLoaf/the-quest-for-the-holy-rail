@@ -187,6 +187,11 @@ MonoBehaviour:
   FarEnd:
   - {fileID: 3607673367827997959}
   - {fileID: 536638275573063745}
+  EnabledOnlyWhenNotFlipped: []
+  PickUpPrefab: {fileID: 0}
+  PickUpCount: 3
+  MinPickUpSpacing: 0.1
+  PickUpHeightOffset: 1
 --- !u!1 &2062698937097841118
 GameObject:
   m_ObjectHideFlags: 0
@@ -200,6 +205,7 @@ GameObject:
   - component: {fileID: 149128780340307251}
   - component: {fileID: 32690278523271212}
   - component: {fileID: 1918500738143755548}
+  - component: {fileID: 2869142344728796305}
   m_Layer: 0
   m_Name: Spline
   m_TagString: Untagged
@@ -261,7 +267,7 @@ MonoBehaviour:
       TangentOut:
         x: 0.146
         y: 0
-        z: 6.980
+        z: 6.98
       Rotation:
         value:
           x: 0
@@ -270,16 +276,16 @@ MonoBehaviour:
           w: 1
     - Position:
         x: -5.692
-        y: 3.210
+        y: 3.21
         z: -3.989
       TangentIn:
         x: 3.451
         y: -0.00000025
-        z: -1.090
+        z: -1.09
       TangentOut:
         x: -3.131
         y: 0
-        z: 2.260
+        z: 2.26
       Rotation:
         value:
           x: 0
@@ -288,7 +294,7 @@ MonoBehaviour:
           w: 1
     - Position:
         x: -3.542
-        y: 2.250
+        y: 2.25
         z: 3.311
       TangentIn:
         x: 0
@@ -306,7 +312,7 @@ MonoBehaviour:
           w: 0.9614826
     - Position:
         x: 2.738
-        y: 4.640
+        y: 4.64
         z: 9.321
       TangentIn:
         x: 0
@@ -324,12 +330,12 @@ MonoBehaviour:
           w: 0.91436297
     - Position:
         x: -5.033
-        y: 17.210
+        y: 17.21
         z: 22.343
       TangentIn:
-        x: -0.550
+        x: -0.55
         y: -0.0000005
-        z: -3.220
+        z: -3.22
       TangentOut:
         x: -0.866
         y: 0
@@ -451,6 +457,23 @@ MonoBehaviour:
       type: {class: Circle, ns: UnityEngine.Splines.ExtrusionShapes, asm: Unity.Splines}
       data:
         m_Sides: 8
+--- !u!114 &2869142344728796305
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2062698937097841118}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3df23cd19b1752d4e86c1dba4601a810, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SplineMeshController
+  <MeshTarget>k__BackingField: {fileID: 32690278523271212}
+  glowLocation: 0
+  glowLength: 8
+  glowMix: 1
+  glowBrightness: 1
 --- !u!1 &3734368321211875610
 GameObject:
   m_ObjectHideFlags: 0
@@ -497,6 +520,7 @@ GameObject:
   - component: {fileID: 4412858105421978688}
   - component: {fileID: 504025292280563326}
   - component: {fileID: 7613004760025039190}
+  - component: {fileID: 4506078129304086043}
   m_Layer: 0
   m_Name: Spline (5)
   m_TagString: Untagged
@@ -549,14 +573,14 @@ MonoBehaviour:
     m_Knots:
     - Position:
         x: -10.076
-        y: 0.100
-        z: -7.640
+        y: 0.1
+        z: -7.64
       TangentIn:
         x: -0.334
         y: 0
         z: -1.037
       TangentOut:
-        x: -0.460
+        x: -0.46
         y: 0
         z: 4.371
       Rotation:
@@ -567,16 +591,16 @@ MonoBehaviour:
           w: 1
     - Position:
         x: 0.059
-        y: 4.330
+        y: 4.33
         z: 1.471
       TangentIn:
-        x: 2.130
+        x: 2.13
         y: 0
-        z: -0.940
+        z: -0.94
       TangentOut:
         x: -3.131
         y: 0
-        z: 2.260
+        z: 2.26
       Rotation:
         value:
           x: 0
@@ -585,7 +609,7 @@ MonoBehaviour:
           w: 1
     - Position:
         x: -6.801
-        y: 5.200
+        y: 5.2
         z: 7.402
       TangentIn:
         x: 0
@@ -603,8 +627,8 @@ MonoBehaviour:
           w: 0.94657874
     - Position:
         x: -2.851
-        y: 11.480
-        z: 12.020
+        y: 11.48
+        z: 12.02
       TangentIn:
         x: 0
         y: 0
@@ -621,12 +645,12 @@ MonoBehaviour:
           w: 0.8785227
     - Position:
         x: -0.011
-        y: 17.200
+        y: 17.2
         z: 22.243
       TangentIn:
-        x: -0.550
+        x: -0.55
         y: -0.0000005
-        z: -3.220
+        z: -3.22
       TangentOut:
         x: -0.866
         y: 0
@@ -748,6 +772,23 @@ MonoBehaviour:
       type: {class: Circle, ns: UnityEngine.Splines.ExtrusionShapes, asm: Unity.Splines}
       data:
         m_Sides: 8
+--- !u!114 &4506078129304086043
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4341480616789957201}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3df23cd19b1752d4e86c1dba4601a810, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SplineMeshController
+  <MeshTarget>k__BackingField: {fileID: 504025292280563326}
+  glowLocation: 0
+  glowLength: 8
+  glowMix: 1
+  glowBrightness: 1
 --- !u!1001 &4012982092135101820
 PrefabInstance:
   m_ObjectHideFlags: 0
