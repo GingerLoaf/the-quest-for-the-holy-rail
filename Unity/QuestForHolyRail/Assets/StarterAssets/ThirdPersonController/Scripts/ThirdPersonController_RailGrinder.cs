@@ -1,6 +1,8 @@
-﻿ using UnityEngine;
+﻿using System.Collections;
+ using UnityEngine;
  using UnityEngine.Splines;
  using Unity.Splines.Examples;
+ using Unity.Mathematics;
  using Random = UnityEngine.Random;
 #if ENABLE_INPUT_SYSTEM 
 using UnityEngine.InputSystem;
@@ -15,14 +17,23 @@ namespace StarterAssets
 #if ENABLE_INPUT_SYSTEM 
     [RequireComponent(typeof(PlayerInput))]
 #endif
+    [DefaultExecutionOrder(-1)]
     public class ThirdPersonController_RailGrinder : MonoBehaviour
     {
         public InputAction grindInput;
+        public InputAction lookBackInput;
+        public bool lookBack;
         private SplineContainer[] _splineContainers;
-
+        
         [Header("Player")]
         [Tooltip("Move speed of the character in m/s")]
         public float MoveSpeed = 2.0f;
+
+        [Tooltip("Air control multiplier - lower values preserve momentum better (0 = no air control, 1 = full control)")]
+        [SerializeField] private float _airControlMultiplier = 1f;
+
+        [Tooltip("Duration to preserve momentum after exiting a grind (prevents deceleration)")]
+        public float MomentumPreservationTime = 0.5f;
 
         [Tooltip("Sprint speed of the character in m/s")]
         public float SprintSpeed = 5.335f;
@@ -34,9 +45,11 @@ namespace StarterAssets
         [Tooltip("Acceleration and deceleration")]
         public float SpeedChangeRate = 10.0f;
 
-        public AudioClip LandingAudioClip;
-        public AudioClip[] FootstepAudioClips;
-        [Range(0, 1)] public float FootstepAudioVolume = 0.5f;
+        [Tooltip("Sound effects played when landing (random selection)")]
+        public AudioClip[] SkateLandingAudioClips;
+        [Tooltip("Looping sound effect while skating")]
+        public AudioClip SkateLoopAudioClip;
+        [Range(0, 1)] public float SkateAudioVolume = 0.5f;
 
         [Space(10)]
         [Tooltip("The height the player can jump")]
@@ -44,6 +57,9 @@ namespace StarterAssets
 
         [Tooltip("The character uses its own gravity value. The engine default is -9.81f")]
         public float Gravity = -15.0f;
+
+        [Header("Status Effects")] 
+        public float SpeedMultiplier = 1.0f;
 
         [Space(10)]
         [Tooltip("Time required to pass before being able to jump again. Set to 0f to instantly jump again")]
@@ -70,12 +86,75 @@ namespace StarterAssets
         public float GrindSpeed = 8f;
         public float GrindAcceleration = 12f;
         public float GrindRotationSmoothTime = 0.08f;
+        public float GrindDistanceThreshold = 2f;
+        public bool AutoGrind = false;
+        public float GrindExitCooldown = 0.3f;
+        [Tooltip("Vertical offset for grind detection. 0 = on rail, negative = below rail allowed")]
+        public float GrindTriggerOffset = -0.5f;
 
+        [Tooltip("Multiplier for momentum when jumping off a rail (1.0 = full momentum)")]
+        public float GrindJumpMomentumMultiplier = 1.0f;
+
+        [Tooltip("Jump height when automatically hopping off the end of a rail")]
+        public float GrindEndJumpHeight = 0.6f;
+
+        [Tooltip("Speed boost applied when starting a grind")]
+        public float GrindStartBoost = 4f;
+
+        [Header("Wall Riding")]
+        [Tooltip("Enable wall ride mechanics")]
+        public bool EnableWallRide = true;
+        [Tooltip("Layer mask for billboard colliders")]
+        public LayerMask WallRideLayers;
+        [Tooltip("Detection radius for wall ride trigger")]
+        public float WallRideDetectionRadius = 1.5f;
+        [Tooltip("Distance threshold for magnet effect to snap to wall")]
+        public float WallRideMagnetThreshold = 1.0f;
+        [Tooltip("Horizontal speed while wall riding")]
+        public float WallRideSpeed = 10f;
+        [Tooltip("Speed boost applied when starting a wall ride")]
+        public float WallRideSpeedBoost = 3f;
+        [Tooltip("Vertical height gain rate while wall riding (m/s)")]
+        public float WallRideHeightGainRate = 2f;
+        [Tooltip("Cooldown before player can wall ride again after exiting")]
+        public float WallRideExitCooldown = 0.3f;
+        [Tooltip("Jump height when exiting wall ride with jump")]
+        public float WallRideJumpHeight = 1.0f;
+
+        [Tooltip("How quickly the start boost decays toward base grind speed")]
+        public float GrindBoostDecayRate = 8f;
+
+        [Space(10)]
+        [Tooltip("Sound effects played when landing on a rail (random selection)")]
+        public AudioClip[] GrindStartAudioClips;
+        [Tooltip("Looping sound effect while grinding")]
+        public AudioClip GrindLoopAudioClip;
+        [Range(0, 1)] public float GrindAudioVolume = 0.5f;
+
+        [Space(10)]
+        [Tooltip("Particle systems to enable emission while grinding")]
+        public ParticleSystem[] GrindParticleSystems;
+
+        private AudioSource _grindLoopAudioSource;
+        private AudioSource _skateLoopAudioSource;
         private bool _isGrinding;
+        private float _grindExitCooldownTimer;
+        private float _momentumPreservationTimer;
         private float _grindT;                 // Normalized spline position (0–1)
         private float _grindSpeedCurrent;
         private float _grindRotationVelocity;
         private SplineTravelDirection _grindDirection;
+
+        // Wall ride state
+        private bool _isWallRiding;
+        private float _wallRideSpeedCurrent;
+        private Vector3 _wallRideVelocity;     // Projected velocity on wall plane
+        private Vector3 _wallRideNormal;       // Wall surface normal (pointing into corridor)
+        private Vector3 _wallRideRight;        // Right direction along wall
+        private Vector3 _currentBillboardCenter;
+        private Vector3 _currentBillboardScale;
+        private float _wallRideExitCooldownTimer;
+        private float _wallRideRotationVelocity;
 
         [Header("Grind Camera Effects")]
         [Tooltip("Reference to the Cinemachine Virtual Camera")]
@@ -140,6 +219,7 @@ namespace StarterAssets
         private int _animIDFreeFall;
         private int _animIDMotionSpeed;
         private int _animIDGrinding;
+        private int _animIDParry;
 
 #if ENABLE_INPUT_SYSTEM 
         private PlayerInput _playerInput;
@@ -164,10 +244,12 @@ namespace StarterAssets
 #endif
             }
         }
-
-
+        
+        public static ThirdPersonController_RailGrinder Instance { get; private set; }
+        
         private void Awake()
         {
+            Instance = this;
             // get a reference to our main camera
             if (_mainCamera == null)
             {
@@ -180,12 +262,16 @@ namespace StarterAssets
         {
             grindInput.Enable();
             grindInput.performed += OnGrindRequested;
+
+            lookBackInput.Enable();
         }
 
         private void OnDisable()
         {
             grindInput.performed -= OnGrindRequested;
             grindInput.Disable();
+
+            lookBackInput.Disable();
         }
 
         private void Start()
@@ -213,23 +299,80 @@ namespace StarterAssets
                 _baseFOV = VirtualCamera.m_Lens.FieldOfView;
                 _targetFOV = _baseFOV;
             }
+
+            // Initialize grind loop audio source
+            _grindLoopAudioSource = gameObject.AddComponent<AudioSource>();
+            _grindLoopAudioSource.loop = true;
+            _grindLoopAudioSource.playOnAwake = false;
+            _grindLoopAudioSource.spatialBlend = 0f; // 2D sound
+
+            // Initialize skate loop audio source
+            _skateLoopAudioSource = gameObject.AddComponent<AudioSource>();
+            _skateLoopAudioSource.loop = true;
+            _skateLoopAudioSource.playOnAwake = false;
+            _skateLoopAudioSource.spatialBlend = 0f; // 2D sound
         }
 
         private void Update()
         {
             _hasAnimator = TryGetComponent(out _animator);
+            bool gamepadLookBack = Gamepad.current != null && Gamepad.current.leftShoulder.isPressed;
+            lookBack = gamepadLookBack || Input.GetKey(KeyCode.Q);
 
             if (_isGrinding)
             {
                 Grind();
             }
+            else if (_isWallRiding)
+            {
+                WallRide();
+            }
             else
             {
+                if (_grindExitCooldownTimer > 0f)
+                {
+                    _grindExitCooldownTimer -= Time.deltaTime;
+                }
+
+                if (_wallRideExitCooldownTimer > 0f)
+                {
+                    _wallRideExitCooldownTimer -= Time.deltaTime;
+                }
+
+                if (_momentumPreservationTimer > 0f)
+                {
+                    _momentumPreservationTimer -= Time.deltaTime;
+                }
+
+                // Auto-grind: cooldown prevents immediate re-attach after jumping off
+                if (AutoGrind && !Grounded && _grindExitCooldownTimer <= 0f)
+                {
+                    if (TryStartGrind())
+                    {
+                        return; // Exit Update - controller is now disabled for grinding
+                    }
+                }
+
+                // Wall ride detection: only when airborne and not grinding
+                if (EnableWallRide && !Grounded && _wallRideExitCooldownTimer <= 0f)
+                {
+                    if (TryStartWallRide())
+                    {
+                        return; // Exit Update - controller is now disabled for wall riding
+                    }
+                }
+
                 JumpAndGravity();
                 GroundedCheck();
                 Move();
             }
-            
+
+            // Handle parry input
+            if (_input.parry && _hasAnimator)
+            {
+                _animator.SetTrigger(_animIDParry);
+                _input.parry = false;
+            }
         }
 
         private void LateUpdate()
@@ -246,7 +389,7 @@ namespace StarterAssets
             _animIDFreeFall = Animator.StringToHash("FreeFall");
             _animIDMotionSpeed = Animator.StringToHash("MotionSpeed");
             _animIDGrinding = Animator.StringToHash("Grinding");
-            
+            _animIDParry = Animator.StringToHash("Parry");
         }
 
         private void GroundedCheck()
@@ -289,9 +432,12 @@ namespace StarterAssets
             _smoothYaw = Mathf.SmoothDampAngle(_smoothYaw, _cinemachineTargetYaw, ref _yawVelocity, LookSmoothTime);
             _smoothPitch = Mathf.SmoothDamp(_smoothPitch, _cinemachineTargetPitch, ref _pitchVelocity, LookSmoothTime);
 
+            // Apply 180 degree offset when looking back
+            float finalYaw = lookBack ? _smoothYaw + 180f : _smoothYaw;
+
             // Cinemachine will follow this target
             CinemachineCameraTarget.transform.rotation = Quaternion.Euler(_smoothPitch + CameraAngleOverride,
-                _smoothYaw, 0.0f);
+                finalYaw, 0.0f);
         }
 
         private void UpdateGrindFOV()
@@ -305,29 +451,61 @@ namespace StarterAssets
             VirtualCamera.m_Lens = lens;
         }
 
+        private bool TryStartGrind()
+        {
+            if (_isGrinding) return false;
+
+            var result = ShowNearestPoint.GetNearestPointOnSplines(
+                transform.position,
+                _splineContainers);
+
+            if (result.Container == null) return false;
+
+            // Hemisphere check: only grind if player is above the rail (with offset)
+            float playerY = transform.position.y;
+            float railY = result.Position.y;
+            if (playerY < railY + GrindTriggerOffset) return false;
+
+            if (result.Distance <= GrindDistanceThreshold)
+            {
+                var direction = GetZForwardGrindDirection(result.Container, result.SplineParameter);
+                StartGrind(result.Container, result.SplineParameter, direction);
+                return true;
+            }
+            return false;
+        }
+
+        private SplineTravelDirection GetZForwardGrindDirection(SplineContainer container, float t)
+        {
+            if (container == null || container.Spline == null)
+                return SplineTravelDirection.StartToEnd;
+
+            // Get world-space tangent at the given spline parameter
+            Vector3 tangent = container.transform.TransformDirection(
+                (Vector3)container.Spline.EvaluateTangent(t)
+            ).normalized;
+
+            // Flatten to horizontal plane
+            tangent.y = 0f;
+            tangent.Normalize();
+
+            // Check if tangent points in positive Z direction (world forward)
+            // If tangent.z > 0, StartToEnd travels in +Z direction
+            // If tangent.z < 0, EndToStart travels in +Z direction
+            return tangent.z >= 0 ? SplineTravelDirection.StartToEnd : SplineTravelDirection.EndToStart;
+        }
+
         void OnGrindRequested(InputAction.CallbackContext context)
         {
             if (!_isGrinding)
             {
-                // Use facing direction to determine grind direction
-                var result = ShowNearestPoint.GetNearestPointWithFacingDirection(
-                    transform.position,
-                    transform.forward,
-                    _splineContainers);
-
-                if (result.Container != null)
+                if (!TryStartGrind())
                 {
-                    StartGrind(result.Container, result.SplineParameter, result.TravelDirection);
-                    Debug.Log($"Started grinding with direction: {result.TravelDirection}");
-                }
-                else
-                {
-                    Debug.LogWarning("No spline found to grind on.");
+                    Debug.LogWarning("No spline within grind distance threshold.");
                 }
             }
             else
             {
-                // Exit grind and jump if already grinding
                 ExitGrindWithJump();
             }
         }
@@ -336,7 +514,7 @@ namespace StarterAssets
         {
             GrindSpline = spline;
             _grindT = Mathf.Clamp01(startT);
-            _grindSpeedCurrent = 0f;
+            _grindSpeedCurrent = GrindSpeed + GrindStartBoost;
             _verticalVelocity = 0f;
             _isGrinding = true;
             if (_hasAnimator)
@@ -346,11 +524,41 @@ namespace StarterAssets
             }
 
             // Store the direction, defaulting to StartToEnd if Unknown or Stationary
-            _grindDirection = (direction == SplineTravelDirection.EndToStart) 
-                ? SplineTravelDirection.EndToStart 
+            _grindDirection = (direction == SplineTravelDirection.EndToStart)
+                ? SplineTravelDirection.EndToStart
                 : SplineTravelDirection.StartToEnd;
 
             _controller.enabled = false; // important: spline drives position
+
+            // Play grind start sound
+            if (GrindStartAudioClips != null && GrindStartAudioClips.Length > 0)
+            {
+                var index = Random.Range(0, GrindStartAudioClips.Length);
+                AudioSource.PlayClipAtPoint(GrindStartAudioClips[index], transform.position, GrindAudioVolume);
+            }
+
+            // Start grind loop sound
+            if (GrindLoopAudioClip != null && _grindLoopAudioSource != null)
+            {
+                _grindLoopAudioSource.clip = GrindLoopAudioClip;
+                _grindLoopAudioSource.volume = GrindAudioVolume;
+                _grindLoopAudioSource.Play();
+            }
+
+            // Enable grind particle emission
+            SetGrindParticleEmission(true);
+        }
+
+        private void SetGrindParticleEmission(bool enabled)
+        {
+            if (GrindParticleSystems == null) return;
+
+            foreach (var ps in GrindParticleSystems)
+            {
+                if (ps == null) continue;
+                var emission = ps.emission;
+                emission.enabled = enabled;
+            }
         }
 
         public void StopGrind()
@@ -372,17 +580,35 @@ namespace StarterAssets
                 exitDirection.Normalize();
             }
 
+            _grindExitCooldownTimer = GrindExitCooldown;
+            _momentumPreservationTimer = MomentumPreservationTime;
             _isGrinding = false;
-            _animator.SetBool(_animIDGrinding, false);
             _controller.enabled = true;
 
+            // Update animator if using character
+            if (_hasAnimator)
+            {
+                _animator.SetBool(_animIDGrinding, false);
+            }
+
+            // Stop grind loop sound
+            if (_grindLoopAudioSource != null && _grindLoopAudioSource.isPlaying)
+            {
+                _grindLoopAudioSource.Stop();
+            }
+
+            // Disable grind particle emission
+            SetGrindParticleEmission(false);
+
             // Preserve horizontal momentum from grind
-            _speed = _grindSpeedCurrent;
+            _speed = _grindSpeedCurrent * GrindJumpMomentumMultiplier;
             _targetRotation = Mathf.Atan2(exitDirection.x, exitDirection.z) * Mathf.Rad2Deg;
         }
 
-        private void ExitGrindWithJump()
+        private void ExitGrindWithJump(float? jumpHeight = null)
         {
+            float actualJumpHeight = jumpHeight ?? JumpHeight;
+
             // Calculate exit direction from spline tangent before stopping
             Vector3 exitDirection = Vector3.forward;
             if (GrindSpline != null && GrindSpline.Spline != null)
@@ -402,15 +628,28 @@ namespace StarterAssets
                 exitDirection.Normalize();
             }
 
+            // Start cooldown timer to prevent immediate re-attach in auto-grind mode
+            _grindExitCooldownTimer = GrindExitCooldown;
+            _momentumPreservationTimer = MomentumPreservationTime;
+
             // Re-enable controller
             _controller.enabled = true;
             _isGrinding = false;
 
+            // Stop grind loop sound
+            if (_grindLoopAudioSource != null && _grindLoopAudioSource.isPlaying)
+            {
+                _grindLoopAudioSource.Stop();
+            }
+
+            // Disable grind particle emission
+            SetGrindParticleEmission(false);
+
             // Apply jump velocity (vertical)
-            _verticalVelocity = Mathf.Sqrt(JumpHeight * -2f * Gravity);
+            _verticalVelocity = Mathf.Sqrt(actualJumpHeight * -2f * Gravity);
 
             // Preserve horizontal momentum from grind
-            _speed = _grindSpeedCurrent;
+            _speed = _grindSpeedCurrent * GrindJumpMomentumMultiplier;
             _targetRotation = Mathf.Atan2(exitDirection.x, exitDirection.z) * Mathf.Rad2Deg;
 
             // Update animator if using character
@@ -437,13 +676,16 @@ namespace StarterAssets
             }
 
             // Determine target speed (apply same sprint ratio as ground movement)
-            float targetSpeed = _input.sprint ? GrindSpeed * (SprintSpeed / MoveSpeed) : GrindSpeed;
+            float targetSpeed = (_input.sprint ? GrindSpeed * (SprintSpeed / MoveSpeed) : GrindSpeed) * SpeedMultiplier;
 
-            // Accelerate / decelerate like Move()
+            // Use boost decay rate when above target speed (decaying boost), otherwise use normal acceleration
+            float lerpRate = _grindSpeedCurrent > targetSpeed ? GrindBoostDecayRate : GrindAcceleration;
+
+            // Accelerate / decelerate toward target
             _grindSpeedCurrent = Mathf.Lerp(
                 _grindSpeedCurrent,
                 targetSpeed,
-                Time.deltaTime * GrindAcceleration
+                Time.deltaTime * lerpRate
             );
 
             // Advance along spline in the detected direction
@@ -458,10 +700,10 @@ namespace StarterAssets
 
             _grindT += deltaT;
 
-            // Optional: auto-exit at end or start
+            // Auto-exit at end of spline with a smaller jump
             if (_grindT >= 1f || _grindT <= 0f)
             {
-                StopGrind();
+                ExitGrindWithJump(GrindEndJumpHeight);
                 return;
             }
 
@@ -507,10 +749,260 @@ namespace StarterAssets
             }
         }
 
+        private bool TryStartWallRide()
+        {
+            if (_isWallRiding || _isGrinding)
+                return false;
+
+            // SphereCast to find nearby billboard colliders
+            var hits = Physics.OverlapSphere(transform.position, WallRideDetectionRadius, WallRideLayers);
+
+            if (hits.Length == 0)
+            {
+                // Debug: Check if we're finding anything without the layer mask
+                var allHits = Physics.OverlapSphere(transform.position, WallRideDetectionRadius);
+                if (allHits.Length > 0 && Time.frameCount % 30 == 0)
+                {
+                    Debug.Log($"WallRide: No hits on WallRideLayers (mask={WallRideLayers.value}), but found {allHits.Length} colliders nearby. First: {allHits[0].gameObject.name} on layer {allHits[0].gameObject.layer}");
+                }
+                return false;
+            }
+
+            Debug.Log($"WallRide: Found {hits.Length} billboard colliders nearby");
+
+            // Find the closest billboard we can wall ride on
+            float closestDistance = float.MaxValue;
+            Collider closestCollider = null;
+            Vector3 closestNormal = Vector3.zero;
+            Vector3 closestCenter = Vector3.zero;
+            Vector3 closestScale = Vector3.zero;
+
+            foreach (var hit in hits)
+            {
+                // Get the billboard's world-space normal from its forward direction
+                // The billboard faces into the corridor, so its -Z (forward) is the normal
+                var billboardNormal = hit.transform.forward;
+
+                // Front-face check: player must be in front of the billboard
+                var toPlayer = transform.position - hit.transform.position;
+                float frontFaceDot = Vector3.Dot(toPlayer.normalized, billboardNormal);
+                if (frontFaceDot < 0.3f)
+                {
+                    Debug.Log($"WallRide: {hit.name} failed front-face check (dot={frontFaceDot:F2})");
+                    continue; // Player is behind or parallel to billboard
+                }
+
+                // Velocity check: player must be moving (have some horizontal velocity)
+                var horizontalVelocity = new Vector3(_controller.velocity.x, 0f, _controller.velocity.z);
+                if (horizontalVelocity.magnitude < 1f)
+                {
+                    Debug.Log($"WallRide: {hit.name} failed velocity check (vel={horizontalVelocity.magnitude:F2})");
+                    continue; // Not enough velocity to wall ride
+                }
+
+                // Check distance
+                var closestPoint = hit.ClosestPoint(transform.position);
+                float distance = Vector3.Distance(transform.position, closestPoint);
+
+                if (distance < closestDistance && distance <= WallRideMagnetThreshold)
+                {
+                    closestDistance = distance;
+                    closestCollider = hit;
+                    closestNormal = billboardNormal;
+                    closestCenter = hit.transform.position;
+
+                    // Get scale from box collider
+                    if (hit is BoxCollider box)
+                    {
+                        closestScale = box.size;
+                    }
+                    else
+                    {
+                        closestScale = hit.bounds.size;
+                    }
+                }
+            }
+
+            if (closestCollider == null)
+            {
+                Debug.Log("WallRide: No valid collider found (all failed front-face or velocity checks)");
+                return false;
+            }
+
+            // Project velocity onto wall plane (remove component perpendicular to wall)
+            var horizontalVel = new Vector3(_controller.velocity.x, 0f, _controller.velocity.z);
+            var projectedVelocity = horizontalVel - Vector3.Dot(horizontalVel, closestNormal) * closestNormal;
+
+            Debug.Log($"WallRide: Closest collider found. HorizVel={horizontalVel.magnitude:F2}, ProjectedVel={projectedVelocity.magnitude:F2}");
+
+            // Need meaningful velocity along wall
+            if (projectedVelocity.magnitude < 0.5f)
+            {
+                Debug.Log("WallRide: Not enough projected velocity along wall");
+                return false;
+            }
+
+            // Start wall ride
+            StartWallRide(closestNormal, closestCenter, closestScale, projectedVelocity.normalized);
+            return true;
+        }
+
+        private void StartWallRide(Vector3 wallNormal, Vector3 billboardCenter, Vector3 billboardScale, Vector3 travelDirection)
+        {
+            _isWallRiding = true;
+            _wallRideNormal = wallNormal;
+            _currentBillboardCenter = billboardCenter;
+            _currentBillboardScale = billboardScale;
+            _wallRideVelocity = travelDirection;
+            _wallRideRight = Vector3.Cross(Vector3.up, wallNormal).normalized;
+
+            // Apply speed boost
+            _wallRideSpeedCurrent = WallRideSpeed + WallRideSpeedBoost;
+            _verticalVelocity = 0f;
+
+            // Disable character controller - wall ride drives position
+            _controller.enabled = false;
+
+            // Update animator
+            if (_hasAnimator)
+            {
+                _animator.SetBool(_animIDJump, false);
+                _animator.SetBool(_animIDFreeFall, false);
+            }
+
+            Debug.Log("Wall ride started!");
+        }
+
+        private void WallRide()
+        {
+            // Check for jump input to exit
+            if (_input.jump)
+            {
+                ExitWallRideWithJump();
+                return;
+            }
+
+            // Apply height gain - player rises while wall riding
+            var currentPos = transform.position;
+            currentPos.y += WallRideHeightGainRate * Time.deltaTime;
+
+            // Move along wall
+            currentPos += _wallRideVelocity * _wallRideSpeedCurrent * Time.deltaTime;
+
+            // Keep player snapped to wall surface (offset by character radius)
+            // Push player slightly off the wall so they don't clip through
+            float snapDistance = 0.5f;
+            var toCenter = _currentBillboardCenter - currentPos;
+            toCenter.y = 0;
+            float distFromWall = Vector3.Dot(toCenter, _wallRideNormal);
+            currentPos += _wallRideNormal * (distFromWall + snapDistance);
+
+            // Edge detection - check if still on billboard
+            float localX = Vector3.Dot(currentPos - _currentBillboardCenter, _wallRideRight);
+            float localY = currentPos.y - _currentBillboardCenter.y;
+            float halfWidth = _currentBillboardScale.x * 0.5f;
+            float halfHeight = _currentBillboardScale.y * 0.5f;
+
+            bool onBillboard = Mathf.Abs(localX) <= halfWidth && Mathf.Abs(localY) <= halfHeight;
+
+            if (!onBillboard)
+            {
+                // Exit at edge with momentum
+                ExitWallRideAtEdge();
+                return;
+            }
+
+            // Apply position
+            transform.position = currentPos;
+
+            // Rotate player to face movement direction
+            if (_wallRideVelocity.sqrMagnitude > 0.0001f)
+            {
+                float targetYaw = Mathf.Atan2(_wallRideVelocity.x, _wallRideVelocity.z) * Mathf.Rad2Deg;
+                float yaw = Mathf.SmoothDampAngle(
+                    transform.eulerAngles.y,
+                    targetYaw,
+                    ref _wallRideRotationVelocity,
+                    GrindRotationSmoothTime
+                );
+                transform.rotation = Quaternion.Euler(0f, yaw, 0f);
+            }
+
+            // Update animator
+            if (_hasAnimator)
+            {
+                _animator.SetFloat(_animIDSpeed, _wallRideSpeedCurrent);
+                _animator.SetFloat(_animIDMotionSpeed, 1f);
+            }
+        }
+
+        private void ExitWallRideWithJump()
+        {
+            // Re-enable controller
+            _controller.enabled = true;
+            _isWallRiding = false;
+
+            // Set cooldown
+            _wallRideExitCooldownTimer = WallRideExitCooldown;
+            _momentumPreservationTimer = MomentumPreservationTime;
+
+            // Apply jump velocity (vertical) - jump away from wall
+            _verticalVelocity = Mathf.Sqrt(WallRideJumpHeight * -2f * Gravity);
+
+            // Preserve horizontal momentum in travel direction plus some push away from wall
+            var exitDirection = _wallRideVelocity + _wallRideNormal * 0.3f;
+            exitDirection.y = 0f;
+            exitDirection.Normalize();
+
+            _speed = _wallRideSpeedCurrent;
+            _targetRotation = Mathf.Atan2(exitDirection.x, exitDirection.z) * Mathf.Rad2Deg;
+
+            // Update animator
+            if (_hasAnimator)
+            {
+                _animator.SetBool(_animIDJump, true);
+            }
+
+            // Clear jump input
+            _input.jump = false;
+
+            Debug.Log("Wall ride exit with jump!");
+        }
+
+        private void ExitWallRideAtEdge()
+        {
+            // Re-enable controller
+            _controller.enabled = true;
+            _isWallRiding = false;
+
+            // Set cooldown
+            _wallRideExitCooldownTimer = WallRideExitCooldown;
+            _momentumPreservationTimer = MomentumPreservationTime;
+
+            // Small hop when exiting at edge
+            _verticalVelocity = Mathf.Sqrt(0.3f * -2f * Gravity);
+
+            // Preserve momentum in travel direction
+            var exitDirection = _wallRideVelocity;
+            exitDirection.y = 0f;
+            exitDirection.Normalize();
+
+            _speed = _wallRideSpeedCurrent;
+            _targetRotation = Mathf.Atan2(exitDirection.x, exitDirection.z) * Mathf.Rad2Deg;
+
+            // Update animator
+            if (_hasAnimator)
+            {
+                _animator.SetBool(_animIDJump, true);
+            }
+
+            Debug.Log("Wall ride exit at edge!");
+        }
+
         private void Move()
         {
             // set target speed based on move speed, sprint speed and if sprint is pressed
-            float targetSpeed = _input.sprint ? SprintSpeed : MoveSpeed;
+            float targetSpeed = (_input.sprint ? SprintSpeed : MoveSpeed) * SpeedMultiplier;
 
             // a simplistic acceleration and deceleration designed to be easy to remove, replace, or iterate upon
 
@@ -524,17 +1016,31 @@ namespace StarterAssets
             float speedOffset = 0.1f;
             float inputMagnitude = _input.analogMovement ? _input.move.magnitude : 1f;
 
+            // When airborne, preserve momentum better by reducing speed change rate
+            float effectiveSpeedChangeRate = Grounded ? SpeedChangeRate : SpeedChangeRate * _airControlMultiplier;
+
+            // Preserve momentum after exiting grind - only allow acceleration, not deceleration
+            bool preservingMomentum = _momentumPreservationTimer > 0f;
+
             // accelerate or decelerate to target speed
             if (currentHorizontalSpeed < targetSpeed - speedOffset ||
                 currentHorizontalSpeed > targetSpeed + speedOffset)
             {
-                // creates curved result rather than a linear one giving a more organic speed change
-                // note T in Lerp is clamped, so we don't need to clamp our speed
-                _speed = Mathf.Lerp(currentHorizontalSpeed, targetSpeed * inputMagnitude,
-                    Time.deltaTime * SpeedChangeRate);
+                // If preserving momentum and trying to decelerate, skip the speed change
+                if (preservingMomentum && currentHorizontalSpeed > targetSpeed)
+                {
+                    _speed = currentHorizontalSpeed;
+                }
+                else
+                {
+                    // creates curved result rather than a linear one giving a more organic speed change
+                    // note T in Lerp is clamped, so we don't need to clamp our speed
+                    _speed = Mathf.Lerp(currentHorizontalSpeed, targetSpeed * inputMagnitude,
+                        Time.deltaTime * effectiveSpeedChangeRate);
 
-                // round speed to 3 decimal places
-                _speed = Mathf.Round(_speed * 1000f) / 1000f;
+                    // round speed to 3 decimal places
+                    _speed = Mathf.Round(_speed * 1000f) / 1000f;
+                }
             }
             else
             {
@@ -551,8 +1057,8 @@ namespace StarterAssets
             // if there is a move input rotate player when the player is moving
             if (_input.move != Vector2.zero)
             {
-                _targetRotation = Mathf.Atan2(inputDirection.x, inputDirection.z) * Mathf.Rad2Deg +
-                                  _mainCamera.transform.eulerAngles.y;
+                // Use _smoothYaw instead of camera transform to ignore look-back flip
+                _targetRotation = Mathf.Atan2(inputDirection.x, inputDirection.z) * Mathf.Rad2Deg + _smoothYaw;
                 float rotation = Mathf.SmoothDampAngle(transform.eulerAngles.y, _targetRotation, ref _rotationVelocity,
                     RotationSmoothTime);
 
@@ -572,6 +1078,31 @@ namespace StarterAssets
             {
                 _animator.SetFloat(_animIDSpeed, _animationBlend);
                 _animator.SetFloat(_animIDMotionSpeed, inputMagnitude);
+            }
+
+            // Manage skate loop sound
+            UpdateSkateLoopSound();
+        }
+
+        private void UpdateSkateLoopSound()
+        {
+            bool shouldPlaySkateLoop = Grounded && _speed > 0.1f && !_isGrinding;
+
+            if (shouldPlaySkateLoop)
+            {
+                if (SkateLoopAudioClip != null && _skateLoopAudioSource != null && !_skateLoopAudioSource.isPlaying)
+                {
+                    _skateLoopAudioSource.clip = SkateLoopAudioClip;
+                    _skateLoopAudioSource.volume = SkateAudioVolume;
+                    _skateLoopAudioSource.Play();
+                }
+            }
+            else
+            {
+                if (_skateLoopAudioSource != null && _skateLoopAudioSource.isPlaying)
+                {
+                    _skateLoopAudioSource.Stop();
+                }
             }
         }
 
@@ -665,24 +1196,47 @@ namespace StarterAssets
                 GroundedRadius);
         }
 
+        public void ApplySpeedReduction(float multiplier, float duration)
+        {
+            StopCoroutine("SpeedReductionCoroutine");
+            StartCoroutine(SpeedReductionCoroutine(multiplier, duration));
+        }
+
+        private IEnumerator SpeedReductionCoroutine(float multiplier, float duration)
+        {
+            SpeedMultiplier = multiplier;
+            yield return new WaitForSeconds(duration);
+            SpeedMultiplier = 1.0f;
+        }
+
         private void OnFootstep(AnimationEvent animationEvent)
         {
-            if (animationEvent.animatorClipInfo.weight > 0.5f)
-            {
-                if (FootstepAudioClips.Length > 0)
-                {
-                    var index = Random.Range(0, FootstepAudioClips.Length);
-                    AudioSource.PlayClipAtPoint(FootstepAudioClips[index], transform.TransformPoint(_controller.center), FootstepAudioVolume);
-                }
-            }
+            // Footsteps replaced by skate loop sound - this method kept for animation event compatibility
         }
 
         private void OnLand(AnimationEvent animationEvent)
         {
             if (animationEvent.animatorClipInfo.weight > 0.5f)
             {
-                AudioSource.PlayClipAtPoint(LandingAudioClip, transform.TransformPoint(_controller.center), FootstepAudioVolume);
+                if (SkateLandingAudioClips != null && SkateLandingAudioClips.Length > 0)
+                {
+                    var index = Random.Range(0, SkateLandingAudioClips.Length);
+                    AudioSource.PlayClipAtPoint(SkateLandingAudioClips[index], transform.TransformPoint(_controller.center), SkateAudioVolume);
+                }
             }
+        }
+
+        /// <summary>
+        /// Increases the player's maximum movement speeds.
+        /// </summary>
+        /// <param name="amount">Amount to increase speed by</param>
+        public void IncreaseMaxSpeed(float amount)
+        {
+            MoveSpeed += amount;
+            SprintSpeed += amount;
+            GrindSpeed += amount;
+
+            Debug.Log($"Speed increased! New speeds - Move: {MoveSpeed}, Sprint: {SprintSpeed}, Grind: {GrindSpeed}");
         }
     }
 }

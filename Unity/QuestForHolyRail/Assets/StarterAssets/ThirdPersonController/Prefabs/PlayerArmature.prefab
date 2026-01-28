@@ -1583,6 +1583,16 @@ MonoBehaviour:
       m_Action: Grind Input
       m_Flags: 0
     m_Flags: 0
+  lookBackInput:
+    m_Name: Look Back Input
+    m_Type: 0
+    m_ExpectedControlType: 
+    m_Id: 8175c6b3-4d72-402e-84c0-3c179d155e8d
+    m_Processors: 
+    m_Interactions: 
+    m_SingletonActionBindings: []
+    m_Flags: 0
+  lookBack: 0
   MoveSpeed: 8
   SprintSpeed: 8
   RotationSmoothTime: 0.12
@@ -1600,7 +1610,7 @@ MonoBehaviour:
   - {fileID: 8300000, guid: 274649b0e221539409070ebf6c18918b, type: 3}
   - {fileID: 8300000, guid: a3194b8bbc96ef84fab1f98f4b7dae3e, type: 3}
   FootstepAudioVolume: 0.5
-  JumpHeight: 1.2
+  JumpHeight: 2
   Gravity: -10
   JumpTimeout: 0.5
   FallTimeout: 0.15
@@ -1614,6 +1624,13 @@ MonoBehaviour:
   GrindSpeed: 25
   GrindAcceleration: 15
   GrindRotationSmoothTime: 0.08
+  GrindDistanceThreshold: 2
+  AutoGrind: 1
+  GrindExitCooldown: 0.75
+  GrindTriggerOffset: -0.5
+  GrindJumpMomentumMultiplier: 5
+  GrindStartBoost: 5
+  GrindBoostDecayRate: 2
   VirtualCamera: {fileID: 0}
   GrindFOVBoost: 15
   FOVLerpSpeed: 5
@@ -2109,7 +2126,7 @@ AudioSource:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 6338651882626683727}
-  m_Enabled: 0
+  m_Enabled: 1
   serializedVersion: 4
   OutputAudioMixerGroup: {fileID: 0}
   m_audioClip: {fileID: 0}
