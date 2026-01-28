@@ -13,8 +13,19 @@ namespace HolyRail.Vines.Editor
         {
             var generator = (VineGenerator)target;
 
-            // Draw default inspector
+            // Draw default inspector with change detection
+            EditorGUI.BeginChangeCheck();
             DrawDefaultInspector();
+            bool propertiesChanged = EditorGUI.EndChangeCheck();
+
+            // Auto-regenerate if enabled and properties changed
+            if (propertiesChanged && generator.AutoRegenerate && generator.VineComputeShader != null && generator.RootPoints.Count > 0)
+            {
+                Undo.RecordObject(generator, "Auto Regenerate Vines");
+                generator.Regenerate();
+                EditorUtility.SetDirty(generator);
+                SceneView.RepaintAll();
+            }
 
             EditorGUILayout.Space(20);
 
