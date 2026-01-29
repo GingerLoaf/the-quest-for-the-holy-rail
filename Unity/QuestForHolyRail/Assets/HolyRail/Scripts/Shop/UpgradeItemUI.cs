@@ -91,8 +91,7 @@ namespace HolyRail.Scripts.Shop
             
             if (Upgrade != null)
             {
-                // Calculate dynamic cost: Base * 2^Tier
-                _currentCost = Upgrade.Cost * (int)Mathf.Pow(2, tier);
+                _currentCost = Upgrade.GetCostForTier(tier);
                 
                 if (CostText != null)
                 {
@@ -111,9 +110,7 @@ namespace HolyRail.Scripts.Shop
 
         private string GetEffectDescription(PlayerUpgrade upgrade, int tier)
         {
-            float baseVal = upgrade.Multiplier;
-            float val = baseVal * Mathf.Pow(2, tier);
-            
+            float val = upgrade.GetValueForTier(tier);
             switch (upgrade.Type)
             {
                 case UpgradeType.ParryAccuracy:

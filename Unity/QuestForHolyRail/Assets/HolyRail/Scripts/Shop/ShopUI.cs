@@ -282,8 +282,7 @@ namespace HolyRail.Scripts.Shop
                 return;
             }
 
-            // Calculate cost (doubles every tier: 0->Base, 1->2x, 2->4x)
-            int cost = upgrade.Cost * (int)Mathf.Pow(2, currentTier);
+            int cost = upgrade.GetCostForTier(currentTier);
 
             // Check if can afford
             if (GameSessionManager.Instance.Money < cost)

@@ -452,7 +452,10 @@ namespace StarterAssets
                 _animator.SetTrigger(_animIDParry);
                 _input.parry = false;
                 _parryWindowActive = true;
-                _parryWindowTimer = EnemySpawner.Instance != null ? EnemySpawner.Instance.ParryWindowDuration : 0.3f;
+
+                // Apply parry window multiplier
+                var parryWindowMultiplier = GameSessionManager.Instance.GetUpgradeValue(UpgradeType.ParryTimeWindow);
+                _parryWindowTimer = (EnemySpawner.Instance != null ? EnemySpawner.Instance.ParryWindowDuration : 0.3f) + parryWindowMultiplier;
 
                 // Enable parry trail effect
                 foreach (var trail in _parryTrailRenderers)

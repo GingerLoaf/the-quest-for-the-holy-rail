@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.Assertions;
 
@@ -9,8 +10,8 @@ namespace HolyRail.Scripts
 {
     public class GameSessionManager : MonoBehaviour
     {
-        public static GameSessionManager Instance 
-        { 
+        public static GameSessionManager Instance
+        {
             get
             {
                 if (instance == null)
@@ -23,14 +24,16 @@ namespace HolyRail.Scripts
                         Debug.Log("Auto-created GameSessionManager");
                     }
                 }
+
                 return instance;
             }
             private set => instance = value;
         }
+
         private static GameSessionManager instance;
-    
+
         public Action<PlayerUpgrade[]> OnUpgradeListChanged;
-    
+
         public Action<int> OnMoneyChanged;
 
         public int Money
@@ -39,12 +42,12 @@ namespace HolyRail.Scripts
             set
             {
                 m_money = value;
-            
+
                 try
                 {
                     OnMoneyChanged?.Invoke(m_money);
                 }
-                catch(Exception ex)
+                catch (Exception ex)
                 {
                     Debug.LogException(ex);
                 }
@@ -56,7 +59,7 @@ namespace HolyRail.Scripts
         public IReadOnlyList<PlayerUpgrade> Upgrades => new List<PlayerUpgrade>(m_upgradeTiers.Keys);
 
         private Dictionary<PlayerUpgrade, int> m_upgradeTiers = new Dictionary<PlayerUpgrade, int>();
-    
+
         private void Awake()
         {
             // If we already have one in static memory, kill this one
@@ -65,14 +68,21 @@ namespace HolyRail.Scripts
                 Destroy(gameObject);
                 return;
             }
-        
+
             Instance = this;
-        
+
             // Keep this guy alive through scene loads since it holds all our session state
             DontDestroyOnLoad(this);
+
+            // Default all upgrades to tier 0
+            foreach (var upgrade in Resources.LoadAll<PlayerUpgrade>(string.Empty))
+            {
+                m_upgradeTiers.Add(upgrade, 0);
+            }
         }
 
         public IReadOnlyList<PlayerUpgrade> CurrentShopInventory => _currentShopInventory;
+
         private List<PlayerUpgrade> _currentShopInventory = new List<PlayerUpgrade>();
 
         private void Start()
@@ -84,10 +94,10 @@ namespace HolyRail.Scripts
         public void RegenerateShopInventory()
         {
             _currentShopInventory.Clear();
-            
+
             // Load all available upgrades
             var allUpgrades = Resources.LoadAll<PlayerUpgrade>(string.Empty);
-            if (allUpgrades == null || allUpgrades.Length == 0) 
+            if (allUpgrades == null || allUpgrades.Length == 0)
             {
                 Debug.LogWarning("[GameSessionManager] No upgrades found in Resources!");
                 return;
@@ -105,21 +115,38 @@ namespace HolyRail.Scripts
 
             // Take up to 3
             int count = Mathf.Min(shuffled.Count, 3);
-            for(int i=0; i<count; i++)
+            for (int i = 0; i < count; i++)
             {
                 _currentShopInventory.Add(shuffled[i]);
             }
-            
+
             Debug.Log($"[GameSessionManager] Regenerated Shop Inventory with {_currentShopInventory.Count} items.");
         }
-        
+
         public int GetUpgradeTier(PlayerUpgrade upgrade)
         {
             if (upgrade != null && m_upgradeTiers.TryGetValue(upgrade, out int tier))
             {
                 return tier;
             }
+
             return 0;
+        }
+
+        public float GetUpgradeValue(UpgradeType upgrade)
+        {
+            var amount = 0f;
+            foreach (var kvp in m_upgradeTiers)
+            {
+                if (kvp.Key.Type != upgrade)
+                {
+                    continue;
+                }
+                
+                amount += kvp.Key.GetValueForTier(kvp.Value);
+            }
+            
+            return amount;
         }
 
         public bool AddUpgrade(PlayerUpgrade upgrade)
