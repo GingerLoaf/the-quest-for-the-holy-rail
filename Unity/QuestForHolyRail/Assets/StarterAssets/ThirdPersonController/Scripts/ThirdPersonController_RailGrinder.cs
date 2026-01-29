@@ -382,6 +382,9 @@ namespace StarterAssets
                     _momentumPreservationTimer -= Time.deltaTime;
                 }
 
+                // Run GroundedCheck FIRST to have accurate grounded state for wall ride detection
+                GroundedCheck();
+
                 // Auto-grind: cooldown prevents immediate re-attach after jumping off
                 if (AutoGrind && !Grounded && _grindExitCooldownTimer <= 0f)
                 {
@@ -401,7 +404,6 @@ namespace StarterAssets
                 }
 
                 JumpAndGravity();
-                GroundedCheck();
                 Move();
             }
 
