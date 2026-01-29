@@ -1,3 +1,4 @@
+using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
@@ -9,10 +10,15 @@ namespace HolyRail.Scripts
     {
         public static PauseMenuManager Instance { get; private set; }
 
+        private const string VolumePrefsKey = "MasterVolume";
+        private const float DefaultVolume = 1f;
+
         [Header("UI References")]
         [field: SerializeField] public GameObject PausePanel { get; private set; }
         [field: SerializeField] public Slider VolumeSlider { get; private set; }
         [field: SerializeField] public Button ExitButton { get; private set; }
+        [field: SerializeField] public TextMeshProUGUI KeyboardControlsText { get; private set; }
+        [field: SerializeField] public TextMeshProUGUI GamepadControlsText { get; private set; }
 
         [Header("Input")]
         [field: SerializeField] public InputActionReference PauseAction { get; private set; }
@@ -26,6 +32,9 @@ namespace HolyRail.Scripts
 
             if (PausePanel != null)
                 PausePanel.SetActive(false);
+
+            // Load volume from PlayerPrefs
+            LoadVolume();
 
             if (VolumeSlider != null)
             {
@@ -54,6 +63,9 @@ namespace HolyRail.Scripts
 
         private void OnDestroy()
         {
+            // Save volume before destroying
+            SaveVolume();
+
             if (Instance == this)
                 Instance = null;
 
@@ -121,6 +133,19 @@ namespace HolyRail.Scripts
         private void OnVolumeChanged(float sliderValue)
         {
             AudioListener.volume = PerceptualToLinear(sliderValue);
+            SaveVolume();
+        }
+
+        private void LoadVolume()
+        {
+            float savedVolume = PlayerPrefs.GetFloat(VolumePrefsKey, DefaultVolume);
+            AudioListener.volume = savedVolume;
+        }
+
+        private void SaveVolume()
+        {
+            PlayerPrefs.SetFloat(VolumePrefsKey, AudioListener.volume);
+            PlayerPrefs.Save();
         }
 
         private static float PerceptualToLinear(float perceptual)
