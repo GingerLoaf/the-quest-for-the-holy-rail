@@ -9,6 +9,7 @@ using System.Collections.Generic;
  using HolyRail.Scripts.Enemies;
  using HolyRail.Scripts.FX;
  using HolyRail.Graffiti;
+ using UnityEngine.Serialization;
  using Random = UnityEngine.Random;
 #if ENABLE_INPUT_SYSTEM 
 using UnityEngine.InputSystem;
@@ -85,25 +86,27 @@ namespace StarterAssets
         private float _totalBoostSpeed = 0f;
         private OrbitalPickupDisplay _orbitalDisplay;
 
+        [FormerlySerializedAs("JumpTimeout")]
         [Space(10)]
         [Tooltip("Time required to pass before being able to jump again. Set to 0f to instantly jump again")]
-        public float JumpTimeout = 0.50f;
+        public float jumpTimeout = 0.50f;
 
-        [Tooltip("Time required to pass before entering the fall state. Useful for walking down stairs")]
-        public float FallTimeout = 0.15f;
+        [FormerlySerializedAs("FallTimeout")] [Tooltip("Time required to pass before entering the fall state. Useful for walking down stairs")]
+        public float fallTimeout = 0.15f;
 
+        [FormerlySerializedAs("Grounded")]
         [Header("Player Grounded")]
         [Tooltip("If the character is grounded or not. Not part of the CharacterController built in grounded check")]
-        public bool Grounded = true;
+        public bool grounded = true;
 
-        [Tooltip("Useful for rough ground")]
-        public float GroundedOffset = -0.14f;
+        [FormerlySerializedAs("GroundedOffset")] [Tooltip("Useful for rough ground")]
+        public float groundedOffset = -0.14f;
 
-        [Tooltip("The radius of the grounded check. Should match the radius of the CharacterController")]
-        public float GroundedRadius = 0.28f;
+        [FormerlySerializedAs("GroundedRadius")] [Tooltip("The radius of the grounded check. Should match the radius of the CharacterController")]
+        public float groundedRadius = 0.28f;
 
-        [Tooltip("What layers the character uses as ground")]
-        public LayerMask GroundLayers;
+        [FormerlySerializedAs("GroundLayers")] [Tooltip("What layers the character uses as ground")]
+        public LayerMask groundLayers;
 
         [Header("Grinding")]
         public SplineContainer GrindSpline;
@@ -252,6 +255,7 @@ namespace StarterAssets
 
         // player
         private float _speed;
+        private float _lastAppliedSpeedBoost;
         private float _animationBlend;
         private float _targetRotation = 0.0f;
         private float _rotationVelocity;
@@ -315,6 +319,11 @@ namespace StarterAssets
 
             lookBackInput.Enable();
             sprayInput.Enable();
+
+            if (GameSessionManager.Instance != null)
+            {
+                GameSessionManager.Instance.OnUpgradeListChanged += UpdateSpeedFromUpgrades;
+            }
         }
 
         private void OnDisable()
@@ -324,6 +333,11 @@ namespace StarterAssets
 
             lookBackInput.Disable();
             sprayInput.Disable();
+
+            if (GameSessionManager.Instance != null)
+            {
+                GameSessionManager.Instance.OnUpgradeListChanged -= UpdateSpeedFromUpgrades;
+            }
         }
 
         private void Start()
@@ -342,8 +356,8 @@ namespace StarterAssets
             AssignAnimationIDs();
 
             // reset our timeouts on start
-            _jumpTimeoutDelta = JumpTimeout;
-            _fallTimeoutDelta = FallTimeout;
+            _jumpTimeoutDelta = jumpTimeout;
+            _fallTimeoutDelta = fallTimeout;
 
             // Initialize FOV
             if (VirtualCamera != null)
@@ -372,6 +386,8 @@ namespace StarterAssets
 
             // Cache orbital display reference
             _orbitalDisplay = GetComponent<OrbitalPickupDisplay>();
+
+            UpdateSpeedFromUpgrades();
         }
 
         private void Update()
@@ -425,7 +441,7 @@ namespace StarterAssets
                 GroundedCheck();
 
                 // Auto-grind: cooldown prevents immediate re-attach after jumping off
-                if (AutoGrind && !Grounded && _grindExitCooldownTimer <= 0f)
+                if (AutoGrind && !grounded && _grindExitCooldownTimer <= 0f)
                 {
                     if (TryStartGrind())
                     {
@@ -434,7 +450,7 @@ namespace StarterAssets
                 }
 
                 // Wall ride detection: only when airborne and not grinding
-                if (EnableWallRide && !Grounded && _wallRideExitCooldownTimer <= 0f)
+                if (EnableWallRide && !grounded && _wallRideExitCooldownTimer <= 0f)
                 {
                     if (TryStartWallRide())
                     {
@@ -523,15 +539,15 @@ namespace StarterAssets
         private void GroundedCheck()
         {
             // set sphere position, with offset
-            Vector3 spherePosition = new Vector3(transform.position.x, transform.position.y - GroundedOffset,
+            Vector3 spherePosition = new Vector3(transform.position.x, transform.position.y - groundedOffset,
                 transform.position.z);
-            Grounded = Physics.CheckSphere(spherePosition, GroundedRadius, GroundLayers,
+            grounded = Physics.CheckSphere(spherePosition, groundedRadius, groundLayers,
                 QueryTriggerInteraction.Ignore);
 
             // update animator if using character
             if (_hasAnimator)
             {
-                _animator.SetBool(_animIDGrounded, Grounded);
+                _animator.SetBool(_animIDGrounded, grounded);
             }
         }
 
@@ -1257,7 +1273,7 @@ namespace StarterAssets
             float inputMagnitude = _input.analogMovement ? _input.move.magnitude : 1f;
 
             // When airborne, preserve momentum better by reducing speed change rate
-            float effectiveSpeedChangeRate = Grounded ? SpeedChangeRate : SpeedChangeRate * _airControlMultiplier;
+            float effectiveSpeedChangeRate = grounded ? SpeedChangeRate : SpeedChangeRate * _airControlMultiplier;
 
             // Preserve momentum after exiting grind - only allow acceleration, not deceleration
             bool preservingMomentum = _momentumPreservationTimer > 0f;
@@ -1326,7 +1342,7 @@ namespace StarterAssets
 
         private void UpdateSkateLoopSound()
         {
-            bool shouldPlaySkateLoop = Grounded && _speed > 0.1f && !_isGrinding;
+            bool shouldPlaySkateLoop = grounded && _speed > 0.1f && !_isGrinding;
 
             if (shouldPlaySkateLoop)
             {
@@ -1348,10 +1364,10 @@ namespace StarterAssets
 
         private void JumpAndGravity()
         {
-            if (Grounded)
+            if (grounded)
             {
                 // reset the fall timeout timer
-                _fallTimeoutDelta = FallTimeout;
+                _fallTimeoutDelta = fallTimeout;
 
                 // update animator if using character
                 if (_hasAnimator)
@@ -1388,7 +1404,7 @@ namespace StarterAssets
             else
             {
                 // reset the jump timeout timer
-                _jumpTimeoutDelta = JumpTimeout;
+                _jumpTimeoutDelta = jumpTimeout;
 
                 // fall timeout
                 if (_fallTimeoutDelta >= 0.0f)
@@ -1427,13 +1443,13 @@ namespace StarterAssets
             Color transparentGreen = new Color(0.0f, 1.0f, 0.0f, 0.35f);
             Color transparentRed = new Color(1.0f, 0.0f, 0.0f, 0.35f);
 
-            if (Grounded) Gizmos.color = transparentGreen;
+            if (grounded) Gizmos.color = transparentGreen;
             else Gizmos.color = transparentRed;
 
             // when selected, draw a gizmo in the position of, and matching radius of, the grounded collider
             Gizmos.DrawSphere(
-                new Vector3(transform.position.x, transform.position.y - GroundedOffset, transform.position.z),
-                GroundedRadius);
+                new Vector3(transform.position.x, transform.position.y - groundedOffset, transform.position.z),
+                groundedRadius);
         }
 
         public void ApplySpeedReduction(float multiplier, float duration)
@@ -1463,6 +1479,20 @@ namespace StarterAssets
                     var index = Random.Range(0, SkateLandingAudioClips.Length);
                     AudioSource.PlayClipAtPoint(SkateLandingAudioClips[index], transform.TransformPoint(_controller.center), SkateAudioVolume);
                 }
+            }
+        }
+
+        private void UpdateSpeedFromUpgrades(PlayerUpgrade[] upgrades = null)
+        {
+            if (GameSessionManager.Instance == null) return;
+
+            float totalBoost = GameSessionManager.Instance.GetUpgradeValue(UpgradeType.SpeedBoost);
+            float delta = totalBoost - _lastAppliedSpeedBoost;
+             
+            if (Mathf.Abs(delta) > 0.001f)
+            {
+                IncreaseMaxSpeed(delta);
+                _lastAppliedSpeedBoost = totalBoost;
             }
         }
 

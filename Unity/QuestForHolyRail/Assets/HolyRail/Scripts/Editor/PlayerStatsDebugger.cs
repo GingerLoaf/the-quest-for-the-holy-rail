@@ -204,14 +204,9 @@ namespace HolyRail.Scripts.Editor
                 
                 if (field != null)
                 {
-                    var gameTiers = (Dictionary<PlayerUpgrade, int>)field.GetValue(GameSessionManager.Instance);
-                    gameTiers.Clear();
                     foreach (var kvp in _upgradeTiers)
                     {
-                        if (kvp.Value > 0)
-                        {
-                            gameTiers[kvp.Key] = kvp.Value;
-                        }
+                        GameSessionManager.Instance.UpdatePlayerUpgradeTier(kvp.Key, kvp.Value);
                     }
                 }
                 

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.Assertions;
 
@@ -149,6 +150,32 @@ namespace HolyRail.Scripts
             return amount;
         }
 
+        public bool UpdatePlayerUpgradeTier(PlayerUpgrade playerUpgrade, int tierLevel)
+        {
+            if (!playerUpgrade || tierLevel < 0)
+            {
+                return false;
+            }
+
+            if (!m_upgradeTiers.ContainsKey(playerUpgrade) || tierLevel > playerUpgrade.MaxTier)
+            {
+                return false;
+            }
+
+            m_upgradeTiers[playerUpgrade] = tierLevel;
+            
+            try
+            {
+                OnUpgradeListChanged?.Invoke(new List<PlayerUpgrade>(m_upgradeTiers.Keys).ToArray());
+            }
+            catch(Exception ex)
+            {
+                Debug.LogException(ex);
+            }
+            
+            return true;
+        }
+        
         public bool AddUpgrade(PlayerUpgrade upgrade)
         {
             Assert.IsNotNull(upgrade);
