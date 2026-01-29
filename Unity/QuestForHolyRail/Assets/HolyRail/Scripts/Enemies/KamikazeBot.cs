@@ -6,6 +6,9 @@ namespace HolyRail.Scripts.Enemies
     public class KamikazeBot : BaseEnemyBot
     {
         [Header("Kamikaze Settings")]
+        [Tooltip("Movement speed when chasing the player")]
+        public float ChaseSpeed = 6f;
+
         [Tooltip("The distance at which the bot explodes.")]
         public float ExplosionRadius = 3f;
 
@@ -31,9 +34,8 @@ namespace HolyRail.Scripts.Enemies
             Vector3 targetPosition = Spawner.Player.position;
             Vector3 direction = (targetPosition - transform.position).normalized;
 
-            // Move toward player at max speed with collision pathing
-            Vector3 desiredPosition = transform.position + direction * BotMaxSpeed * Time.deltaTime;
-            transform.position = GetPositionWithCollisionPathing(transform.position, desiredPosition);
+            // Move toward player at chase speed
+            transform.position += direction * ChaseSpeed * Time.deltaTime;
 
             // Face the player
             if (direction.sqrMagnitude > 0.001f)
@@ -54,7 +56,7 @@ namespace HolyRail.Scripts.Enemies
             if (_isExploding) return;
 
             base.Update();
-            
+
             if (!Spawner || !Spawner.Player)
             {
                 return;
@@ -93,7 +95,7 @@ namespace HolyRail.Scripts.Enemies
             base.OnValidate();
             if (Application.isPlaying)
             {
-                Debug.Log($"KamikazeBot [{name}]: Parameters updated - ExplosionRadius={ExplosionRadius}, SlowdownMultiplier={SlowdownMultiplier}");
+                Debug.Log($"KamikazeBot [{name}]: Parameters updated - ChaseSpeed={ChaseSpeed}, ExplosionRadius={ExplosionRadius}, SlowdownMultiplier={SlowdownMultiplier}");
             }
         }
     }

@@ -6,6 +6,9 @@ Shader "HolyRail/BillboardInstanced"
         _ColorVariation ("Color Variation", Range(0, 0.2)) = 0.05
         _EmissionColor ("Emission Color", Color) = (1.0, 0.6, 0.1, 1)
         _EmissionIntensity ("Emission Intensity", Range(0, 5)) = 1.5
+        _TextureArray ("Texture Array", 2DArray) = "" {}
+        _TextureCount ("Texture Count", Float) = 1
+        _UseTextures ("Use Textures", Float) = 0
     }
 
     SubShader
@@ -28,6 +31,7 @@ Shader "HolyRail/BillboardInstanced"
             #pragma multi_compile_instancing
             #pragma instancing_options procedural:ConfigureProcedural
             #pragma multi_compile_fog
+            #pragma require 2darray
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
@@ -44,17 +48,23 @@ Shader "HolyRail/BillboardInstanced"
             StructuredBuffer<BillboardData> _BillboardBuffer;
             #endif
 
+            TEXTURE2D_ARRAY(_TextureArray);
+            SAMPLER(sampler_TextureArray);
+
             CBUFFER_START(UnityPerMaterial)
                 float4 _BaseColor;
                 float _ColorVariation;
                 float4 _EmissionColor;
                 float _EmissionIntensity;
+                float _TextureCount;
+                float _UseTextures;
             CBUFFER_END
 
             struct Attributes
             {
                 float4 positionOS : POSITION;
                 float3 normalOS : NORMAL;
+                float2 uv : TEXCOORD0;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
@@ -65,6 +75,7 @@ Shader "HolyRail/BillboardInstanced"
                 float3 positionWS : TEXCOORD1;
                 nointerpolation uint instanceID : TEXCOORD2;
                 float fogCoord : TEXCOORD3;
+                float2 uv : TEXCOORD4;
             };
 
             // Rotate vector by quaternion
@@ -136,14 +147,33 @@ Shader "HolyRail/BillboardInstanced"
                 output.normalWS = normalInput.normalWS;
                 output.fogCoord = ComputeFogFactor(vertexInput.positionCS.z);
 
+                // Generate UVs from object space position (works for a cube mesh)
+                // Front face: use X and Y
+                output.uv = input.uv;
+
                 return output;
             }
 
             half4 frag(Varyings input) : SV_Target
             {
-                // Base color with subtle variation per instance
+                // Hash for randomization
                 float hash = frac(sin(input.instanceID * 12.9898) * 43758.5453);
-                half3 baseColor = _BaseColor.rgb + (hash - 0.5) * _ColorVariation * 2.0;
+
+                half3 baseColor = _BaseColor.rgb;
+
+                // Sample texture if enabled
+                if (_UseTextures > 0.5 && _TextureCount > 0)
+                {
+                    // Pick texture index based on instance ID
+                    uint texIndex = uint(input.instanceID * 7 + 3) % uint(_TextureCount);
+                    half4 texColor = SAMPLE_TEXTURE2D_ARRAY(_TextureArray, sampler_TextureArray, input.uv, texIndex);
+                    baseColor = texColor.rgb;
+                }
+                else
+                {
+                    // Fallback: color variation per instance
+                    baseColor = _BaseColor.rgb + (hash - 0.5) * _ColorVariation * 2.0;
+                }
 
                 // Simple lighting
                 Light mainLight = GetMainLight();
@@ -152,8 +182,12 @@ Shader "HolyRail/BillboardInstanced"
 
                 half3 diffuse = baseColor * (ambient + mainLight.color * NdotL * 0.8);
 
-                // Emissive glow
+                // Emissive glow (tinted by texture color if using textures)
                 half3 emission = _EmissionColor.rgb * _EmissionIntensity;
+                if (_UseTextures > 0.5)
+                {
+                    emission *= baseColor; // Tint emission by texture
+                }
 
                 half3 finalColor = diffuse + emission;
 

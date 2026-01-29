@@ -30,6 +30,10 @@ namespace HolyRail.Scripts
         [field: SerializeField]
         public int EnemyDestroyedPoints { get; private set; } = 500;
 
+        [field: Tooltip("Points earned for claiming a graffiti spot")]
+        [field: SerializeField]
+        public int GraffitiClaimedPoints { get; private set; } = 300;
+
         [Header("Near Miss Settings")]
         [field: Tooltip("Distance from death wall to trigger near miss detection")]
         [field: SerializeField]
@@ -72,6 +76,10 @@ namespace HolyRail.Scripts
         [field: Tooltip("Text shown when destroying an enemy")]
         [field: SerializeField]
         public string EnemyDestroyedPopupText { get; private set; } = "DESTROYED!";
+
+        [field: Tooltip("Text shown when claiming a graffiti spot")]
+        [field: SerializeField]
+        public string GraffitiClaimedPopupText { get; private set; } = "TAGGED!";
 
         [Header("Score Animation Settings")]
         [field: Tooltip("Base scale multiplier for score bump animation")]
@@ -523,6 +531,13 @@ namespace HolyRail.Scripts
             CurrentScore += EnemyDestroyedPoints;
             ShowPopup(EnemyDestroyedPopupText);
             Debug.Log($"<color=red>[Enemy Destroyed!]</color> +{EnemyDestroyedPoints} points!", gameObject);
+        }
+
+        public void AddGraffitiScore()
+        {
+            CurrentScore += GraffitiClaimedPoints;
+            ShowPopup(GraffitiClaimedPopupText);
+            Debug.Log($"<color=magenta>[Graffiti Claimed!]</color> +{GraffitiClaimedPoints} points!", gameObject);
         }
 
         public void ResetScore()

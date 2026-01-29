@@ -54,11 +54,16 @@ namespace HolyRail.Scripts.Enemies
         public Vector2 OffsetRangeZ { get; private set; } = new(10f, 20f);
 
         private Vector3 _randomizedOffset;
-        private Vector3 _smoothedNoiseOffset;
-        private Vector3 _noiseVelocity;
-        private float _noiseOffsetX;
-        private float _noiseOffsetY;
-        private float _noiseOffsetZ;
+
+        [Header("Movement")]
+        [field: Tooltip("How quickly bots catch up to target position (higher = snappier)")]
+        [field: SerializeField]
+        public float FollowSpeed { get; private set; } = 15f;
+
+        [Header("Wall Avoidance")]
+        [field: Tooltip("Layer mask for wall collision")]
+        [field: SerializeField]
+        public LayerMask WallLayerMask { get; private set; } = ~0; // Default to all layers
 
         private Renderer _renderer;
         private MaterialPropertyBlock _propertyBlock;
@@ -85,8 +90,6 @@ namespace HolyRail.Scripts.Enemies
         {
             base.OnSpawn();
             _fireTimer = Random.Range(0f, EffectiveFireRate);
-            _smoothedNoiseOffset = Vector3.zero;
-            _noiseVelocity = Vector3.zero;
 
             Debug.Log($"ShooterBot [{name}]: Spawned with FireRate={EffectiveFireRate}s, FiringRange={EffectiveFiringRange}m, first shot in {_fireTimer:F1}s");
 
@@ -96,47 +99,26 @@ namespace HolyRail.Scripts.Enemies
                 Random.Range(OffsetRangeY.x, OffsetRangeY.y),
                 Random.Range(OffsetRangeZ.x, OffsetRangeZ.y)
             );
-
-            // Randomize noise seed so each bot drifts independently
-            _noiseOffsetX = Random.Range(0f, 1000f);
-            _noiseOffsetY = Random.Range(0f, 1000f);
-            _noiseOffsetZ = Random.Range(0f, 1000f);
         }
 
         protected override void UpdateMovement()
         {
-            if (!MainCamera || !Spawner || !Spawner.Player)
-            {
-                return;
-            }
+            if (!Spawner || !Spawner.Player) return;
 
             var playerTransform = Spawner.Player;
-            var camTransform = MainCamera.transform;
 
-            // Calculate derived position directly from player (NO LAG)
-            Vector3 forwardDirection = Vector3.ProjectOnPlane(camTransform.forward, Vector3.up).normalized;
-            Vector3 derivedPosition = playerTransform.position +
-                                      (camTransform.right * _randomizedOffset.x) +
-                                      (Vector3.up * _randomizedOffset.y) +
-                                      (forwardDirection * _randomizedOffset.z);
+            // Calculate target position: player + offset in world space
+            Vector3 targetPosition = playerTransform.position + _randomizedOffset;
 
-            // Calculate smoothed noise offset (local organic drift only)
-            float time = Time.time * BotNoiseSpeed;
-            Vector3 rawNoise = new Vector3(
-                (Mathf.PerlinNoise(time + _noiseOffsetX, 0f) - 0.5f) * 2f * BotNoiseAmount,
-                (Mathf.PerlinNoise(time + _noiseOffsetY, 100f) - 0.5f) * 2f * BotNoiseAmount,
-                (Mathf.PerlinNoise(time + _noiseOffsetZ, 200f) - 0.5f) * 2f * BotNoiseAmount
-            );
-            _smoothedNoiseOffset = Vector3.SmoothDamp(_smoothedNoiseOffset, rawNoise, ref _noiseVelocity, 0.15f);
+            // Smoothly interpolate toward target (keeps up with any player speed)
+            Vector3 currentPos = transform.position;
+            float t = 1f - Mathf.Exp(-FollowSpeed * Time.deltaTime);
+            Vector3 newPosition = Vector3.Lerp(currentPos, targetPosition, t);
 
-            // Apply avoidance velocity
-            derivedPosition += AvoidanceVelocity * Time.deltaTime;
+            // Check for wall collision and resolve
+            newPosition = ResolveWallCollision(currentPos, newPosition);
 
-            // Final position = derived + smoothed noise
-            Vector3 targetPosition = derivedPosition + _smoothedNoiseOffset;
-
-            // Move with collision pathing (slides around obstacles)
-            transform.position = GetPositionWithCollisionPathing(transform.position, targetPosition);
+            transform.position = newPosition;
 
             // Smoothly rotate to face the player
             var toPlayer = playerTransform.position - transform.position;
@@ -147,13 +129,30 @@ namespace HolyRail.Scripts.Enemies
             }
         }
 
+        private Vector3 ResolveWallCollision(Vector3 from, Vector3 to)
+        {
+            Vector3 direction = to - from;
+            float distance = direction.magnitude;
+
+            if (distance < 0.001f) return to;
+
+            // SphereCast from current position to new position to prevent entering walls
+            if (Physics.SphereCast(from, BotCollisionRadius, direction.normalized, out RaycastHit hit,
+                                   distance, WallLayerMask, QueryTriggerInteraction.Ignore))
+            {
+                // Stop just before the wall
+                float safeDistance = Mathf.Max(0f, hit.distance - 0.05f);
+                return from + direction.normalized * safeDistance;
+            }
+
+            return to;
+        }
+
         public override void OnRecycle()
         {
             base.OnRecycle();
             _isFlashing = false;
             _flashTimer = 0f;
-            _smoothedNoiseOffset = Vector3.zero;
-            _noiseVelocity = Vector3.zero;
             // Clear property block to reset to shared material defaults
             if (_renderer != null && _propertyBlock != null)
             {

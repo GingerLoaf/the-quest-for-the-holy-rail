@@ -5,6 +5,7 @@
  using Unity.Mathematics;
  using HolyRail.Scripts;
  using HolyRail.Scripts.Enemies;
+ using HolyRail.Graffiti;
  using Random = UnityEngine.Random;
 #if ENABLE_INPUT_SYSTEM 
 using UnityEngine.InputSystem;
@@ -24,6 +25,7 @@ namespace StarterAssets
     {
         public InputAction grindInput;
         public InputAction lookBackInput;
+        public InputAction sprayInput;
         public bool lookBack;
         private SplineContainer[] _splineContainers;
         
@@ -142,6 +144,12 @@ namespace StarterAssets
         [Tooltip("Trail renderers to enable during parry window")]
         [SerializeField] private TrailRenderer[] _parryTrailRenderers;
 
+        [Header("Spray Graffiti")]
+        [Tooltip("Particle system for spray effect")]
+        [SerializeField] private ParticleSystem _sprayEffect;
+        [Tooltip("Transform used as origin for spray particles and LookAt target")]
+        [SerializeField] private Transform _sprayPivot;
+
         public GrindGlowLight GrindGlowLight;
 
         private AudioSource _grindLoopAudioSource;
@@ -169,6 +177,11 @@ namespace StarterAssets
 
         private float _parryWindowTimer;
         private bool _parryWindowActive;
+
+        // Spray graffiti state
+        private GraffitiSpot _activeGraffiti;
+        private Vector3 _sprayTargetPosition;
+        private bool _isSpraying;
 
         [Header("Grind Camera Effects")]
         [Tooltip("Reference to the Cinemachine Virtual Camera")]
@@ -278,6 +291,7 @@ namespace StarterAssets
             grindInput.performed += OnGrindRequested;
 
             lookBackInput.Enable();
+            sprayInput.Enable();
         }
 
         private void OnDisable()
@@ -286,6 +300,7 @@ namespace StarterAssets
             grindInput.Disable();
 
             lookBackInput.Disable();
+            sprayInput.Disable();
         }
 
         private void Start()
@@ -1375,5 +1390,33 @@ namespace StarterAssets
                 bullet.Deflect();
             }
         }
+
+        public void SetActiveGraffiti(GraffitiSpot graffiti)
+        {
+            _activeGraffiti = graffiti;
+        }
+
+        public void SetSprayTarget(Vector3 targetPosition, bool isSpraying)
+        {
+            _sprayTargetPosition = targetPosition;
+            _isSpraying = isSpraying;
+
+            if (_sprayEffect == null)
+            {
+                return;
+            }
+
+            var emission = _sprayEffect.emission;
+            emission.enabled = isSpraying;
+
+            if (isSpraying && _sprayPivot != null && targetPosition != Vector3.zero)
+            {
+                _sprayPivot.LookAt(targetPosition);
+            }
+        }
+
+        public GraffitiSpot ActiveGraffiti => _activeGraffiti;
+        public bool IsSpraying => _isSpraying;
+        public bool IsSprayInputPressed => sprayInput.IsPressed();
     }
 }

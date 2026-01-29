@@ -105,15 +105,18 @@ namespace HolyRail.City
             float pathProgress = CalculatePlayerProgress();
             _lastPlayerProgress = pathProgress;
 
-            // Trigger leapfrog when we've traveled far enough into the back half
-            if (progressInBackHalf > LeapfrogTriggerProgress)
+            // Trigger leapfrog when we've traveled past the first half and into the second
+            // progressInBackHalf > 1.0 means we've traveled more than one half-length
+            // Add LeapfrogTriggerProgress as buffer (e.g., 1.33 = 33% into second half)
+            if (progressInBackHalf > 1.0f + LeapfrogTriggerProgress)
             {
                 // Check buffer zone around junction to avoid visual glitches
                 if (!IsNearJunction())
                 {
                     PerformLeapfrog();
-                    // Reset distance tracking after leapfrog
-                    _totalDistanceTraveled = 0f;
+                    // Reduce by one half-length, not reset to 0
+                    // This maintains correct tracking for subsequent leapfrogs
+                    _totalDistanceTraveled -= _loopState.HalfLength;
                 }
             }
 

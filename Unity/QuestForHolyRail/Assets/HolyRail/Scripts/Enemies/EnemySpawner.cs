@@ -108,27 +108,6 @@ namespace HolyRail.Scripts.Enemies
         [field: SerializeField]
         public float GlobalFiringRange { get; private set; } = 30f;
 
-        [Header("Avoidance Zone")]
-        [field: Tooltip("Enable the cone-shaped avoidance zone in front of the player")]
-        [field: SerializeField]
-        public bool EnableAvoidanceZone { get; private set; } = true;
-
-        [field: Tooltip("Half-angle of the avoidance cone in degrees (e.g., 15 = 30 degree total cone)")]
-        [field: SerializeField, Range(1f, 45f)]
-        public float AvoidanceZoneHalfAngle { get; private set; } = 15f;
-
-        [field: Tooltip("How strongly bots are pushed out of the avoidance zone")]
-        [field: SerializeField]
-        public float AvoidancePushStrength { get; private set; } = 10f;
-
-        [field: Tooltip("Hysteresis multiplier for exit threshold (zone is wider for exiting)")]
-        [field: SerializeField]
-        public float AvoidanceHysteresis { get; private set; } = 1.2f;
-
-        [field: Tooltip("How quickly avoidance velocity decays when exiting the zone")]
-        [field: SerializeField]
-        public float AvoidanceDecayRate { get; private set; } = 5f;
-
         [Header("Parry Settings")]
         [field: Tooltip("Distance from player at which bullets can be parried")]
         [field: SerializeField]
@@ -149,8 +128,6 @@ namespace HolyRail.Scripts.Enemies
         private List<EnemyBullet> _activeBullets = new();
         private float _spawnTimer;
         private float _totalSpawnWeight;
-        private Camera _mainCamera;
-        private float _avoidanceZoneTan; // Cached tan of half-angle
 
         private void Awake()
         {
@@ -161,14 +138,7 @@ namespace HolyRail.Scripts.Enemies
             }
             Instance = this;
 
-            _mainCamera = Camera.main;
-            UpdateAvoidanceZoneTan();
             InitializePools();
-        }
-
-        private void UpdateAvoidanceZoneTan()
-        {
-            _avoidanceZoneTan = Mathf.Tan(AvoidanceZoneHalfAngle * Mathf.Deg2Rad);
         }
 
         private void OnDestroy()
@@ -193,7 +163,6 @@ namespace HolyRail.Scripts.Enemies
                 {
                     Debug.Log($"EnemySpawner: Global FiringRange override active = {GlobalFiringRange}m");
                 }
-                UpdateAvoidanceZoneTan();
             }
         }
 
@@ -336,77 +305,6 @@ namespace HolyRail.Scripts.Enemies
                 float dist = Vector3.Distance(bullet.transform.position, Player.position);
                 bullet.SetInParryThreshold(dist <= ParryThresholdDistance);
             }
-
-            // Apply avoidance zone to all active bots
-            if (EnableAvoidanceZone && _mainCamera != null)
-            {
-                ApplyAvoidanceZone();
-            }
-        }
-
-        private void ApplyAvoidanceZone()
-        {
-            var camTransform = _mainCamera.transform;
-            Vector3 camForward = Vector3.ProjectOnPlane(camTransform.forward, Vector3.up).normalized;
-            Vector3 camRight = Vector3.ProjectOnPlane(camTransform.right, Vector3.up).normalized;
-
-            Vector3 playerPosFlat = new Vector3(Player.position.x, 0f, Player.position.z);
-
-            foreach (var bot in _activeBots)
-            {
-                if (bot == null || !bot.gameObject.activeInHierarchy) continue;
-
-                // Project bot position to horizontal plane (ignore height - the zone is infinitely tall)
-                Vector3 botPosFlat = new Vector3(bot.transform.position.x, 0f, bot.transform.position.z);
-                Vector3 toBot = botPosFlat - playerPosFlat;
-
-                // Get the forward distance (along camera forward direction)
-                float forwardDist = Vector3.Dot(toBot, camForward);
-
-                // Only apply avoidance if bot is in front of player
-                if (forwardDist <= 0f)
-                {
-                    // Bot is behind player - decay avoidance and clear zone status
-                    bot.IsInAvoidanceZone = false;
-                    bot.AvoidanceVelocity = Vector3.Lerp(bot.AvoidanceVelocity, Vector3.zero, AvoidanceDecayRate * Time.deltaTime);
-                    continue;
-                }
-
-                // Get the lateral offset (along camera right direction)
-                float lateralOffset = Vector3.Dot(toBot, camRight);
-
-                // Calculate the avoidance zone width at this distance (cone/wedge shape)
-                float zoneHalfWidth = forwardDist * _avoidanceZoneTan;
-
-                // Use hysteresis: wider threshold for exiting to prevent oscillation
-                float effectiveHalfWidth = bot.IsInAvoidanceZone ? zoneHalfWidth * AvoidanceHysteresis : zoneHalfWidth;
-
-                // Check if bot is inside the avoidance zone
-                bool isInZone = Mathf.Abs(lateralOffset) < effectiveHalfWidth;
-
-                if (isInZone)
-                {
-                    bot.IsInAvoidanceZone = true;
-
-                    // Update preferred side based on current position (not spawn position)
-                    // This allows bots to naturally flow to the correct side
-                    bot.PreferredSide = lateralOffset >= 0f ? 1f : -1f;
-
-                    // Calculate how far inside the zone the bot is
-                    float penetration = zoneHalfWidth - Mathf.Abs(lateralOffset);
-
-                    // Calculate push velocity - stronger when deeper in the zone
-                    float normalizedPenetration = Mathf.Clamp01(penetration / zoneHalfWidth); // 0 at edge, 1 at center
-                    float pushSpeed = AvoidancePushStrength * (1f + normalizedPenetration);
-                    bot.AvoidanceVelocity = camRight * (bot.PreferredSide * pushSpeed);
-                }
-                else
-                {
-                    // Bot is outside the zone - decay avoidance gradually
-                    bot.IsInAvoidanceZone = false;
-                    bot.AvoidanceVelocity = Vector3.Lerp(bot.AvoidanceVelocity, Vector3.zero, AvoidanceDecayRate * Time.deltaTime);
-                }
-            }
         }
 
         public void SpawnBot()
@@ -445,18 +343,6 @@ namespace HolyRail.Scripts.Enemies
 
             var spawnPos = GetRandomSpawnPosition();
             bot.transform.position = spawnPos;
-
-            // Set preferred side for avoidance zone based on spawn position
-            if (_mainCamera != null)
-            {
-                Vector3 toSpawn = spawnPos - Player.position;
-                float lateralOffset = Vector3.Dot(toSpawn, _mainCamera.transform.right);
-                bot.PreferredSide = lateralOffset >= 0f ? 1f : -1f;
-            }
-            else
-            {
-                bot.PreferredSide = Random.value > 0.5f ? 1f : -1f;
-            }
 
             bot.OnSpawn();
             bot.gameObject.SetActive(true);
@@ -622,56 +508,6 @@ namespace HolyRail.Scripts.Enemies
             Gizmos.DrawCube(center, size);
             Gizmos.color = Color.red;
             Gizmos.DrawWireCube(center, size);
-
-            // Draw avoidance zone as a tall wedge/prism
-            if (EnableAvoidanceZone)
-            {
-                var cam = Camera.main;
-                if (cam != null)
-                {
-                    Vector3 camForward = Vector3.ProjectOnPlane(cam.transform.forward, Vector3.up).normalized;
-                    Vector3 camRight = Vector3.ProjectOnPlane(cam.transform.right, Vector3.up).normalized;
-
-                    float coneLength = 100f;
-                    float coneHeight = 50f;
-                    float tanAngle = Mathf.Tan(AvoidanceZoneHalfAngle * Mathf.Deg2Rad);
-                    float endWidth = coneLength * tanAngle;
-
-                    Vector3 playerPos = Player.position;
-                    float bottomY = playerPos.y - coneHeight / 2f;
-                    float topY = playerPos.y + coneHeight / 2f;
-
-                    Vector3 endCenter = playerPos + camForward * coneLength;
-
-                    // Bottom vertices
-                    Vector3 bottomStart = new Vector3(playerPos.x, bottomY, playerPos.z);
-                    Vector3 bottomEndLeft = new Vector3(endCenter.x, bottomY, endCenter.z) - camRight * endWidth;
-                    Vector3 bottomEndRight = new Vector3(endCenter.x, bottomY, endCenter.z) + camRight * endWidth;
-
-                    // Top vertices
-                    Vector3 topStart = new Vector3(playerPos.x, topY, playerPos.z);
-                    Vector3 topEndLeft = new Vector3(endCenter.x, topY, endCenter.z) - camRight * endWidth;
-                    Vector3 topEndRight = new Vector3(endCenter.x, topY, endCenter.z) + camRight * endWidth;
-
-                    // Draw wedge edges
-                    Gizmos.color = Color.yellow;
-
-                    // Bottom triangle
-                    Gizmos.DrawLine(bottomStart, bottomEndLeft);
-                    Gizmos.DrawLine(bottomStart, bottomEndRight);
-                    Gizmos.DrawLine(bottomEndLeft, bottomEndRight);
-
-                    // Top triangle
-                    Gizmos.DrawLine(topStart, topEndLeft);
-                    Gizmos.DrawLine(topStart, topEndRight);
-                    Gizmos.DrawLine(topEndLeft, topEndRight);
-
-                    // Vertical edges
-                    Gizmos.DrawLine(bottomStart, topStart);
-                    Gizmos.DrawLine(bottomEndLeft, topEndLeft);
-                    Gizmos.DrawLine(bottomEndRight, topEndRight);
-                }
-            }
         }
     }
 }

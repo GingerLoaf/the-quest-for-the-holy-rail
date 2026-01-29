@@ -8197,11 +8197,36 @@ MonoBehaviour:
   lookBackInput:
     m_Name: Look Back Input
     m_Type: 0
-    m_ExpectedControlType: 
+    m_ExpectedControlType:
     m_Id: 8175c6b3-4d72-402e-84c0-3c179d155e8d
-    m_Processors: 
-    m_Interactions: 
+    m_Processors:
+    m_Interactions:
     m_SingletonActionBindings: []
+    m_Flags: 0
+  sprayInput:
+    m_Name: Spray Input
+    m_Type: 0
+    m_ExpectedControlType:
+    m_Id: a1b2c3d4-e5f6-7890-abcd-ef0123456789
+    m_Processors:
+    m_Interactions:
+    m_SingletonActionBindings:
+    - m_Name:
+      m_Id: b2c3d4e5-f678-9012-3456-7890abcdef01
+      m_Path: <Keyboard>/rightShift
+      m_Interactions:
+      m_Processors:
+      m_Groups:
+      m_Action: Spray Input
+      m_Flags: 0
+    - m_Name:
+      m_Id: c3d4e5f6-7890-1234-5678-90abcdef0123
+      m_Path: <Gamepad>/rightTrigger
+      m_Interactions:
+      m_Processors:
+      m_Groups:
+      m_Action: Spray Input
+      m_Flags: 0
     m_Flags: 0
   lookBack: 0
   MoveSpeed: 8

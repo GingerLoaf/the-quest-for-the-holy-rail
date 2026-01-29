@@ -455,6 +455,14 @@ namespace HolyRail.City
                     GenerateCorridorBillboards(_corridorPathC);
                 Debug.Log($"CityManager: Billboard generation complete. Total billboards: {_generatedBillboards.Count}");
                 InitializeBillboardBuffersFromSerializedData();
+
+                // Auto-setup billboard textures
+                var textureSetup = GetComponent<BillboardTextureSetup>();
+                if (textureSetup == null)
+                {
+                    textureSetup = gameObject.AddComponent<BillboardTextureSetup>();
+                }
+                textureSetup.AutoSetup();
             }
 
             var rampInfo = EnableRamps ? $", {_generatedRamps.Count} ramps" : "";
@@ -1671,6 +1679,45 @@ namespace HolyRail.City
             {
                 _billboardBuffer.SetData(_generatedBillboards.ToArray());
             }
+
+            // Recalculate render bounds to encompass all current geometry positions
+            RecalculateRenderBounds();
+        }
+
+        /// <summary>
+        /// Recalculates _renderBounds to encompass all current geometry positions.
+        /// This is necessary after leapfrogs move geometry to new world positions.
+        /// </summary>
+        private void RecalculateRenderBounds()
+        {
+            if (_generatedBuildings.Count == 0 && _generatedBillboards.Count == 0)
+                return;
+
+            // Find min/max extents of all geometry
+            var min = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
+            var max = new Vector3(float.MinValue, float.MinValue, float.MinValue);
+
+            foreach (var building in _generatedBuildings)
+            {
+                var pos = building.Position;
+                var halfHeight = building.Scale.y * 0.5f;
+                min = Vector3.Min(min, pos - new Vector3(50f, 0f, 50f));
+                max = Vector3.Max(max, pos + new Vector3(50f, halfHeight * 2f, 50f));
+            }
+
+            foreach (var billboard in _generatedBillboards)
+            {
+                var pos = billboard.Position;
+                var scale = billboard.Scale;
+                min = Vector3.Min(min, pos - new Vector3(scale.x, 0f, scale.x));
+                max = Vector3.Max(max, pos + new Vector3(scale.x, scale.y, scale.x));
+            }
+
+            // Add padding for safety
+            min -= Vector3.one * 50f;
+            max += Vector3.one * 50f;
+
+            _renderBounds = new Bounds((min + max) * 0.5f, max - min);
         }
 
         /// <summary>
@@ -1691,6 +1738,7 @@ namespace HolyRail.City
         /// <summary>
         /// Performs a leapfrog operation, moving the back half to the front.
         /// Called by LoopModeController when player reaches the trigger threshold.
+        /// Note: Prefer using MoveHalf() directly from LoopModeController for position-based half selection.
         /// </summary>
         public void TriggerLeapfrog()
         {
@@ -1716,6 +1764,23 @@ namespace HolyRail.City
             ResyncColliderPool();
 
             Debug.Log($"CityManager: Leapfrog complete. New front half is {_loopState.FrontHalfId}");
+        }
+
+        /// <summary>
+        /// Moves geometry for a specific half by the given offset.
+        /// Called by LoopModeController after determining which half to move based on player position.
+        /// </summary>
+        public void MoveHalf(int halfId, Vector3 offset)
+        {
+            if (!_loopState.IsActive)
+                return;
+
+            var half = halfId == 0 ? _loopState.HalfA : _loopState.HalfB;
+            ApplyOffsetToHalf(half, offset);
+            RefreshGPUBuffers();
+            ResyncColliderPool();
+
+            Debug.Log($"CityManager: Moved half {halfId} by {offset.magnitude:F1}m");
         }
 
         /// <summary>
