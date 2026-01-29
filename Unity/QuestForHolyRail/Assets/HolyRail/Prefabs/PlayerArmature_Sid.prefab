@@ -7936,6 +7936,7 @@ GameObject:
   - component: {fileID: 4416926081852918493}
   - component: {fileID: 7908608487435845942}
   - component: {fileID: 2123505831900097179}
+  - component: {fileID: 4906936362436098624}
   m_Layer: 8
   m_Name: PlayerArmature_Sid
   m_TagString: Player
@@ -8197,34 +8198,34 @@ MonoBehaviour:
   lookBackInput:
     m_Name: Look Back Input
     m_Type: 0
-    m_ExpectedControlType:
+    m_ExpectedControlType: 
     m_Id: 8175c6b3-4d72-402e-84c0-3c179d155e8d
-    m_Processors:
-    m_Interactions:
+    m_Processors: 
+    m_Interactions: 
     m_SingletonActionBindings: []
     m_Flags: 0
   sprayInput:
     m_Name: Spray Input
     m_Type: 0
-    m_ExpectedControlType:
+    m_ExpectedControlType: 
     m_Id: a1b2c3d4-e5f6-7890-abcd-ef0123456789
-    m_Processors:
-    m_Interactions:
+    m_Processors: 
+    m_Interactions: 
     m_SingletonActionBindings:
-    - m_Name:
+    - m_Name: 
       m_Id: b2c3d4e5-f678-9012-3456-7890abcdef01
       m_Path: <Keyboard>/rightShift
-      m_Interactions:
-      m_Processors:
-      m_Groups:
+      m_Interactions: 
+      m_Processors: 
+      m_Groups: 
       m_Action: Spray Input
       m_Flags: 0
-    - m_Name:
+    - m_Name: 
       m_Id: c3d4e5f6-7890-1234-5678-90abcdef0123
       m_Path: <Gamepad>/rightTrigger
-      m_Interactions:
-      m_Processors:
-      m_Groups:
+      m_Interactions: 
+      m_Processors: 
+      m_Groups: 
       m_Action: Spray Input
       m_Flags: 0
     m_Flags: 0
@@ -8282,6 +8283,9 @@ MonoBehaviour:
   GrindParticleSystems:
   - {fileID: 9032881063844861035}
   - {fileID: 3707445503425955965}
+  _parryTrailRenderers: []
+  _sprayEffect: {fileID: 0}
+  _sprayPivot: {fileID: 0}
   GrindGlowLight: {fileID: 7882657439995842704}
   VirtualCamera: {fileID: 0}
   GrindFOVBoost: 15
@@ -8313,6 +8317,21 @@ MonoBehaviour:
   - {fileID: 8300000, guid: 276299a71eecb3b4e8d02754d595826d, type: 3}
   <Volume>k__BackingField: 1
   <FadeDuration>k__BackingField: 1
+--- !u!114 &4906936362436098624
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4416926081852918481}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 03496f22a5e904805b6432c12bd0df36, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::HolyRail.Scripts.FX.PlayerHitFlash
+  _flashMaterial: {fileID: 2100000, guid: a29af060276b2403b9a26ab0a80ac017, type: 2}
+  _flashDuration: 0.25
+  _rendererRoot: {fileID: 8002264680419333305}
 --- !u!1 &4503544842889081297
 GameObject:
   m_ObjectHideFlags: 0

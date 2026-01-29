@@ -1,3 +1,4 @@
+using HolyRail.Scripts.FX;
 using StarterAssets;
 using UnityEngine;
 
@@ -29,6 +30,7 @@ namespace HolyRail.Scripts.Enemies
         private static readonly int EmissionColorID = Shader.PropertyToID("_EmissionColor");
         private Color _originalEmissionColor;
         private bool _inParryThreshold;
+        private CharacterController _playerController;
 
         public bool IsDeflected => _isDeflected;
         public BaseEnemyBot SourceBot => _sourceBot;
@@ -46,6 +48,12 @@ namespace HolyRail.Scripts.Enemies
         public void Initialize(EnemySpawner spawner)
         {
             _spawner = spawner;
+
+            // Cache player's CharacterController for velocity access
+            if (_spawner != null && _spawner.Player != null)
+            {
+                _playerController = _spawner.Player.GetComponent<CharacterController>();
+            }
         }
 
         public void OnSpawn(Vector3 direction, BaseEnemyBot sourceBot = null)
@@ -156,7 +164,9 @@ namespace HolyRail.Scripts.Enemies
                 _direction = Vector3.Slerp(_direction, toPlayer, _spawner.BulletHomingAmount * Time.deltaTime * 5f).normalized;
             }
 
-            Vector3 movement = _direction * (_spawner.BulletSpeed * Time.deltaTime);
+            // Calculate bullet speed: always 10% faster than player's current velocity
+            float bulletSpeed = _spawner.GetDynamicBulletSpeed(_playerController);
+            Vector3 movement = _direction * (bulletSpeed * Time.deltaTime);
             transform.position += movement;
 
             _lifetime += Time.deltaTime;
@@ -242,6 +252,12 @@ namespace HolyRail.Scripts.Enemies
                     {
                         grinder.StopGrind();
                     }
+                }
+
+                // Flash player red for visual feedback
+                if (PlayerHitFlash.Instance != null)
+                {
+                    PlayerHitFlash.Instance.Flash();
                 }
 
                 // TODO: Apply damage to player
