@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -289,6 +290,59 @@ namespace HolyRail.City
             }
 
             Debug.Log("BuildingColliderPool: Resynced spatial grids after leapfrog");
+        }
+
+        /// <summary>
+        /// Async version that spreads work over multiple frames to avoid freezing.
+        /// </summary>
+        public void ResyncAfterLeapfrogAsync()
+        {
+            StartCoroutine(ResyncAfterLeapfrogCoroutine());
+        }
+
+        private IEnumerator ResyncAfterLeapfrogCoroutine()
+        {
+            // Reinitialize building spatial grid if we have data
+            if (_initialized && CityManager != null && CityManager.HasData)
+            {
+                _spatialGrid = new BuildingSpatialGrid(DefaultCellSize, CityManager.transform.position);
+                _spatialGrid.Initialize(CityManager.Buildings);
+            }
+
+            yield return null; // Spread work across frames
+
+            // Reinitialize ramp spatial grid if we have data
+            if (_rampInitialized && CityManager != null && CityManager.HasRampData)
+            {
+                _rampSpatialGrid = new RampSpatialGrid(DefaultCellSize, CityManager.transform.position);
+                _rampSpatialGrid.Initialize(CityManager.Ramps);
+            }
+
+            yield return null; // Spread work across frames
+
+            // Reinitialize billboard spatial grid if we have data
+            if (_billboardInitialized && CityManager != null && CityManager.HasBillboardData)
+            {
+                _billboardSpatialGrid = new BillboardSpatialGrid(DefaultCellSize, CityManager.transform.position);
+                _billboardSpatialGrid.Initialize(CityManager.Billboards);
+            }
+
+            yield return null; // Spread work across frames
+
+            // Force update active colliders if we have a tracking target
+            if (TrackingTarget != null)
+            {
+                var currentPosition = TrackingTarget.position;
+                if (_initialized)
+                    UpdateActiveColliders(currentPosition);
+                if (_rampInitialized)
+                    UpdateActiveRampColliders(currentPosition);
+                if (_billboardInitialized)
+                    UpdateActiveBillboardColliders(currentPosition);
+                _lastUpdatePosition = currentPosition;
+            }
+
+            Debug.Log("BuildingColliderPool: Async resync complete");
         }
 
         public void Clear()

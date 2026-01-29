@@ -156,6 +156,11 @@ namespace HolyRail.City
         private MaterialPropertyBlock _propertyBlock;
         private bool _buffersInitialized;
 
+        // Cached arrays for GPU buffer uploads (avoids allocations during leapfrog)
+        private BuildingData[] _buildingArrayCache;
+        private RampData[] _rampArrayCache;
+        private BillboardData[] _billboardArrayCache;
+
         // Random number generator for deterministic generation
         private System.Random _random;
 
@@ -1662,33 +1667,94 @@ namespace HolyRail.City
 
         /// <summary>
         /// Re-uploads all geometry data to GPU buffers after positions have changed.
+        /// Uses cached arrays to avoid allocations during leapfrog operations.
         /// </summary>
         public void RefreshGPUBuffers()
         {
+            RefreshGPUBuffersWithOffset(Vector3.zero);
+        }
+
+        /// <summary>
+        /// Re-uploads all geometry data to GPU buffers after positions have changed.
+        /// Expands render bounds by the given offset to avoid iterating all geometry.
+        /// </summary>
+        public void RefreshGPUBuffersWithOffset(Vector3 offset)
+        {
             if (_buildingBuffer != null && _generatedBuildings.Count > 0)
             {
-                _buildingBuffer.SetData(_generatedBuildings.ToArray());
+                // Resize cache if needed
+                if (_buildingArrayCache == null || _buildingArrayCache.Length < _generatedBuildings.Count)
+                {
+                    _buildingArrayCache = new BuildingData[_generatedBuildings.Count];
+                }
+                _generatedBuildings.CopyTo(_buildingArrayCache);
+                _buildingBuffer.SetData(_buildingArrayCache, 0, 0, _generatedBuildings.Count);
             }
 
             if (_rampBuffer != null && _generatedRamps.Count > 0)
             {
-                _rampBuffer.SetData(_generatedRamps.ToArray());
+                // Resize cache if needed
+                if (_rampArrayCache == null || _rampArrayCache.Length < _generatedRamps.Count)
+                {
+                    _rampArrayCache = new RampData[_generatedRamps.Count];
+                }
+                _generatedRamps.CopyTo(_rampArrayCache);
+                _rampBuffer.SetData(_rampArrayCache, 0, 0, _generatedRamps.Count);
             }
 
             if (_billboardBuffer != null && _generatedBillboards.Count > 0)
             {
-                _billboardBuffer.SetData(_generatedBillboards.ToArray());
+                // Resize cache if needed
+                if (_billboardArrayCache == null || _billboardArrayCache.Length < _generatedBillboards.Count)
+                {
+                    _billboardArrayCache = new BillboardData[_generatedBillboards.Count];
+                }
+                _generatedBillboards.CopyTo(_billboardArrayCache);
+                _billboardBuffer.SetData(_billboardArrayCache, 0, 0, _generatedBillboards.Count);
             }
 
-            // Recalculate render bounds to encompass all current geometry positions
-            RecalculateRenderBounds();
+            // Expand render bounds incrementally rather than recalculating from all geometry
+            ExpandRenderBounds(offset);
         }
 
         /// <summary>
-        /// Recalculates _renderBounds to encompass all current geometry positions.
-        /// This is necessary after leapfrogs move geometry to new world positions.
+        /// Expands _renderBounds to encompass geometry that moved by the given offset.
+        /// This is much faster than iterating all geometry during leapfrogs.
         /// </summary>
-        private void RecalculateRenderBounds()
+        private void ExpandRenderBounds(Vector3 offset)
+        {
+            if (_generatedBuildings.Count == 0 && _generatedBillboards.Count == 0)
+                return;
+
+            // If this is the first time or we don't have valid bounds, do a full recalculation
+            if (_renderBounds.size.magnitude < 1f)
+            {
+                RecalculateRenderBoundsFull();
+                return;
+            }
+
+            // Expand bounds to include the new positions of moved geometry
+            // The offset tells us how far geometry moved, so we expand in that direction
+            if (offset.sqrMagnitude > 0.01f)
+            {
+                // Expand bounds to include both old and new positions
+                // Add the offset magnitude plus padding to the bounds in the offset direction
+                float expansion = offset.magnitude + 100f;
+                var expandedSize = _renderBounds.size + new Vector3(
+                    Mathf.Abs(offset.x) > 0.01f ? expansion : 0f,
+                    Mathf.Abs(offset.y) > 0.01f ? expansion : 0f,
+                    Mathf.Abs(offset.z) > 0.01f ? expansion : 0f
+                );
+                var newCenter = _renderBounds.center + offset * 0.5f;
+                _renderBounds = new Bounds(newCenter, expandedSize);
+            }
+        }
+
+        /// <summary>
+        /// Full recalculation of _renderBounds from all geometry positions.
+        /// Only called on initialization or when bounds are invalid.
+        /// </summary>
+        private void RecalculateRenderBoundsFull()
         {
             if (_generatedBuildings.Count == 0 && _generatedBillboards.Count == 0)
                 return;
@@ -1736,6 +1802,30 @@ namespace HolyRail.City
         }
 
         /// <summary>
+        /// Defers collider pool resync to the next frame to spread out leapfrog work.
+        /// </summary>
+        public void ResyncColliderPoolDeferred()
+        {
+            StartCoroutine(ResyncColliderPoolNextFrame());
+        }
+
+        private System.Collections.IEnumerator ResyncColliderPoolNextFrame()
+        {
+            // Wait until the end of frame so GPU buffer upload can complete
+            yield return new WaitForEndOfFrame();
+
+            var colliderPools = FindObjectsByType<BuildingColliderPool>(FindObjectsSortMode.None);
+            foreach (var pool in colliderPools)
+            {
+                if (pool.CityManager == this)
+                {
+                    // Use async version to spread spatial grid rebuild over multiple frames
+                    pool.ResyncAfterLeapfrogAsync();
+                }
+            }
+        }
+
+        /// <summary>
         /// Performs a leapfrog operation, moving the back half to the front.
         /// Called by LoopModeController when player reaches the trigger threshold.
         /// Note: Prefer using MoveHalf() directly from LoopModeController for position-based half selection.
@@ -1754,8 +1844,8 @@ namespace HolyRail.City
             // Apply offset to geometry
             ApplyOffsetToHalf(backHalf, offset);
 
-            // Refresh GPU buffers
-            RefreshGPUBuffers();
+            // Refresh GPU buffers with offset for efficient bounds expansion
+            RefreshGPUBuffersWithOffset(offset);
 
             // Swap front/back identities
             _loopState.FrontHalfId = (_loopState.FrontHalfId + 1) % 2;
@@ -1777,8 +1867,8 @@ namespace HolyRail.City
 
             var half = halfId == 0 ? _loopState.HalfA : _loopState.HalfB;
             ApplyOffsetToHalf(half, offset);
-            RefreshGPUBuffers();
-            ResyncColliderPool();
+            RefreshGPUBuffersWithOffset(offset);
+            ResyncColliderPoolDeferred();
 
             Debug.Log($"CityManager: Moved half {halfId} by {offset.magnitude:F1}m");
         }
