@@ -1,6 +1,5 @@
 using UnityEngine;
 using StarterAssets;
-using HolyRail.Scripts.FX;
 
 namespace HolyRail.Scripts
 {
@@ -10,8 +9,11 @@ namespace HolyRail.Scripts
         [Tooltip("Distance within which the player can collect this pickup")]
         public float CollectionRadius = 0.25f;
 
-        [Tooltip("How much to increase the player's max speed")]
+        [Tooltip("How much to increase the player's speed")]
         public float SpeedIncrease = 0.20f;
+
+        [Tooltip("Duration of the speed boost (-1 uses the player's default)")]
+        public float BoostDuration = -1f;
 
         [Tooltip("Visual effect or object to disable on collection")]
         public Renderer VisualObject;
@@ -44,16 +46,10 @@ namespace HolyRail.Scripts
         {
             _collected = true;
 
-            // Increase player speed
+            // Add temporary speed boost
             if (ThirdPersonController_RailGrinder.Instance != null)
             {
-                ThirdPersonController_RailGrinder.Instance.IncreaseMaxSpeed(SpeedIncrease);
-
-                var display = ThirdPersonController_RailGrinder.Instance.GetComponent<OrbitalPickupDisplay>();
-                if (display != null)
-                {
-                    display.AddOrb();
-                }
+                ThirdPersonController_RailGrinder.Instance.AddTemporarySpeedBoost(SpeedIncrease, BoostDuration);
             }
 
             // Hide or destroy the pickup

@@ -15,33 +15,52 @@ namespace HolyRail.Scripts.FX
         [field: SerializeField] public Color OrbColor { get; private set; } = new Color(1f, 0.85f, 0.2f, 1f);
         [field: SerializeField] public Material OrbMaterial { get; private set; }
 
-        private readonly List<Transform> _orbs = new();
+        [Header("Expiration Visual Feedback")]
+        [field: SerializeField] public float WarningThreshold { get; private set; } = 2f;
+        [field: SerializeField] public float PulseSpeed { get; private set; } = 8f;
+        [field: SerializeField] public float MinPulseScale { get; private set; } = 0.5f;
+        [field: SerializeField] public Color ExpiringColor { get; private set; } = new Color(1f, 0.3f, 0.1f, 1f);
+        [field: SerializeField] public float FadeOutDuration { get; private set; } = 0.3f;
+
+        private class OrbData
+        {
+            public Transform Transform;
+            public Renderer Renderer;
+            public Material Material;
+            public int BoostId;
+            public float TimeRemaining;
+            public float Duration;
+            public bool IsExpiring;
+            public float FadeTimer;
+        }
+
+        private readonly List<OrbData> _orbs = new();
         private float _orbitAngle;
 
-        public void AddOrb()
+        public int AddOrb(int boostId, float duration)
         {
             var orb = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            orb.name = $"PickupOrb_{_orbs.Count}";
+            orb.name = $"PickupOrb_{boostId}";
             orb.transform.localScale = Vector3.one * OrbScale;
 
-            // Remove collider so it doesn't interfere with gameplay
             var collider = orb.GetComponent<Collider>();
             if (collider != null)
             {
                 Destroy(collider);
             }
 
-            // Apply material
             var renderer = orb.GetComponent<Renderer>();
+            Material mat = null;
             if (renderer != null)
             {
                 if (OrbMaterial != null)
                 {
-                    renderer.material = OrbMaterial;
+                    mat = new Material(OrbMaterial);
+                    renderer.material = mat;
                 }
                 else
                 {
-                    var mat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+                    mat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
                     mat.SetColor("_BaseColor", OrbColor);
                     mat.SetColor("_EmissionColor", OrbColor * 2f);
                     mat.EnableKeyword("_EMISSION");
@@ -49,8 +68,48 @@ namespace HolyRail.Scripts.FX
                 }
             }
 
-            _orbs.Add(orb.transform);
+            var orbData = new OrbData
+            {
+                Transform = orb.transform,
+                Renderer = renderer,
+                Material = mat,
+                BoostId = boostId,
+                TimeRemaining = duration,
+                Duration = duration,
+                IsExpiring = false,
+                FadeTimer = 0f
+            };
+
+            _orbs.Add(orbData);
+            return boostId;
         }
+
+        public void UpdateBoostTime(int boostId, float timeRemaining)
+        {
+            foreach (var orb in _orbs)
+            {
+                if (orb.BoostId == boostId)
+                {
+                    orb.TimeRemaining = timeRemaining;
+                    break;
+                }
+            }
+        }
+
+        public void RemoveOrb(int boostId)
+        {
+            for (int i = _orbs.Count - 1; i >= 0; i--)
+            {
+                if (_orbs[i].BoostId == boostId)
+                {
+                    _orbs[i].IsExpiring = true;
+                    _orbs[i].FadeTimer = FadeOutDuration;
+                    break;
+                }
+            }
+        }
+
+        public int ActiveOrbCount => _orbs.FindAll(o => !o.IsExpiring).Count;
 
         private void Update()
         {
@@ -59,18 +118,84 @@ namespace HolyRail.Scripts.FX
 
             _orbitAngle += OrbitSpeed * Time.deltaTime;
 
-            float angleStep = 360f / _orbs.Count;
+            int activeCount = 0;
+            foreach (var orb in _orbs)
+            {
+                if (!orb.IsExpiring) activeCount++;
+            }
+
+            float angleStep = activeCount > 0 ? 360f / activeCount : 360f;
             var center = transform.position + Vector3.up * VerticalOffset;
 
-            for (int i = 0; i < _orbs.Count; i++)
+            int activeIndex = 0;
+            for (int i = _orbs.Count - 1; i >= 0; i--)
             {
-                if (_orbs[i] == null)
+                var orb = _orbs[i];
+                if (orb.Transform == null)
+                {
+                    _orbs.RemoveAt(i);
                     continue;
+                }
 
-                float angle = (_orbitAngle + angleStep * i) * Mathf.Deg2Rad;
+                if (orb.IsExpiring)
+                {
+                    orb.FadeTimer -= Time.deltaTime;
+                    if (orb.FadeTimer <= 0f)
+                    {
+                        Destroy(orb.Transform.gameObject);
+                        _orbs.RemoveAt(i);
+                        continue;
+                    }
+
+                    float fadeProgress = orb.FadeTimer / FadeOutDuration;
+                    orb.Transform.localScale = Vector3.one * OrbScale * fadeProgress;
+                    if (orb.Material != null)
+                    {
+                        var fadeColor = OrbColor;
+                        fadeColor.a = fadeProgress;
+                        orb.Material.SetColor("_BaseColor", fadeColor);
+                    }
+                    continue;
+                }
+
+                float angle = (_orbitAngle + angleStep * activeIndex) * Mathf.Deg2Rad;
                 var offset = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * OrbitRadius;
-                _orbs[i].position = center + offset;
+                orb.Transform.position = center + offset;
+
+                bool isWarning = orb.TimeRemaining <= WarningThreshold && orb.TimeRemaining > 0f;
+                if (isWarning)
+                {
+                    float pulseT = (Mathf.Sin(Time.time * PulseSpeed) + 1f) * 0.5f;
+                    float urgency = 1f - (orb.TimeRemaining / WarningThreshold);
+                    float minScale = Mathf.Lerp(1f, MinPulseScale, urgency);
+                    float scale = Mathf.Lerp(minScale, 1f, pulseT);
+                    orb.Transform.localScale = Vector3.one * OrbScale * scale;
+
+                    if (orb.Material != null)
+                    {
+                        var lerpedColor = Color.Lerp(OrbColor, ExpiringColor, urgency);
+                        orb.Material.SetColor("_BaseColor", lerpedColor);
+                        orb.Material.SetColor("_EmissionColor", lerpedColor * (2f + urgency * 2f));
+                    }
+                }
+                else
+                {
+                    orb.Transform.localScale = Vector3.one * OrbScale;
+                    if (orb.Material != null)
+                    {
+                        orb.Material.SetColor("_BaseColor", OrbColor);
+                        orb.Material.SetColor("_EmissionColor", OrbColor * 2f);
+                    }
+                }
+
+                activeIndex++;
             }
+        }
+
+        [System.Obsolete("Use AddOrb(int boostId, float duration) instead for temporary boost system")]
+        public void AddOrb()
+        {
+            AddOrb(-1, float.MaxValue);
         }
     }
 }
