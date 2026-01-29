@@ -23253,6 +23253,24 @@ MonoBehaviour:
       m_Action: Spray Input
       m_Flags: 0
     m_Flags: 0
+  jumpBackflipInput:
+    m_Name: Jump Backflip Input
+    m_Type: 0
+    m_ExpectedControlType: 
+    m_Id: 1660891a-5f72-49a3-b0ef-c076c8803a8d
+    m_Processors: 
+    m_Interactions: 
+    m_SingletonActionBindings: []
+    m_Flags: 0
+  jumpSideflipInput:
+    m_Name: Jump Sideflip Input
+    m_Type: 0
+    m_ExpectedControlType: 
+    m_Id: 5b2dc011-daf1-4143-b539-08b00ead455d
+    m_Processors: 
+    m_Interactions: 
+    m_SingletonActionBindings: []
+    m_Flags: 0
   lookBack: 0
   MoveSpeed: 8
   _airControlMultiplier: 6
@@ -23371,17 +23389,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7caa4e5e5d37c45efbe4c8bee43a98aa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::HolyRail.Scripts.FX.OrbitalPickupDisplay
-  <OrbitRadius>k__BackingField: 1.2
-  <OrbitSpeed>k__BackingField: 90
-  <VerticalOffset>k__BackingField: 1
-  <OrbScale>k__BackingField: 0.15
-  <OrbColor>k__BackingField: {r: 1, g: 0.85, b: 0.2, a: 1}
+  <OrbitRadius>k__BackingField: 1
+  <OrbitSpeed>k__BackingField: 180
+  <VerticalOffset>k__BackingField: 0.9
+  <OrbScale>k__BackingField: 0.2
+  <OrbColor>k__BackingField: {r: 0.32599998, g: 0.8565766, b: 1, a: 1}
   <OrbMaterial>k__BackingField: {fileID: 2100000, guid: a1b2c3d4e5f67890a1b2c3d4e5f67891, type: 2}
   <WarningThreshold>k__BackingField: 2
-  <PulseSpeed>k__BackingField: 8
+  <PulseSpeed>k__BackingField: 16
   <MinPulseScale>k__BackingField: 0.5
-  <ExpiringColor>k__BackingField: {r: 1, g: 0.3, b: 0.1, a: 1}
-  <FadeOutDuration>k__BackingField: 0.3
+  <ExpiringColor>k__BackingField: {r: 0, g: 0.048583306, b: 0.26415092, a: 1}
+  <FadeOutDuration>k__BackingField: 0.1
 --- !u!1 &6778990951623778557
 GameObject:
   m_ObjectHideFlags: 0
