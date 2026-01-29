@@ -1,4 +1,5 @@
-﻿using System.Collections;
+using System.Collections;
+using System.Collections.Generic;
  using UnityEngine;
  using UnityEngine.SceneManagement;
  using UnityEngine.Splines;
@@ -6,6 +7,7 @@
  using Unity.Mathematics;
  using HolyRail.Scripts;
  using HolyRail.Scripts.Enemies;
+ using HolyRail.Scripts.FX;
  using HolyRail.Graffiti;
  using Random = UnityEngine.Random;
 #if ENABLE_INPUT_SYSTEM 
@@ -27,6 +29,8 @@ namespace StarterAssets
         public InputAction grindInput;
         public InputAction lookBackInput;
         public InputAction sprayInput;
+        public InputAction jumpBackflipInput;
+        public InputAction jumpSideflipInput;
         public bool lookBack;
         private SplineContainer[] _splineContainers;
         
@@ -63,8 +67,25 @@ namespace StarterAssets
         [Tooltip("The character uses its own gravity value. The engine default is -9.81f")]
         public float Gravity = -15.0f;
 
-        [Header("Status Effects")] 
+        [Header("Status Effects")]
         public float SpeedMultiplier = 1.0f;
+
+        [Header("Temporary Speed Boosts")]
+        [Tooltip("Default duration for speed boosts from pickups")]
+        public float DefaultBoostDuration = 8f;
+
+        private class SpeedBoost
+        {
+            public int Id;
+            public float SpeedIncrease;
+            public float Duration;
+            public float TimeRemaining;
+        }
+
+        private readonly List<SpeedBoost> _activeBoosts = new();
+        private int _nextBoostId = 0;
+        private float _totalBoostSpeed = 0f;
+        private OrbitalPickupDisplay _orbitalDisplay;
 
         [Space(10)]
         [Tooltip("Time required to pass before being able to jump again. Set to 0f to instantly jump again")]
@@ -251,6 +272,8 @@ namespace StarterAssets
         private int _animIDMotionSpeed;
         private int _animIDGrinding;
         private int _animIDParry;
+        private int _animIDJumpBackflip;
+        private int _animIDJumpSideflip;
 
 #if ENABLE_INPUT_SYSTEM 
         private PlayerInput _playerInput;
@@ -296,6 +319,8 @@ namespace StarterAssets
 
             lookBackInput.Enable();
             sprayInput.Enable();
+            jumpBackflipInput.Enable();
+            jumpSideflipInput.Enable();
         }
 
         private void OnDisable()
@@ -305,6 +330,8 @@ namespace StarterAssets
 
             lookBackInput.Disable();
             sprayInput.Disable();
+            jumpBackflipInput.Disable();
+            jumpSideflipInput.Disable();
         }
 
         private void Start()
@@ -350,6 +377,9 @@ namespace StarterAssets
             {
                 if (trail != null) trail.emitting = false;
             }
+
+            // Cache orbital display reference
+            _orbitalDisplay = GetComponent<OrbitalPickupDisplay>();
         }
 
         private void Update()
@@ -357,6 +387,8 @@ namespace StarterAssets
             _hasAnimator = TryGetComponent(out _animator);
             bool gamepadLookBack = Gamepad.current != null && Gamepad.current.leftShoulder.isPressed;
             lookBack = gamepadLookBack || Input.GetKey(KeyCode.Q);
+
+            UpdateSpeedBoosts();
 
             // Fall death check - kill player if they fall below -50
             if (transform.position.y < -50f)
@@ -428,13 +460,28 @@ namespace StarterAssets
                 _animator.SetTrigger(_animIDParry);
                 _input.parry = false;
                 _parryWindowActive = true;
-                _parryWindowTimer = EnemySpawner.Instance != null ? EnemySpawner.Instance.ParryWindowDuration : 0.3f;
+
+                // Apply parry window multiplier
+                var parryWindowMultiplier = GameSessionManager.Instance.GetUpgradeValue(UpgradeType.ParryTimeWindow);
+                _parryWindowTimer = (EnemySpawner.Instance != null ? EnemySpawner.Instance.ParryWindowDuration : 0.3f) + parryWindowMultiplier;
 
                 // Enable parry trail effect
                 foreach (var trail in _parryTrailRenderers)
                 {
                     if (trail != null) trail.emitting = true;
                 }
+            }
+
+            // Handle jump backflip input
+            if (jumpBackflipInput.triggered && _hasAnimator)
+            {
+                _animator.SetTrigger(_animIDJumpBackflip);
+            }
+
+            // Handle jump sideflip input
+            if (jumpSideflipInput.triggered && _hasAnimator)
+            {
+                _animator.SetTrigger(_animIDJumpSideflip);
             }
 
             // Process active parry window
@@ -491,6 +538,8 @@ namespace StarterAssets
             _animIDMotionSpeed = Animator.StringToHash("MotionSpeed");
             _animIDGrinding = Animator.StringToHash("Grinding");
             _animIDParry = Animator.StringToHash("Parry");
+            _animIDJumpBackflip = Animator.StringToHash("JumpBackflip");
+            _animIDJumpSideflip = Animator.StringToHash("JumpSideflip");
         }
 
         private void GroundedCheck()
@@ -834,7 +883,9 @@ namespace StarterAssets
             }
 
             // Determine target speed (apply same sprint ratio as ground movement)
-            float targetSpeed = (_input.sprint ? GrindSpeed * (SprintSpeed / MoveSpeed) : GrindSpeed) * SpeedMultiplier;
+            // Include temporary boost speed bonus
+            float boostedGrindSpeed = GrindSpeed + _totalBoostSpeed;
+            float targetSpeed = (_input.sprint ? boostedGrindSpeed * (SprintSpeed / MoveSpeed) : boostedGrindSpeed) * SpeedMultiplier;
 
             // Use boost decay rate when above target speed (decaying boost), otherwise use normal acceleration
             float lerpRate = _grindSpeedCurrent > targetSpeed ? GrindBoostDecayRate : GrindAcceleration;
@@ -1211,7 +1262,9 @@ namespace StarterAssets
         private void Move()
         {
             // set target speed based on move speed, sprint speed and if sprint is pressed
-            float targetSpeed = (_input.sprint ? SprintSpeed : MoveSpeed) * SpeedMultiplier;
+            // Include temporary boost speed bonus
+            float baseSpeed = (_input.sprint ? SprintSpeed : MoveSpeed) + _totalBoostSpeed;
+            float targetSpeed = baseSpeed * SpeedMultiplier;
 
             // a simplistic acceleration and deceleration designed to be easy to remove, replace, or iterate upon
 
@@ -1436,7 +1489,7 @@ namespace StarterAssets
         }
 
         /// <summary>
-        /// Increases the player's maximum movement speeds.
+        /// Increases the player's maximum movement speeds permanently.
         /// </summary>
         /// <param name="amount">Amount to increase speed by</param>
         public void IncreaseMaxSpeed(float amount)
@@ -1446,6 +1499,95 @@ namespace StarterAssets
             GrindSpeed += amount;
 
             Debug.Log($"Speed increased! New speeds - Move: {MoveSpeed}, Sprint: {SprintSpeed}, Grind: {GrindSpeed}");
+        }
+
+        /// <summary>
+        /// Adds a temporary speed boost that decays over time.
+        /// </summary>
+        /// <param name="speedIncrease">Amount to increase speed by</param>
+        /// <param name="duration">How long the boost lasts (uses DefaultBoostDuration if not specified)</param>
+        /// <returns>The boost ID for tracking</returns>
+        public int AddTemporarySpeedBoost(float speedIncrease, float duration = -1f)
+        {
+            if (duration < 0f)
+            {
+                duration = DefaultBoostDuration;
+            }
+
+            var boost = new SpeedBoost
+            {
+                Id = _nextBoostId++,
+                SpeedIncrease = speedIncrease,
+                Duration = duration,
+                TimeRemaining = duration
+            };
+
+            _activeBoosts.Add(boost);
+            RecalculateTotalBoostSpeed();
+
+            if (_orbitalDisplay != null)
+            {
+                _orbitalDisplay.AddOrb(boost.Id, duration);
+            }
+
+            Debug.Log($"Temporary speed boost added! +{speedIncrease} for {duration}s (ID: {boost.Id}). Total boost: {_totalBoostSpeed}");
+            return boost.Id;
+        }
+
+        /// <summary>
+        /// Gets the current total speed bonus from all active boosts.
+        /// </summary>
+        public float TotalBoostSpeed => _totalBoostSpeed;
+
+        /// <summary>
+        /// Gets the number of active speed boosts.
+        /// </summary>
+        public int ActiveBoostCount => _activeBoosts.Count;
+
+        private void UpdateSpeedBoosts()
+        {
+            if (_activeBoosts.Count == 0)
+                return;
+
+            bool boostsChanged = false;
+
+            for (int i = _activeBoosts.Count - 1; i >= 0; i--)
+            {
+                var boost = _activeBoosts[i];
+                boost.TimeRemaining -= Time.deltaTime;
+
+                if (_orbitalDisplay != null)
+                {
+                    _orbitalDisplay.UpdateBoostTime(boost.Id, boost.TimeRemaining);
+                }
+
+                if (boost.TimeRemaining <= 0f)
+                {
+                    Debug.Log($"Speed boost expired (ID: {boost.Id})");
+
+                    if (_orbitalDisplay != null)
+                    {
+                        _orbitalDisplay.RemoveOrb(boost.Id);
+                    }
+
+                    _activeBoosts.RemoveAt(i);
+                    boostsChanged = true;
+                }
+            }
+
+            if (boostsChanged)
+            {
+                RecalculateTotalBoostSpeed();
+            }
+        }
+
+        private void RecalculateTotalBoostSpeed()
+        {
+            _totalBoostSpeed = 0f;
+            foreach (var boost in _activeBoosts)
+            {
+                _totalBoostSpeed += boost.SpeedIncrease;
+            }
         }
 
         private void TryDeflectBullet()
