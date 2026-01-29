@@ -114,6 +114,9 @@ namespace HolyRail.City
         [SerializeField, HideInInspector]
         private LoopModeState _loopState = new LoopModeState();
 
+        // Track if loop mode shader offsets need to be (re)applied
+        private bool _loopOffsetsNeedUpdate = true;
+
         public LoopModeState LoopState => _loopState;
         public IReadOnlyList<Vector3> CorridorPathA => _corridorPathA;
 
@@ -257,6 +260,13 @@ namespace HolyRail.City
                 InitializeBillboardBuffersFromSerializedData();
             }
 
+            // Update loop mode shader offsets if needed (only on first init or after leapfrog)
+            if (_loopState.IsActive && _buffersInitialized && _loopOffsetsNeedUpdate)
+            {
+                UpdateHalfOffsets();
+                _loopOffsetsNeedUpdate = false;
+            }
+
             if (HasData && BuildingMesh != null && BuildingMaterial != null && _buffersInitialized)
             {
                 RenderBuildings();
@@ -302,6 +312,7 @@ namespace HolyRail.City
             // Reset loop state
             _loopState = new LoopModeState();
             _loopState.IsActive = IsLoopMode;
+            _loopOffsetsNeedUpdate = true;
 
             // Generate corridor paths (only for enabled corridors)
             var convergencePos = ConvergencePoint.position;
@@ -1398,6 +1409,11 @@ namespace HolyRail.City
             _propertyBlock = new MaterialPropertyBlock();
             _propertyBlock.SetBuffer("_BuildingBuffer", _buildingBuffer);
 
+            // Initialize offset uniforms (default to zero for non-loop mode)
+            _propertyBlock.SetVector("_HalfAOffset", Vector3.zero);
+            _propertyBlock.SetVector("_HalfBOffset", Vector3.zero);
+            _propertyBlock.SetInt("_HalfBStartIndex", int.MaxValue);
+
             _buffersInitialized = true;
         }
 
@@ -1466,6 +1482,11 @@ namespace HolyRail.City
             // Create property block for ramp material
             _rampPropertyBlock = new MaterialPropertyBlock();
             _rampPropertyBlock.SetBuffer("_RampBuffer", _rampBuffer);
+
+            // Initialize offset uniforms (default to zero for non-loop mode)
+            _rampPropertyBlock.SetVector("_HalfAOffset", Vector3.zero);
+            _rampPropertyBlock.SetVector("_HalfBOffset", Vector3.zero);
+            _rampPropertyBlock.SetInt("_HalfBStartIndex", int.MaxValue);
 
             _rampBuffersInitialized = true;
             Debug.Log($"CityManager: Ramp buffers initialized successfully. Mesh: {RampMesh.name}, Material: {RampMaterial.name}");
@@ -1536,6 +1557,11 @@ namespace HolyRail.City
             // Create property block for billboard material
             _billboardPropertyBlock = new MaterialPropertyBlock();
             _billboardPropertyBlock.SetBuffer("_BillboardBuffer", _billboardBuffer);
+
+            // Initialize offset uniforms (default to zero for non-loop mode)
+            _billboardPropertyBlock.SetVector("_HalfAOffset", Vector3.zero);
+            _billboardPropertyBlock.SetVector("_HalfBOffset", Vector3.zero);
+            _billboardPropertyBlock.SetInt("_HalfBStartIndex", int.MaxValue);
 
             _billboardBuffersInitialized = true;
             Debug.Log($"CityManager: Billboard buffers initialized successfully. Mesh: {BillboardMesh.name}, Material: {BillboardMaterial.name}");
@@ -1608,6 +1634,7 @@ namespace HolyRail.City
 
             // Reset loop state
             _loopState = new LoopModeState();
+            _loopOffsetsNeedUpdate = true;
 
             // Find and clear any BuildingColliderPools that reference this CityManager
             var colliderPools = FindObjectsByType<BuildingColliderPool>(FindObjectsSortMode.None);
@@ -1621,48 +1648,91 @@ namespace HolyRail.City
         }
 
         /// <summary>
-        /// Applies a position offset to all geometry in the specified loop half.
-        /// Used during leapfrog operations to move the back half forward.
+        /// Applies a position offset to the specified loop half.
+        /// Uses offset-based rendering - only tracks the offset, does NOT modify CPU data.
+        /// GPU shaders apply the offset during rendering.
         /// </summary>
         public void ApplyOffsetToHalf(LoopHalfData half, Vector3 offset)
         {
             if (!_loopState.IsActive || half == null)
                 return;
 
-            // Update buildings
-            for (int i = half.BuildingStartIndex; i < half.BuildingStartIndex + half.BuildingCount && i < _generatedBuildings.Count; i++)
-            {
-                var building = _generatedBuildings[i];
-                building.Position += offset;
-                _generatedBuildings[i] = building;
-            }
+            // Track the cumulative offset (no CPU data modification needed)
+            half.CurrentOffset += offset;
 
-            // Update ramps
-            for (int i = half.RampStartIndex; i < half.RampStartIndex + half.RampCount && i < _generatedRamps.Count; i++)
-            {
-                var ramp = _generatedRamps[i];
-                ramp.Position += offset;
-                _generatedRamps[i] = ramp;
-            }
-
-            // Update billboards
-            for (int i = half.BillboardStartIndex; i < half.BillboardStartIndex + half.BillboardCount && i < _generatedBillboards.Count; i++)
-            {
-                var billboard = _generatedBillboards[i];
-                billboard.Position += offset;
-                _generatedBillboards[i] = billboard;
-            }
-
-            // Update path points for this half
+            // Update path points for this half (these are still needed for gameplay logic)
             for (int i = 0; i < half.PathPoints.Count; i++)
             {
                 half.PathPoints[i] += offset;
             }
 
-            // Track the cumulative offset
-            half.CurrentOffset += offset;
+            // Mark that shader offsets need updating
+            _loopOffsetsNeedUpdate = true;
 
-            Debug.Log($"CityManager: Applied offset {offset} to half {half.HalfId}");
+            Debug.Log($"CityManager: Applied offset {offset} to half {half.HalfId} (offset-based, no CPU data modified)");
+        }
+
+        /// <summary>
+        /// Updates shader uniforms to apply half offsets during rendering.
+        /// This is the zero-rebuild approach - no GPU buffer uploads, just uniform updates.
+        /// </summary>
+        public void UpdateHalfOffsets()
+        {
+            if (!_loopState.IsActive)
+                return;
+
+            // Calculate the relative offset (HalfB offset relative to HalfA)
+            // Since HalfA is at index 0, its offset is used as the base
+            var halfAOffset = _loopState.HalfA.CurrentOffset;
+            var halfBOffset = _loopState.HalfB.CurrentOffset;
+
+            // Update building shader uniforms
+            if (_propertyBlock != null)
+            {
+                _propertyBlock.SetVector("_HalfAOffset", halfAOffset);
+                _propertyBlock.SetVector("_HalfBOffset", halfBOffset);
+                _propertyBlock.SetInt("_HalfBStartIndex", _loopState.HalfB.BuildingStartIndex);
+            }
+
+            // Update ramp shader uniforms
+            if (_rampPropertyBlock != null)
+            {
+                _rampPropertyBlock.SetVector("_HalfAOffset", halfAOffset);
+                _rampPropertyBlock.SetVector("_HalfBOffset", halfBOffset);
+                _rampPropertyBlock.SetInt("_HalfBStartIndex", _loopState.HalfB.RampStartIndex);
+            }
+
+            // Update billboard shader uniforms
+            if (_billboardPropertyBlock != null)
+            {
+                _billboardPropertyBlock.SetVector("_HalfAOffset", halfAOffset);
+                _billboardPropertyBlock.SetVector("_HalfBOffset", halfBOffset);
+                _billboardPropertyBlock.SetInt("_HalfBStartIndex", _loopState.HalfB.BillboardStartIndex);
+            }
+
+            // Expand render bounds to accommodate moved geometry
+            ExpandRenderBoundsForOffsets();
+        }
+
+        /// <summary>
+        /// Expands render bounds to encompass all possible positions based on current half offsets.
+        /// </summary>
+        private void ExpandRenderBoundsForOffsets()
+        {
+            if (_generatedBuildings.Count == 0 && _generatedBillboards.Count == 0)
+                return;
+
+            // Expand bounds to include both half offsets
+            var maxOffset = Vector3.Max(
+                new Vector3(Mathf.Abs(_loopState.HalfA.CurrentOffset.x), Mathf.Abs(_loopState.HalfA.CurrentOffset.y), Mathf.Abs(_loopState.HalfA.CurrentOffset.z)),
+                new Vector3(Mathf.Abs(_loopState.HalfB.CurrentOffset.x), Mathf.Abs(_loopState.HalfB.CurrentOffset.y), Mathf.Abs(_loopState.HalfB.CurrentOffset.z))
+            );
+
+            // Expand size by maximum offset plus padding
+            var newSize = _renderBounds.size + maxOffset * 2f + Vector3.one * 100f;
+            var newCenter = _renderBounds.center + (_loopState.HalfA.CurrentOffset + _loopState.HalfB.CurrentOffset) * 0.25f;
+
+            _renderBounds = new Bounds(newCenter, newSize);
         }
 
         /// <summary>
@@ -1841,36 +1911,44 @@ namespace HolyRail.City
             // Calculate offset: move back half forward by two half-lengths (to become the new front)
             Vector3 offset = _loopState.ForwardDirection * _loopState.HalfLength * 2f;
 
-            // Apply offset to geometry
+            // Apply offset to half (only updates tracked offset, no CPU data modification)
             ApplyOffsetToHalf(backHalf, offset);
 
-            // Refresh GPU buffers with offset for efficient bounds expansion
-            RefreshGPUBuffersWithOffset(offset);
+            // Update shader uniforms for offset-based rendering (no GPU buffer upload!)
+            UpdateHalfOffsets();
 
             // Swap front/back identities
             _loopState.FrontHalfId = (_loopState.FrontHalfId + 1) % 2;
 
-            // Resync collider pool
+            // Resync collider pool (now uses offsets instead of rebuilding)
             ResyncColliderPool();
 
-            Debug.Log($"CityManager: Leapfrog complete. New front half is {_loopState.FrontHalfId}");
+            Debug.Log($"CityManager: Leapfrog complete (zero-rebuild). New front half is {_loopState.FrontHalfId}");
         }
 
         /// <summary>
         /// Moves geometry for a specific half by the given offset.
         /// Called by LoopModeController after determining which half to move based on player position.
+        /// Uses zero-rebuild approach - updates offsets instead of GPU buffers.
         /// </summary>
         public void MoveHalf(int halfId, Vector3 offset)
         {
             if (!_loopState.IsActive)
                 return;
 
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+
             var half = halfId == 0 ? _loopState.HalfA : _loopState.HalfB;
             ApplyOffsetToHalf(half, offset);
-            RefreshGPUBuffersWithOffset(offset);
-            ResyncColliderPoolDeferred();
+            var applyTime = sw.ElapsedMilliseconds;
 
-            Debug.Log($"CityManager: Moved half {halfId} by {offset.magnitude:F1}m");
+            UpdateHalfOffsets();
+            var updateTime = sw.ElapsedMilliseconds;
+
+            ResyncColliderPoolDeferred();
+            var resyncTime = sw.ElapsedMilliseconds;
+
+            Debug.Log($"CityManager: Moved half {halfId} by {offset.magnitude:F1}m (zero-rebuild) - ApplyOffset:{applyTime}ms, UpdateUniforms:{updateTime - applyTime}ms, ResyncColliders:{resyncTime - updateTime}ms, Total:{resyncTime}ms");
         }
 
         /// <summary>

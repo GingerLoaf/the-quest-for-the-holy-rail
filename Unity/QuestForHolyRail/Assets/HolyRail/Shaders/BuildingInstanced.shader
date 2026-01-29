@@ -50,6 +50,9 @@ Shader "HolyRail/BuildingInstanced"
                 float4 _IndustrialColor;
                 float _WindowEmission;
                 float _WindowDensity;
+                float3 _HalfAOffset;
+                float3 _HalfBOffset;
+                int _HalfBStartIndex;
             CBUFFER_END
 
             struct Attributes
@@ -90,6 +93,8 @@ Shader "HolyRail/BuildingInstanced"
 
                 // Build object-to-world matrix from position, rotation, scale
                 float3 pos = building.Position;
+                // Apply per-half offset for loop mode leapfrog
+                pos += (instanceID >= (uint)_HalfBStartIndex) ? _HalfBOffset : _HalfAOffset;
                 float3 scale = building.Scale;
                 float4 rot = building.Rotation;
 
@@ -244,6 +249,9 @@ Shader "HolyRail/BuildingInstanced"
             #endif
 
             float3 _LightDirection;
+            float3 _HalfAOffset;
+            float3 _HalfBOffset;
+            int _HalfBStartIndex;
 
             // Rotate vector by quaternion
             float3 rotateByQuaternion(float3 v, float4 q)
@@ -262,6 +270,8 @@ Shader "HolyRail/BuildingInstanced"
                 BuildingData building = _BuildingBuffer[instanceID];
 
                 float3 pos = building.Position;
+                // Apply per-half offset for loop mode leapfrog
+                pos += (instanceID >= (uint)_HalfBStartIndex) ? _HalfBOffset : _HalfAOffset;
                 float3 scale = building.Scale;
                 float4 rot = building.Rotation;
 
@@ -367,6 +377,10 @@ Shader "HolyRail/BuildingInstanced"
             StructuredBuffer<BuildingData> _BuildingBuffer;
             #endif
 
+            float3 _HalfAOffset;
+            float3 _HalfBOffset;
+            int _HalfBStartIndex;
+
             // Rotate vector by quaternion
             float3 rotateByQuaternion(float3 v, float4 q)
             {
@@ -384,6 +398,8 @@ Shader "HolyRail/BuildingInstanced"
                 BuildingData building = _BuildingBuffer[instanceID];
 
                 float3 pos = building.Position;
+                // Apply per-half offset for loop mode leapfrog
+                pos += (instanceID >= (uint)_HalfBStartIndex) ? _HalfBOffset : _HalfAOffset;
                 float3 scale = building.Scale;
                 float4 rot = building.Rotation;
 

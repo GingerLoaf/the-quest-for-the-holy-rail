@@ -40,6 +40,22 @@ namespace HolyRail.Graffiti
             }
         }
 
+        private void Start()
+        {
+            if (GameSessionManager.Instance != null)
+            {
+                float radiusBonus = GameSessionManager.Instance.GetUpgradeValue(UpgradeType.SprayPaintRadius);
+                if (radiusBonus > 0)
+                {
+                    var sphereCollider = GetComponent<SphereCollider>();
+                    if (sphereCollider != null)
+                    {
+                        sphereCollider.radius *= (1.0f + radiusBonus);
+                    }
+                }
+            }
+        }
+
         private void OnDestroy()
         {
             if (_decalMaterial != null)

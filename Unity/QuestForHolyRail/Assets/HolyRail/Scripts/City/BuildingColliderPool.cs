@@ -250,31 +250,47 @@ namespace HolyRail.City
         }
 
         /// <summary>
-        /// Reinitializes spatial grids after a loop mode leapfrog operation.
-        /// Called by CityManager when geometry positions have changed.
+        /// Updates spatial grid query offsets after a loop mode leapfrog operation.
+        /// Uses offset-based approach instead of rebuilding grids for better performance.
+        /// Called by CityManager when half offsets have changed.
         /// </summary>
         public void ResyncAfterLeapfrog()
         {
-            // Reinitialize building spatial grid if we have data
-            if (_initialized && CityManager != null && CityManager.HasData)
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+
+            if (CityManager == null || !CityManager.LoopState.IsActive)
             {
-                _spatialGrid = new BuildingSpatialGrid(DefaultCellSize, CityManager.transform.position);
-                _spatialGrid.Initialize(CityManager.Buildings);
+                // Clear any existing offsets if loop mode is not active
+                _spatialGrid?.ClearQueryOffset();
+                _rampSpatialGrid?.ClearQueryOffset();
+                _billboardSpatialGrid?.ClearQueryOffset();
+                return;
             }
 
-            // Reinitialize ramp spatial grid if we have data
-            if (_rampInitialized && CityManager != null && CityManager.HasRampData)
+            var loopState = CityManager.LoopState;
+
+            // Update building spatial grid offset
+            if (_initialized && _spatialGrid != null)
             {
-                _rampSpatialGrid = new RampSpatialGrid(DefaultCellSize, CityManager.transform.position);
-                _rampSpatialGrid.Initialize(CityManager.Ramps);
+                var offset = loopState.HalfB.CurrentOffset - loopState.HalfA.CurrentOffset;
+                _spatialGrid.SetQueryOffset(offset, loopState.HalfB.BuildingStartIndex);
             }
 
-            // Reinitialize billboard spatial grid if we have data
-            if (_billboardInitialized && CityManager != null && CityManager.HasBillboardData)
+            // Update ramp spatial grid offset
+            if (_rampInitialized && _rampSpatialGrid != null)
             {
-                _billboardSpatialGrid = new BillboardSpatialGrid(DefaultCellSize, CityManager.transform.position);
-                _billboardSpatialGrid.Initialize(CityManager.Billboards);
+                var offset = loopState.HalfB.CurrentOffset - loopState.HalfA.CurrentOffset;
+                _rampSpatialGrid.SetQueryOffset(offset, loopState.HalfB.RampStartIndex);
             }
+
+            // Update billboard spatial grid offset
+            if (_billboardInitialized && _billboardSpatialGrid != null)
+            {
+                var offset = loopState.HalfB.CurrentOffset - loopState.HalfA.CurrentOffset;
+                _billboardSpatialGrid.SetQueryOffset(offset, loopState.HalfB.BillboardStartIndex);
+            }
+
+            var offsetTime = sw.ElapsedMilliseconds;
 
             // Force update active colliders if we have a tracking target
             if (TrackingTarget != null)
@@ -289,60 +305,18 @@ namespace HolyRail.City
                 _lastUpdatePosition = currentPosition;
             }
 
-            Debug.Log("BuildingColliderPool: Resynced spatial grids after leapfrog");
+            var totalTime = sw.ElapsedMilliseconds;
+            Debug.Log($"BuildingColliderPool: Resync after leapfrog - Offsets:{offsetTime}ms, Colliders:{totalTime - offsetTime}ms, Total:{totalTime}ms");
         }
 
         /// <summary>
-        /// Async version that spreads work over multiple frames to avoid freezing.
+        /// Async version - now instant since we use offset-based approach.
+        /// Kept for API compatibility but simply calls the synchronous version.
         /// </summary>
         public void ResyncAfterLeapfrogAsync()
         {
-            StartCoroutine(ResyncAfterLeapfrogCoroutine());
-        }
-
-        private IEnumerator ResyncAfterLeapfrogCoroutine()
-        {
-            // Reinitialize building spatial grid if we have data
-            if (_initialized && CityManager != null && CityManager.HasData)
-            {
-                _spatialGrid = new BuildingSpatialGrid(DefaultCellSize, CityManager.transform.position);
-                _spatialGrid.Initialize(CityManager.Buildings);
-            }
-
-            yield return null; // Spread work across frames
-
-            // Reinitialize ramp spatial grid if we have data
-            if (_rampInitialized && CityManager != null && CityManager.HasRampData)
-            {
-                _rampSpatialGrid = new RampSpatialGrid(DefaultCellSize, CityManager.transform.position);
-                _rampSpatialGrid.Initialize(CityManager.Ramps);
-            }
-
-            yield return null; // Spread work across frames
-
-            // Reinitialize billboard spatial grid if we have data
-            if (_billboardInitialized && CityManager != null && CityManager.HasBillboardData)
-            {
-                _billboardSpatialGrid = new BillboardSpatialGrid(DefaultCellSize, CityManager.transform.position);
-                _billboardSpatialGrid.Initialize(CityManager.Billboards);
-            }
-
-            yield return null; // Spread work across frames
-
-            // Force update active colliders if we have a tracking target
-            if (TrackingTarget != null)
-            {
-                var currentPosition = TrackingTarget.position;
-                if (_initialized)
-                    UpdateActiveColliders(currentPosition);
-                if (_rampInitialized)
-                    UpdateActiveRampColliders(currentPosition);
-                if (_billboardInitialized)
-                    UpdateActiveBillboardColliders(currentPosition);
-                _lastUpdatePosition = currentPosition;
-            }
-
-            Debug.Log("BuildingColliderPool: Async resync complete");
+            // With offset-based approach, this is instant - no need for coroutine
+            ResyncAfterLeapfrog();
         }
 
         public void Clear()
@@ -548,6 +522,12 @@ namespace HolyRail.City
         {
             var buildings = CityManager.Buildings;
 
+            // Get loop mode offset info
+            var loopState = CityManager?.LoopState;
+            var isLoopMode = loopState != null && loopState.IsActive;
+            var halfBStartIndex = isLoopMode ? loopState.HalfB.BuildingStartIndex : int.MaxValue;
+            var halfBOffset = isLoopMode ? (loopState.HalfB.CurrentOffset - loopState.HalfA.CurrentOffset) : Vector3.zero;
+
             // Deactivate all colliders first and move them out of the way
             for (int i = 0; i < _colliderPool.Count; i++)
             {
@@ -585,7 +565,14 @@ namespace HolyRail.City
                 var collider = _colliderPool[colliderIndex];
                 var building = buildings[buildingIndex];
 
-                collider.transform.position = building.Position;
+                // Apply offset for HalfB instances in loop mode
+                var position = building.Position;
+                if (buildingIndex >= halfBStartIndex)
+                {
+                    position += halfBOffset;
+                }
+
+                collider.transform.position = position;
                 collider.transform.rotation = building.Rotation;
                 collider.size = building.Scale;
                 collider.enabled = true;
@@ -609,6 +596,12 @@ namespace HolyRail.City
         private void ActivateCollidersForRamps(List<int> rampIndices)
         {
             var ramps = CityManager.Ramps;
+
+            // Get loop mode offset info
+            var loopState = CityManager?.LoopState;
+            var isLoopMode = loopState != null && loopState.IsActive;
+            var halfBStartIndex = isLoopMode ? loopState.HalfB.RampStartIndex : int.MaxValue;
+            var halfBOffset = isLoopMode ? (loopState.HalfB.CurrentOffset - loopState.HalfA.CurrentOffset) : Vector3.zero;
 
             // Deactivate all ramp colliders first and move them out of the way
             for (int i = 0; i < _rampColliderPool.Count; i++)
@@ -647,7 +640,14 @@ namespace HolyRail.City
                 var collider = _rampColliderPool[colliderIndex];
                 var ramp = ramps[rampIndex];
 
-                collider.transform.position = ramp.Position;
+                // Apply offset for HalfB instances in loop mode
+                var position = ramp.Position;
+                if (rampIndex >= halfBStartIndex)
+                {
+                    position += halfBOffset;
+                }
+
+                collider.transform.position = position;
                 collider.transform.rotation = ramp.Rotation;
                 collider.size = ramp.Scale;
                 collider.enabled = true;
@@ -671,6 +671,12 @@ namespace HolyRail.City
         private void ActivateCollidersForBillboards(List<int> billboardIndices)
         {
             var billboards = CityManager.Billboards;
+
+            // Get loop mode offset info
+            var loopState = CityManager?.LoopState;
+            var isLoopMode = loopState != null && loopState.IsActive;
+            var halfBStartIndex = isLoopMode ? loopState.HalfB.BillboardStartIndex : int.MaxValue;
+            var halfBOffset = isLoopMode ? (loopState.HalfB.CurrentOffset - loopState.HalfA.CurrentOffset) : Vector3.zero;
 
             // Deactivate all billboard colliders first and move them out of the way
             for (int i = 0; i < _billboardColliderPool.Count; i++)
@@ -709,7 +715,14 @@ namespace HolyRail.City
                 var collider = _billboardColliderPool[colliderIndex];
                 var billboard = billboards[billboardIndex];
 
-                collider.transform.position = billboard.Position;
+                // Apply offset for HalfB instances in loop mode
+                var position = billboard.Position;
+                if (billboardIndex >= halfBStartIndex)
+                {
+                    position += halfBOffset;
+                }
+
+                collider.transform.position = position;
                 collider.transform.rotation = billboard.Rotation;
                 collider.size = billboard.Scale;
                 collider.enabled = true;

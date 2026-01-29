@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using System.Linq;
+using HolyRail.Scripts;
 
 namespace HolyRail.Scripts.Enemies
 {
@@ -143,6 +144,20 @@ namespace HolyRail.Scripts.Enemies
             Instance = this;
 
             InitializePools();
+        }
+
+        private void Start()
+        {
+            if (GameSessionManager.Instance != null)
+            {
+                float accuracyBonus = GameSessionManager.Instance.GetUpgradeValue(UpgradeType.ParryAccuracy);
+                if (accuracyBonus > 0)
+                {
+                    // Increase threshold by percentage (e.g. 1.0 = +100%)
+                    ParryThresholdDistance *= (1.0f + accuracyBonus);
+                    Debug.Log($"EnemySpawner: Applied ParryAccuracy upgrade (+{accuracyBonus * 100:F0}%). New Threshold: {ParryThresholdDistance}");
+                }
+            }
         }
 
         private void OnDestroy()

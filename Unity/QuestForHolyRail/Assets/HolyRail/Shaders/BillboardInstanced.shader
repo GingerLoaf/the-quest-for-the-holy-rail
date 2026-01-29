@@ -58,6 +58,9 @@ Shader "HolyRail/BillboardInstanced"
                 float _EmissionIntensity;
                 float _TextureCount;
                 float _UseTextures;
+                float3 _HalfAOffset;
+                float3 _HalfBOffset;
+                int _HalfBStartIndex;
             CBUFFER_END
 
             struct Attributes
@@ -96,6 +99,8 @@ Shader "HolyRail/BillboardInstanced"
 
                 // Build object-to-world matrix from position, rotation, scale
                 float3 pos = billboard.Position;
+                // Apply per-half offset for loop mode leapfrog
+                pos += (instanceID >= (uint)_HalfBStartIndex) ? _HalfBOffset : _HalfAOffset;
                 float3 scale = billboard.Scale;
                 float4 rot = billboard.Rotation;
 
@@ -232,6 +237,9 @@ Shader "HolyRail/BillboardInstanced"
             #endif
 
             float3 _LightDirection;
+            float3 _HalfAOffset;
+            float3 _HalfBOffset;
+            int _HalfBStartIndex;
 
             // Rotate vector by quaternion
             float3 rotateByQuaternion(float3 v, float4 q)
@@ -250,6 +258,8 @@ Shader "HolyRail/BillboardInstanced"
                 BillboardData billboard = _BillboardBuffer[instanceID];
 
                 float3 pos = billboard.Position;
+                // Apply per-half offset for loop mode leapfrog
+                pos += (instanceID >= (uint)_HalfBStartIndex) ? _HalfBOffset : _HalfAOffset;
                 float3 scale = billboard.Scale;
                 float4 rot = billboard.Rotation;
 
@@ -354,6 +364,10 @@ Shader "HolyRail/BillboardInstanced"
             StructuredBuffer<BillboardData> _BillboardBuffer;
             #endif
 
+            float3 _HalfAOffset;
+            float3 _HalfBOffset;
+            int _HalfBStartIndex;
+
             // Rotate vector by quaternion
             float3 rotateByQuaternion(float3 v, float4 q)
             {
@@ -371,6 +385,8 @@ Shader "HolyRail/BillboardInstanced"
                 BillboardData billboard = _BillboardBuffer[instanceID];
 
                 float3 pos = billboard.Position;
+                // Apply per-half offset for loop mode leapfrog
+                pos += (instanceID >= (uint)_HalfBStartIndex) ? _HalfBOffset : _HalfAOffset;
                 float3 scale = billboard.Scale;
                 float4 rot = billboard.Rotation;
 

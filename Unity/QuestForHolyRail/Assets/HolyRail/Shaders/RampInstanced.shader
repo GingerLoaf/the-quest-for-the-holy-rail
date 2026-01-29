@@ -45,6 +45,9 @@ Shader "HolyRail/RampInstanced"
             CBUFFER_START(UnityPerMaterial)
                 float4 _BaseColor;
                 float _ColorVariation;
+                float3 _HalfAOffset;
+                float3 _HalfBOffset;
+                int _HalfBStartIndex;
             CBUFFER_END
 
             struct Attributes
@@ -81,6 +84,8 @@ Shader "HolyRail/RampInstanced"
 
                 // Build object-to-world matrix from position, rotation, scale
                 float3 pos = ramp.Position;
+                // Apply per-half offset for loop mode leapfrog
+                pos += (instanceID >= (uint)_HalfBStartIndex) ? _HalfBOffset : _HalfAOffset;
                 float3 scale = ramp.Scale;
                 float4 rot = ramp.Rotation;
 
@@ -189,6 +194,9 @@ Shader "HolyRail/RampInstanced"
             #endif
 
             float3 _LightDirection;
+            float3 _HalfAOffset;
+            float3 _HalfBOffset;
+            int _HalfBStartIndex;
 
             // Rotate vector by quaternion
             float3 rotateByQuaternion(float3 v, float4 q)
@@ -207,6 +215,8 @@ Shader "HolyRail/RampInstanced"
                 RampData ramp = _RampBuffer[instanceID];
 
                 float3 pos = ramp.Position;
+                // Apply per-half offset for loop mode leapfrog
+                pos += (instanceID >= (uint)_HalfBStartIndex) ? _HalfBOffset : _HalfAOffset;
                 float3 scale = ramp.Scale;
                 float4 rot = ramp.Rotation;
 
@@ -311,6 +321,10 @@ Shader "HolyRail/RampInstanced"
             StructuredBuffer<RampData> _RampBuffer;
             #endif
 
+            float3 _HalfAOffset;
+            float3 _HalfBOffset;
+            int _HalfBStartIndex;
+
             // Rotate vector by quaternion
             float3 rotateByQuaternion(float3 v, float4 q)
             {
@@ -328,6 +342,8 @@ Shader "HolyRail/RampInstanced"
                 RampData ramp = _RampBuffer[instanceID];
 
                 float3 pos = ramp.Position;
+                // Apply per-half offset for loop mode leapfrog
+                pos += (instanceID >= (uint)_HalfBStartIndex) ? _HalfBOffset : _HalfAOffset;
                 float3 scale = ramp.Scale;
                 float4 rot = ramp.Rotation;
 

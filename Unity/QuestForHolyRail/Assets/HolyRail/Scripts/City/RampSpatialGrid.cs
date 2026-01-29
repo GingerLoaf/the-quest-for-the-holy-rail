@@ -10,6 +10,8 @@ namespace HolyRail.City
         private readonly float _cellSize;
         private readonly Vector3 _gridOrigin;
         private IReadOnlyList<RampData> _ramps;
+        private Vector3 _queryOffset = Vector3.zero;
+        private int _halfBStartIndex = int.MaxValue;
 
         public float CellSize => _cellSize;
         public int CellCount => _cells.Count;
@@ -62,6 +64,11 @@ namespace HolyRail.City
                         foreach (var index in rampIndices)
                         {
                             var rampPos = _ramps[index].Position;
+                            // Apply offset for loop mode leapfrog (only for HalfB instances)
+                            if (index >= _halfBStartIndex)
+                            {
+                                rampPos += _queryOffset;
+                            }
                             var dx = rampPos.x - center.x;
                             var dz = rampPos.z - center.z;
                             var distSq = dx * dx + dz * dz;
@@ -91,6 +98,18 @@ namespace HolyRail.City
             int x = Mathf.FloorToInt(localPos.x / _cellSize);
             int z = Mathf.FloorToInt(localPos.z / _cellSize);
             return new Vector2Int(x, z);
+        }
+
+        public void SetQueryOffset(Vector3 offset, int halfBStartIndex)
+        {
+            _queryOffset = offset;
+            _halfBStartIndex = halfBStartIndex;
+        }
+
+        public void ClearQueryOffset()
+        {
+            _queryOffset = Vector3.zero;
+            _halfBStartIndex = int.MaxValue;
         }
     }
 }

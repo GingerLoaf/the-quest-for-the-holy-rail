@@ -339,6 +339,8 @@ namespace HolyRail.City
             if (!_isActive || CityManager == null)
                 return;
 
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+
             Debug.Log($"LoopModeController: Performing leapfrog #{_leapfrogCount + 1}");
 
             // Determine which half the player is PHYSICALLY in by comparing distance to each half's path
@@ -357,21 +359,29 @@ namespace HolyRail.City
 
             Vector3 offset = _loopState.ForwardDirection * _loopState.HalfLength * 2f;
 
+            var setupTime = sw.ElapsedMilliseconds;
+
             // 1. Move vines for that half
             if (VineGenerator != null)
             {
                 VineGenerator.MoveVineHalf(halfToMoveId, offset);
             }
 
+            var vineTime = sw.ElapsedMilliseconds;
+
             // 2. Move city geometry for that half
             CityManager.MoveHalf(halfToMoveId, offset);
+
+            var cityTime = sw.ElapsedMilliseconds;
 
             // 3. Recache path distances after move
             CachePathDistances();
 
+            var cacheTime = sw.ElapsedMilliseconds;
+
             _leapfrogCount++;
 
-            Debug.Log($"LoopModeController: Leapfrog complete. Moved half {halfToMoveId} ahead (player in half {(playerInHalfA ? 0 : 1)}). Total leapfrogs: {_leapfrogCount}");
+            Debug.Log($"LoopModeController: Leapfrog #{_leapfrogCount} complete - Setup:{setupTime}ms, Vines:{vineTime - setupTime}ms, City:{cityTime - vineTime}ms, Cache:{cacheTime - cityTime}ms, Total:{cacheTime}ms");
         }
 
         private float GetMinDistanceToPath(Vector3 pos, List<Vector3> pathPoints)

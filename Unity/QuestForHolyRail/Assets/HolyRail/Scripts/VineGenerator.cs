@@ -1764,6 +1764,8 @@ namespace HolyRail.Vines
         /// <summary>
         /// Moves all splines belonging to the specified half by the given offset.
         /// Used during loop mode leapfrog operations.
+        /// Note: We only move the transform - SplineExtrude mesh is in local space
+        /// and moves automatically. No rebuild needed (rebuild was causing huge hitch).
         /// </summary>
         public void MoveVineHalf(int halfId, Vector3 offset)
         {
@@ -1782,13 +1784,9 @@ namespace HolyRail.Vines
                 {
                     splineContainer.transform.position += offset;
                     movedCount++;
-
-                    // If the spline has a SplineExtrude component, rebuild the mesh
-                    var splineExtrude = splineContainer.GetComponent<SplineExtrude>();
-                    if (splineExtrude != null)
-                    {
-                        splineExtrude.Rebuild();
-                    }
+                    // Note: SplineExtrude.Rebuild() is NOT needed here!
+                    // The extruded mesh is in local space and moves with the transform.
+                    // Calling Rebuild() was causing massive frame hitches during leapfrog.
                 }
             }
 
