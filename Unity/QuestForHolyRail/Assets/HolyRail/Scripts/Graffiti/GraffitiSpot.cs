@@ -16,11 +16,7 @@ namespace HolyRail.Graffiti
         [field: SerializeField] public GraffitiProgressUI ProgressUI { get; private set; }
         [field: SerializeField] public ParticleSystem CompletionEffect { get; private set; }
 
-        private static readonly int BaseColorProperty = Shader.PropertyToID("_BaseColor");
-        private static readonly int EmissionColorProperty = Shader.PropertyToID("_EmissionColor");
-
-        private static readonly Color EnemyColor = Color.red;
-        private static readonly Color PlayerColor = Color.cyan;
+        private static readonly int BlendAmountProperty = Shader.PropertyToID("_BlendAmount");
 
         private Material _decalMaterial;
         private float _currentProgress;
@@ -35,24 +31,13 @@ namespace HolyRail.Graffiti
             {
                 _decalMaterial = new Material(DecalProjector.material);
                 DecalProjector.material = _decalMaterial;
-                SetDecalColor(EnemyColor);
+                _decalMaterial.SetFloat(BlendAmountProperty, 0f);
             }
 
             if (Reticle != null)
             {
                 Reticle.SetActive(false);
             }
-        }
-
-        private void SetDecalColor(Color color)
-        {
-            if (_decalMaterial == null)
-            {
-                return;
-            }
-
-            _decalMaterial.SetColor(BaseColorProperty, color);
-            _decalMaterial.SetColor(EmissionColorProperty, color);
         }
 
         private void OnDestroy()
@@ -77,8 +62,10 @@ namespace HolyRail.Graffiti
                 _currentProgress += Time.deltaTime / SprayTime;
                 _currentProgress = Mathf.Clamp01(_currentProgress);
 
-                var blendedColor = Color.Lerp(EnemyColor, PlayerColor, _currentProgress);
-                SetDecalColor(blendedColor);
+                if (_decalMaterial != null)
+                {
+                    _decalMaterial.SetFloat(BlendAmountProperty, _currentProgress);
+                }
 
                 if (ProgressUI != null)
                 {
