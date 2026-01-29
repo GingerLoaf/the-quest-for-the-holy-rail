@@ -14,6 +14,7 @@ public class MusicController : MonoBehaviour
     private int _currentIndex;
     private Coroutine _fadeCoroutine;
     private bool _isPaused;
+    private bool _waitingForPlay;
 
     private void Awake()
     {
@@ -42,7 +43,11 @@ public class MusicController : MonoBehaviour
         if (MusicSource == null || Songs == null || Songs.Length == 0)
             return;
 
-        if (!MusicSource.isPlaying && !_isPaused)
+        // Clear waiting flag once audio actually starts
+        if (_waitingForPlay && MusicSource.isPlaying)
+            _waitingForPlay = false;
+
+        if (!MusicSource.isPlaying && !_isPaused && !_waitingForPlay)
             PlayNextTrack();
     }
 
@@ -68,6 +73,7 @@ public class MusicController : MonoBehaviour
         MusicSource.clip = clip;
         MusicSource.volume = Volume;
         MusicSource.Play();
+        _waitingForPlay = true;
     }
 
     private void PlayNextTrack()
