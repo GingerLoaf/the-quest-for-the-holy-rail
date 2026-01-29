@@ -1,4 +1,3 @@
-using System.Collections;
 using UnityEngine;
 
 namespace HolyRail.Scripts.Enemies
@@ -39,7 +38,7 @@ namespace HolyRail.Scripts.Enemies
 
         [field: Tooltip("Color of the flash at moment of firing")]
         [field: SerializeField]
-        public Color FireFlashColor { get; private set; } = Color.white;
+        public Color FireFlashColor { get; private set; } = Color.red;
 
         [Header("Position Spread")]
         [field: Tooltip("Random X offset range (left/right spread)")]
@@ -55,7 +54,8 @@ namespace HolyRail.Scripts.Enemies
         public Vector2 OffsetRangeZ { get; private set; } = new(10f, 20f);
 
         private Vector3 _randomizedOffset;
-        private Vector3 _velocity;
+        private Vector3 _smoothedNoiseOffset;
+        private Vector3 _noiseVelocity;
         private float _noiseOffsetX;
         private float _noiseOffsetY;
         private float _noiseOffsetZ;
@@ -64,8 +64,11 @@ namespace HolyRail.Scripts.Enemies
         private MaterialPropertyBlock _propertyBlock;
         private static readonly int EmissionColorID = Shader.PropertyToID("_EmissionColor");
         private Color _originalEmissionColor;
-        private Coroutine _flashCoroutine;
-        private Coroutine _fireFlashCoroutine;
+
+        // Update-based flash system (replaces coroutines for reliability)
+        private bool _isFlashing;
+        private float _flashTimer;
+        private Color _currentFlashColor;
 
         protected override void Awake()
         {
@@ -82,7 +85,8 @@ namespace HolyRail.Scripts.Enemies
         {
             base.OnSpawn();
             _fireTimer = Random.Range(0f, EffectiveFireRate);
-            _velocity = Vector3.zero;
+            _smoothedNoiseOffset = Vector3.zero;
+            _noiseVelocity = Vector3.zero;
 
             Debug.Log($"ShooterBot [{name}]: Spawned with FireRate={EffectiveFireRate}s, FiringRange={EffectiveFiringRange}m, first shot in {_fireTimer:F1}s");
 
@@ -109,26 +113,30 @@ namespace HolyRail.Scripts.Enemies
             var playerTransform = Spawner.Player;
             var camTransform = MainCamera.transform;
 
-            // Calculate target position using randomized offset
+            // Calculate derived position directly from player (NO LAG)
             Vector3 forwardDirection = Vector3.ProjectOnPlane(camTransform.forward, Vector3.up).normalized;
-            Vector3 targetPosition = playerTransform.position +
-                                     (camTransform.right * _randomizedOffset.x) +
-                                     (Vector3.up * _randomizedOffset.y) +
-                                     (forwardDirection * _randomizedOffset.z);
+            Vector3 derivedPosition = playerTransform.position +
+                                      (camTransform.right * _randomizedOffset.x) +
+                                      (Vector3.up * _randomizedOffset.y) +
+                                      (forwardDirection * _randomizedOffset.z);
 
-            // Apply Perlin noise for organic drift movement
+            // Calculate smoothed noise offset (local organic drift only)
             float time = Time.time * BotNoiseSpeed;
-            float noiseX = (Mathf.PerlinNoise(time + _noiseOffsetX, 0f) - 0.5f) * 2f * BotNoiseAmount;
-            float noiseY = (Mathf.PerlinNoise(time + _noiseOffsetY, 100f) - 0.5f) * 2f * BotNoiseAmount;
-            float noiseZ = (Mathf.PerlinNoise(time + _noiseOffsetZ, 200f) - 0.5f) * 2f * BotNoiseAmount;
-            targetPosition += new Vector3(noiseX, noiseY, noiseZ);
+            Vector3 rawNoise = new Vector3(
+                (Mathf.PerlinNoise(time + _noiseOffsetX, 0f) - 0.5f) * 2f * BotNoiseAmount,
+                (Mathf.PerlinNoise(time + _noiseOffsetY, 100f) - 0.5f) * 2f * BotNoiseAmount,
+                (Mathf.PerlinNoise(time + _noiseOffsetZ, 200f) - 0.5f) * 2f * BotNoiseAmount
+            );
+            _smoothedNoiseOffset = Vector3.SmoothDamp(_smoothedNoiseOffset, rawNoise, ref _noiseVelocity, 0.15f);
 
-            // Apply avoidance velocity from spawner (pushes bot out of camera frustum)
-            targetPosition += AvoidanceVelocity * Time.deltaTime;
+            // Apply avoidance velocity
+            derivedPosition += AvoidanceVelocity * Time.deltaTime;
 
-            // Smoothly move towards the target position with collision check
-            Vector3 smoothTarget = Vector3.SmoothDamp(transform.position, targetPosition, ref _velocity, SmoothTime, BotMaxSpeed);
-            transform.position = GetCollisionSafePosition(transform.position, smoothTarget);
+            // Final position = derived + smoothed noise
+            Vector3 targetPosition = derivedPosition + _smoothedNoiseOffset;
+
+            // Move with collision pathing (slides around obstacles)
+            transform.position = GetPositionWithCollisionPathing(transform.position, targetPosition);
 
             // Smoothly rotate to face the player
             var toPlayer = playerTransform.position - transform.position;
@@ -142,16 +150,10 @@ namespace HolyRail.Scripts.Enemies
         public override void OnRecycle()
         {
             base.OnRecycle();
-            if (_flashCoroutine != null)
-            {
-                StopCoroutine(_flashCoroutine);
-                _flashCoroutine = null;
-            }
-            if (_fireFlashCoroutine != null)
-            {
-                StopCoroutine(_fireFlashCoroutine);
-                _fireFlashCoroutine = null;
-            }
+            _isFlashing = false;
+            _flashTimer = 0f;
+            _smoothedNoiseOffset = Vector3.zero;
+            _noiseVelocity = Vector3.zero;
             // Clear property block to reset to shared material defaults
             if (_renderer != null && _propertyBlock != null)
             {
@@ -169,7 +171,36 @@ namespace HolyRail.Scripts.Enemies
         protected override void Update()
         {
             base.Update();
+            UpdateFlash();
             UpdateFiring();
+        }
+
+        private void UpdateFlash()
+        {
+            if (!_isFlashing) return;
+
+            _flashTimer -= Time.deltaTime;
+            if (_flashTimer <= 0f)
+            {
+                // Flash complete - reset to original color
+                _isFlashing = false;
+                if (_renderer != null && _propertyBlock != null)
+                {
+                    _propertyBlock.SetColor(EmissionColorID, _originalEmissionColor);
+                    _renderer.SetPropertyBlock(_propertyBlock);
+                }
+            }
+        }
+
+        private void StartFlash(Color color, float duration)
+        {
+            if (_renderer == null || _propertyBlock == null) return;
+
+            _isFlashing = true;
+            _flashTimer = duration;
+            _currentFlashColor = color;
+            _propertyBlock.SetColor(EmissionColorID, color);
+            _renderer.SetPropertyBlock(_propertyBlock);
         }
 
         private void UpdateFiring()
@@ -190,13 +221,13 @@ namespace HolyRail.Scripts.Enemies
             float effectiveRange = EffectiveFiringRange;
             float effectiveRate = EffectiveFireRate;
 
-            // Start flash warning before firing
-            if (_fireTimer <= FlashDuration && _flashCoroutine == null)
+            // Start flash warning before firing (only if not already flashing)
+            if (_fireTimer <= FlashDuration && !_isFlashing)
             {
                 float dist = Vector3.Distance(transform.position, Spawner.Player.position);
                 if (dist <= effectiveRange)
                 {
-                    _flashCoroutine = StartCoroutine(FlashCoroutine());
+                    StartFlash(Color.red * FlashIntensity, FlashDuration);
                 }
             }
 
@@ -213,12 +244,8 @@ namespace HolyRail.Scripts.Enemies
                     Debug.Log($"ShooterBot [{name}]: FIRING bullet toward player at {playerPos}");
                     Spawner.SpawnBullet(transform.position, direction, this);
 
-                    // Trigger fire flash at moment of shooting
-                    if (_fireFlashCoroutine != null)
-                    {
-                        StopCoroutine(_fireFlashCoroutine);
-                    }
-                    _fireFlashCoroutine = StartCoroutine(FireFlashCoroutine());
+                    // Trigger fire flash at moment of shooting (overrides any current flash)
+                    StartFlash(FireFlashColor * FireFlashIntensity, FireFlashDuration);
                 }
                 else
                 {
@@ -226,28 +253,7 @@ namespace HolyRail.Scripts.Enemies
                 }
 
                 _fireTimer = effectiveRate;
-                _flashCoroutine = null;
             }
-        }
-
-        private IEnumerator FlashCoroutine()
-        {
-            if (_renderer == null || _propertyBlock == null) yield break;
-            _propertyBlock.SetColor(EmissionColorID, Color.red * FlashIntensity);
-            _renderer.SetPropertyBlock(_propertyBlock);
-            yield return new WaitForSeconds(FlashDuration);
-            _propertyBlock.SetColor(EmissionColorID, _originalEmissionColor);
-            _renderer.SetPropertyBlock(_propertyBlock);
-        }
-
-        private IEnumerator FireFlashCoroutine()
-        {
-            if (_renderer == null || _propertyBlock == null) yield break;
-            _propertyBlock.SetColor(EmissionColorID, FireFlashColor * FireFlashIntensity);
-            _renderer.SetPropertyBlock(_propertyBlock);
-            yield return new WaitForSeconds(FireFlashDuration);
-            _propertyBlock.SetColor(EmissionColorID, _originalEmissionColor);
-            _renderer.SetPropertyBlock(_propertyBlock);
         }
 
         protected override void OnValidate()

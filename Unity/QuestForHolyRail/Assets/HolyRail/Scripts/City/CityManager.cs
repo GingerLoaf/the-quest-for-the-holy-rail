@@ -5,6 +5,31 @@ using UnityEngine.Rendering;
 
 namespace HolyRail.City
 {
+    [System.Serializable]
+    public class LoopHalfData
+    {
+        public int BuildingStartIndex;
+        public int BuildingCount;
+        public int RampStartIndex;
+        public int RampCount;
+        public int BillboardStartIndex;
+        public int BillboardCount;
+        public List<Vector3> PathPoints = new List<Vector3>();
+        public Vector3 CurrentOffset;
+        public int HalfId;
+    }
+
+    [System.Serializable]
+    public class LoopModeState
+    {
+        public bool IsActive;
+        public LoopHalfData HalfA = new LoopHalfData { HalfId = 0 };
+        public LoopHalfData HalfB = new LoopHalfData { HalfId = 1 };
+        public int FrontHalfId;
+        public float HalfLength;
+        public Vector3 ForwardDirection;
+    }
+
     [ExecuteInEditMode]
     public class CityManager : MonoBehaviour
     {
@@ -81,6 +106,16 @@ namespace HolyRail.City
         [field: SerializeField] public bool ShowBounds { get; set; } = true;
         [field: SerializeField] public bool AutoGenerateOnStart { get; set; } = true;
         [field: SerializeField] public bool AutoGenerateInEditor { get; set; } = false;
+
+        [Header("Loop Mode")]
+        [field: SerializeField] public bool IsLoopMode { get; set; } = false;
+
+        // Loop mode state (serialized for persistence)
+        [SerializeField, HideInInspector]
+        private LoopModeState _loopState = new LoopModeState();
+
+        public LoopModeState LoopState => _loopState;
+        public IReadOnlyList<Vector3> CorridorPathA => _corridorPathA;
 
         // Serialized generated data (persists through play mode)
         [SerializeField, HideInInspector]
@@ -259,44 +294,77 @@ namespace HolyRail.City
             // Initialize random generator with seed
             _random = new System.Random(Seed);
 
+            // Reset loop state
+            _loopState = new LoopModeState();
+            _loopState.IsActive = IsLoopMode;
+
             // Generate corridor paths (only for enabled corridors)
             var convergencePos = ConvergencePoint.position;
 
-            if (EnableCorridorA && EndpointA != null)
+            // In loop mode, only generate corridor A
+            bool generateCorridorA = IsLoopMode || (EnableCorridorA && EndpointA != null);
+            bool generateCorridorB = !IsLoopMode && EnableCorridorB && EndpointB != null;
+            bool generateCorridorC = !IsLoopMode && EnableCorridorC && EndpointC != null;
+
+            if (generateCorridorA && EndpointA != null)
                 _corridorPathA = GenerateCurvedPath(convergencePos, EndpointA.position, 0);
 
-            if (EnableCorridorB && EndpointB != null)
+            if (generateCorridorB)
                 _corridorPathB = GenerateCurvedPath(convergencePos, EndpointB.position, 1);
 
-            if (EnableCorridorC && EndpointC != null)
+            if (generateCorridorC)
                 _corridorPathC = GenerateCurvedPath(convergencePos, EndpointC.position, 2);
 
             // Collect all enabled paths for overlap checking
             var allPaths = new List<List<Vector3>>();
             var pathToIndex = new Dictionary<List<Vector3>, int>();
 
-            if (EnableCorridorA && _corridorPathA.Count > 0)
+            if (generateCorridorA && _corridorPathA.Count > 0)
             {
                 pathToIndex[_corridorPathA] = allPaths.Count;
                 allPaths.Add(_corridorPathA);
             }
-            if (EnableCorridorB && _corridorPathB.Count > 0)
+            if (generateCorridorB && _corridorPathB.Count > 0)
             {
                 pathToIndex[_corridorPathB] = allPaths.Count;
                 allPaths.Add(_corridorPathB);
             }
-            if (EnableCorridorC && _corridorPathC.Count > 0)
+            if (generateCorridorC && _corridorPathC.Count > 0)
             {
                 pathToIndex[_corridorPathC] = allPaths.Count;
                 allPaths.Add(_corridorPathC);
             }
 
+            // In loop mode, calculate path midpoint and setup half data
+            int pathMidpointIndex = 0;
+            if (IsLoopMode && _corridorPathA.Count > 0)
+            {
+                pathMidpointIndex = _corridorPathA.Count / 2;
+                SetupLoopModeHalves(pathMidpointIndex);
+            }
+
             // Generate buildings along enabled corridors (with overlap checking)
-            if (EnableCorridorA && _corridorPathA.Count > 0)
-                GenerateCorridorBuildings(_corridorPathA, allPaths, pathToIndex[_corridorPathA]);
-            if (EnableCorridorB && _corridorPathB.Count > 0)
+            // In loop mode, track which half each building belongs to
+            if (generateCorridorA && _corridorPathA.Count > 0)
+            {
+                if (IsLoopMode)
+                {
+                    _loopState.HalfA.BuildingStartIndex = _generatedBuildings.Count;
+                    GenerateCorridorBuildingsForHalf(_corridorPathA, allPaths, pathToIndex[_corridorPathA], 0, pathMidpointIndex);
+                    _loopState.HalfA.BuildingCount = _generatedBuildings.Count - _loopState.HalfA.BuildingStartIndex;
+
+                    _loopState.HalfB.BuildingStartIndex = _generatedBuildings.Count;
+                    GenerateCorridorBuildingsForHalf(_corridorPathA, allPaths, pathToIndex[_corridorPathA], pathMidpointIndex, _corridorPathA.Count);
+                    _loopState.HalfB.BuildingCount = _generatedBuildings.Count - _loopState.HalfB.BuildingStartIndex;
+                }
+                else
+                {
+                    GenerateCorridorBuildings(_corridorPathA, allPaths, pathToIndex[_corridorPathA]);
+                }
+            }
+            if (generateCorridorB && _corridorPathB.Count > 0)
                 GenerateCorridorBuildings(_corridorPathB, allPaths, pathToIndex[_corridorPathB]);
-            if (EnableCorridorC && _corridorPathC.Count > 0)
+            if (generateCorridorC && _corridorPathC.Count > 0)
                 GenerateCorridorBuildings(_corridorPathC, allPaths, pathToIndex[_corridorPathC]);
 
             // Generate plaza ring around convergence point (start plaza)
@@ -306,7 +374,8 @@ namespace HolyRail.City
             }
 
             // Generate end plaza ring around ConvergenceEndPoint (if set and enabled)
-            if (ConvergenceEndPoint != null && EnableConvergenceEndPlaza)
+            // In loop mode, skip the end plaza
+            if (!IsLoopMode && ConvergenceEndPoint != null && EnableConvergenceEndPlaza)
             {
                 GenerateEndPlazaRing(allPaths);
             }
@@ -326,11 +395,26 @@ namespace HolyRail.City
                     Debug.LogWarning("CityManager: Ramps enabled but RampMaterial is not assigned! Assign the RampMaterial from Assets/HolyRail/Materials/");
                 }
 
-                if (EnableCorridorA && _corridorPathA.Count > 0)
-                    GenerateCorridorRamps(_corridorPathA);
-                if (EnableCorridorB && _corridorPathB.Count > 0)
+                if (generateCorridorA && _corridorPathA.Count > 0)
+                {
+                    if (IsLoopMode)
+                    {
+                        _loopState.HalfA.RampStartIndex = _generatedRamps.Count;
+                        GenerateCorridorRampsForHalf(_corridorPathA, 0, pathMidpointIndex);
+                        _loopState.HalfA.RampCount = _generatedRamps.Count - _loopState.HalfA.RampStartIndex;
+
+                        _loopState.HalfB.RampStartIndex = _generatedRamps.Count;
+                        GenerateCorridorRampsForHalf(_corridorPathA, pathMidpointIndex, _corridorPathA.Count);
+                        _loopState.HalfB.RampCount = _generatedRamps.Count - _loopState.HalfB.RampStartIndex;
+                    }
+                    else
+                    {
+                        GenerateCorridorRamps(_corridorPathA);
+                    }
+                }
+                if (generateCorridorB && _corridorPathB.Count > 0)
                     GenerateCorridorRamps(_corridorPathB);
-                if (EnableCorridorC && _corridorPathC.Count > 0)
+                if (generateCorridorC && _corridorPathC.Count > 0)
                     GenerateCorridorRamps(_corridorPathC);
                 InitializeRampBuffersFromSerializedData();
             }
@@ -348,11 +432,26 @@ namespace HolyRail.City
                 }
 
                 Debug.Log($"CityManager: Starting billboard generation. Path lengths: A={_corridorPathA.Count}, B={_corridorPathB.Count}, C={_corridorPathC.Count}");
-                if (EnableCorridorA && _corridorPathA.Count > 0)
-                    GenerateCorridorBillboards(_corridorPathA);
-                if (EnableCorridorB && _corridorPathB.Count > 0)
+                if (generateCorridorA && _corridorPathA.Count > 0)
+                {
+                    if (IsLoopMode)
+                    {
+                        _loopState.HalfA.BillboardStartIndex = _generatedBillboards.Count;
+                        GenerateCorridorBillboardsForHalf(_corridorPathA, 0, pathMidpointIndex);
+                        _loopState.HalfA.BillboardCount = _generatedBillboards.Count - _loopState.HalfA.BillboardStartIndex;
+
+                        _loopState.HalfB.BillboardStartIndex = _generatedBillboards.Count;
+                        GenerateCorridorBillboardsForHalf(_corridorPathA, pathMidpointIndex, _corridorPathA.Count);
+                        _loopState.HalfB.BillboardCount = _generatedBillboards.Count - _loopState.HalfB.BillboardStartIndex;
+                    }
+                    else
+                    {
+                        GenerateCorridorBillboards(_corridorPathA);
+                    }
+                }
+                if (generateCorridorB && _corridorPathB.Count > 0)
                     GenerateCorridorBillboards(_corridorPathB);
-                if (EnableCorridorC && _corridorPathC.Count > 0)
+                if (generateCorridorC && _corridorPathC.Count > 0)
                     GenerateCorridorBillboards(_corridorPathC);
                 Debug.Log($"CityManager: Billboard generation complete. Total billboards: {_generatedBillboards.Count}");
                 InitializeBillboardBuffersFromSerializedData();
@@ -360,7 +459,15 @@ namespace HolyRail.City
 
             var rampInfo = EnableRamps ? $", {_generatedRamps.Count} ramps" : "";
             var billboardInfo = EnableBillboards ? $", {_generatedBillboards.Count} billboards" : "";
-            Debug.Log($"CityManager: Generated {_generatedBuildings.Count} buildings across {EnabledCorridorCount} corridors{rampInfo}{billboardInfo}");
+            var loopInfo = IsLoopMode ? " (Loop Mode)" : "";
+            int corridorCount = IsLoopMode ? 1 : EnabledCorridorCount;
+            Debug.Log($"CityManager: Generated {_generatedBuildings.Count} buildings across {corridorCount} corridors{rampInfo}{billboardInfo}{loopInfo}");
+
+            if (IsLoopMode)
+            {
+                Debug.Log($"CityManager Loop Mode: HalfA has {_loopState.HalfA.BuildingCount} buildings, {_loopState.HalfA.RampCount} ramps, {_loopState.HalfA.BillboardCount} billboards");
+                Debug.Log($"CityManager Loop Mode: HalfB has {_loopState.HalfB.BuildingCount} buildings, {_loopState.HalfB.RampCount} ramps, {_loopState.HalfB.BillboardCount} billboards");
+            }
         }
 
         private List<Vector3> GenerateCurvedPath(Vector3 start, Vector3 waypoint, int corridorIndex)
@@ -480,6 +587,228 @@ namespace HolyRail.City
                     if (!IsPositionTooCloseToOtherCorridors(rightPos, allPaths, currentPathIndex))
                     {
                         PlaceBuilding(rightPos, tangent, needsCollider);
+                    }
+                }
+            }
+        }
+
+        private void SetupLoopModeHalves(int pathMidpointIndex)
+        {
+            if (_corridorPathA.Count == 0)
+                return;
+
+            // Split path points into two halves
+            _loopState.HalfA.PathPoints.Clear();
+            _loopState.HalfB.PathPoints.Clear();
+
+            for (int i = 0; i <= pathMidpointIndex && i < _corridorPathA.Count; i++)
+            {
+                _loopState.HalfA.PathPoints.Add(_corridorPathA[i]);
+            }
+
+            for (int i = pathMidpointIndex; i < _corridorPathA.Count; i++)
+            {
+                _loopState.HalfB.PathPoints.Add(_corridorPathA[i]);
+            }
+
+            // Calculate half length
+            float halfLength = 0f;
+            for (int i = 1; i < _loopState.HalfA.PathPoints.Count; i++)
+            {
+                halfLength += Vector3.Distance(_loopState.HalfA.PathPoints[i - 1], _loopState.HalfA.PathPoints[i]);
+            }
+            _loopState.HalfLength = halfLength;
+
+            // Calculate forward direction (from start to midpoint)
+            if (_loopState.HalfA.PathPoints.Count >= 2)
+            {
+                var start = _loopState.HalfA.PathPoints[0];
+                var end = _loopState.HalfA.PathPoints[_loopState.HalfA.PathPoints.Count - 1];
+                _loopState.ForwardDirection = (end - start).normalized;
+            }
+
+            _loopState.FrontHalfId = 0;
+            _loopState.HalfA.CurrentOffset = Vector3.zero;
+            _loopState.HalfB.CurrentOffset = Vector3.zero;
+
+            Debug.Log($"CityManager Loop Mode: Path split at index {pathMidpointIndex}, half length = {halfLength:F1}m");
+        }
+
+        private void GenerateCorridorBuildingsForHalf(List<Vector3> path, List<List<Vector3>> allPaths, int currentPathIndex, int startIndex, int endIndex)
+        {
+            var convergencePos = ConvergencePoint.position;
+
+            for (int i = startIndex; i < endIndex && i < path.Count; i++)
+            {
+                var point = path[i];
+
+                // Skip buildings near start convergence plaza
+                if (Vector3.Distance(point, convergencePos) < ConvergenceRadius)
+                    continue;
+
+                // In loop mode, skip end plaza check since we don't generate it
+
+                // Calculate tangent direction from path
+                Vector3 tangent;
+                if (i < path.Count - 1)
+                    tangent = (path[i + 1] - point).normalized;
+                else if (i > 0)
+                    tangent = (point - path[i - 1]).normalized;
+                else
+                    continue;
+
+                var right = Vector3.Cross(Vector3.up, tangent).normalized;
+
+                // Place multiple rows of buildings on both sides
+                float avgBuildingWidth = (BuildingWidthMin + BuildingWidthMax) * 0.5f;
+                for (int row = 0; row < BuildingRows; row++)
+                {
+                    bool needsCollider = (row == 0);
+                    float rowOffset = CorridorWidth / 2 + BuildingSetback + row * (avgBuildingWidth + BuildingSetback);
+
+                    var leftPos = point - right * rowOffset;
+                    if (!IsPositionTooCloseToOtherCorridors(leftPos, allPaths, currentPathIndex))
+                    {
+                        PlaceBuilding(leftPos, tangent, needsCollider);
+                    }
+
+                    var rightPos = point + right * rowOffset;
+                    if (!IsPositionTooCloseToOtherCorridors(rightPos, allPaths, currentPathIndex))
+                    {
+                        PlaceBuilding(rightPos, tangent, needsCollider);
+                    }
+                }
+            }
+        }
+
+        private void GenerateCorridorRampsForHalf(List<Vector3> path, int startIndex, int endIndex)
+        {
+            if (path.Count < 2)
+                return;
+
+            var convergencePos = ConvergencePoint.position;
+
+            // Calculate path length for this half
+            float halfLength = 0f;
+            for (int i = startIndex + 1; i < endIndex && i < path.Count; i++)
+            {
+                halfLength += Vector3.Distance(path[i], path[i - 1]);
+            }
+
+            // Distribute ramps in this half
+            int rampsPerHalf = Mathf.Max(1, RampCount / 6); // Half of 1/3 corridors = 1/6
+            float rampSpacing = halfLength / (rampsPerHalf + 1);
+
+            float accumulatedDistance = rampSpacing;
+            int pathIndex = startIndex;
+            float segmentProgress = 0f;
+
+            for (int rampNum = 0; rampNum < rampsPerHalf && pathIndex < endIndex - 1 && pathIndex < path.Count - 1; rampNum++)
+            {
+                while (pathIndex < endIndex - 1 && pathIndex < path.Count - 1)
+                {
+                    float segmentLength = Vector3.Distance(path[pathIndex], path[pathIndex + 1]);
+                    float remaining = segmentLength - segmentProgress;
+
+                    if (accumulatedDistance <= remaining)
+                    {
+                        float t = (segmentProgress + accumulatedDistance) / segmentLength;
+                        var rampPos = Vector3.Lerp(path[pathIndex], path[pathIndex + 1], t);
+
+                        if (Vector3.Distance(rampPos, convergencePos) < ConvergenceRadius)
+                        {
+                            accumulatedDistance = rampSpacing;
+                            segmentProgress += accumulatedDistance;
+                            continue;
+                        }
+
+                        var tangent = (path[pathIndex + 1] - path[pathIndex]).normalized;
+
+                        if (TryPlaceRamp(rampPos, tangent))
+                        {
+                            accumulatedDistance = rampSpacing;
+                            segmentProgress += accumulatedDistance;
+                        }
+                        else
+                        {
+                            accumulatedDistance = rampSpacing * 0.5f;
+                            segmentProgress += accumulatedDistance;
+                        }
+                        break;
+                    }
+                    else
+                    {
+                        accumulatedDistance -= remaining;
+                        segmentProgress = 0f;
+                        pathIndex++;
+                    }
+                }
+            }
+        }
+
+        private void GenerateCorridorBillboardsForHalf(List<Vector3> path, int startIndex, int endIndex)
+        {
+            if (path.Count < 2)
+                return;
+
+            var convergencePos = ConvergencePoint.position;
+
+            // Calculate path length for this half
+            float halfLength = 0f;
+            for (int i = startIndex + 1; i < endIndex && i < path.Count; i++)
+            {
+                halfLength += Vector3.Distance(path[i], path[i - 1]);
+            }
+
+            // Distribute billboards in this half
+            int billboardsPerHalf = Mathf.Max(1, BillboardCount / 6);
+            float billboardSpacing = halfLength / (billboardsPerHalf + 1);
+
+            float accumulatedDistance = billboardSpacing;
+            int pathIndex = startIndex;
+            float segmentProgress = 0f;
+            int billboardNum = 0;
+
+            for (int num = 0; num < billboardsPerHalf && pathIndex < endIndex - 1 && pathIndex < path.Count - 1; num++)
+            {
+                while (pathIndex < endIndex - 1 && pathIndex < path.Count - 1)
+                {
+                    float segmentLength = Vector3.Distance(path[pathIndex], path[pathIndex + 1]);
+                    float remaining = segmentLength - segmentProgress;
+
+                    if (accumulatedDistance <= remaining)
+                    {
+                        float t = (segmentProgress + accumulatedDistance) / segmentLength;
+                        var billboardPos = Vector3.Lerp(path[pathIndex], path[pathIndex + 1], t);
+
+                        if (Vector3.Distance(billboardPos, convergencePos) < ConvergenceRadius)
+                        {
+                            accumulatedDistance = billboardSpacing;
+                            segmentProgress += accumulatedDistance;
+                            continue;
+                        }
+
+                        var tangent = (path[pathIndex + 1] - path[pathIndex]).normalized;
+                        bool placeOnLeft = billboardNum % 2 == 0;
+
+                        if (TryPlaceBillboard(billboardPos, tangent, placeOnLeft))
+                        {
+                            accumulatedDistance = billboardSpacing;
+                            segmentProgress += accumulatedDistance;
+                            billboardNum++;
+                        }
+                        else
+                        {
+                            accumulatedDistance = billboardSpacing * 0.5f;
+                            segmentProgress += accumulatedDistance;
+                        }
+                        break;
+                    }
+                    else
+                    {
+                        accumulatedDistance -= remaining;
+                        segmentProgress = 0f;
+                        pathIndex++;
                     }
                 }
             }
@@ -959,8 +1288,10 @@ namespace HolyRail.City
             // If on right side, normal points left (-right)
             var normal = placeOnLeft ? right : -right;
 
-            // Position: on the inner surface of buildings (building edge is at CorridorWidth/2 + BuildingSetback)
-            float sideOffset = CorridorWidth / 2 + BuildingSetback;
+            // Position: on the corridor-facing surface of buildings, offset inward
+            float avgBuildingWidth = (BuildingWidthMin + BuildingWidthMax) * 0.5f;
+            float inwardOffset = 2f; // Push billboards toward corridor center
+            float sideOffset = CorridorWidth / 2 + BuildingSetback - avgBuildingWidth / 2 - inwardOffset;
             var position = pathPosition + (placeOnLeft ? -right : right) * sideOffset;
 
             // Randomize Y offset within range
@@ -1262,6 +1593,9 @@ namespace HolyRail.City
             _corridorPathB.Clear();
             _corridorPathC.Clear();
 
+            // Reset loop state
+            _loopState = new LoopModeState();
+
             // Find and clear any BuildingColliderPools that reference this CityManager
             var colliderPools = FindObjectsByType<BuildingColliderPool>(FindObjectsSortMode.None);
             foreach (var pool in colliderPools)
@@ -1271,6 +1605,137 @@ namespace HolyRail.City
                     pool.Clear();
                 }
             }
+        }
+
+        /// <summary>
+        /// Applies a position offset to all geometry in the specified loop half.
+        /// Used during leapfrog operations to move the back half forward.
+        /// </summary>
+        public void ApplyOffsetToHalf(LoopHalfData half, Vector3 offset)
+        {
+            if (!_loopState.IsActive || half == null)
+                return;
+
+            // Update buildings
+            for (int i = half.BuildingStartIndex; i < half.BuildingStartIndex + half.BuildingCount && i < _generatedBuildings.Count; i++)
+            {
+                var building = _generatedBuildings[i];
+                building.Position += offset;
+                _generatedBuildings[i] = building;
+            }
+
+            // Update ramps
+            for (int i = half.RampStartIndex; i < half.RampStartIndex + half.RampCount && i < _generatedRamps.Count; i++)
+            {
+                var ramp = _generatedRamps[i];
+                ramp.Position += offset;
+                _generatedRamps[i] = ramp;
+            }
+
+            // Update billboards
+            for (int i = half.BillboardStartIndex; i < half.BillboardStartIndex + half.BillboardCount && i < _generatedBillboards.Count; i++)
+            {
+                var billboard = _generatedBillboards[i];
+                billboard.Position += offset;
+                _generatedBillboards[i] = billboard;
+            }
+
+            // Update path points for this half
+            for (int i = 0; i < half.PathPoints.Count; i++)
+            {
+                half.PathPoints[i] += offset;
+            }
+
+            // Track the cumulative offset
+            half.CurrentOffset += offset;
+
+            Debug.Log($"CityManager: Applied offset {offset} to half {half.HalfId}");
+        }
+
+        /// <summary>
+        /// Re-uploads all geometry data to GPU buffers after positions have changed.
+        /// </summary>
+        public void RefreshGPUBuffers()
+        {
+            if (_buildingBuffer != null && _generatedBuildings.Count > 0)
+            {
+                _buildingBuffer.SetData(_generatedBuildings.ToArray());
+            }
+
+            if (_rampBuffer != null && _generatedRamps.Count > 0)
+            {
+                _rampBuffer.SetData(_generatedRamps.ToArray());
+            }
+
+            if (_billboardBuffer != null && _generatedBillboards.Count > 0)
+            {
+                _billboardBuffer.SetData(_generatedBillboards.ToArray());
+            }
+        }
+
+        /// <summary>
+        /// Notifies all BuildingColliderPools to resync their spatial grids after a leapfrog.
+        /// </summary>
+        public void ResyncColliderPool()
+        {
+            var colliderPools = FindObjectsByType<BuildingColliderPool>(FindObjectsSortMode.None);
+            foreach (var pool in colliderPools)
+            {
+                if (pool.CityManager == this)
+                {
+                    pool.ResyncAfterLeapfrog();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Performs a leapfrog operation, moving the back half to the front.
+        /// Called by LoopModeController when player reaches the trigger threshold.
+        /// </summary>
+        public void TriggerLeapfrog()
+        {
+            if (!_loopState.IsActive)
+                return;
+
+            // Get back half (the one that's not currently front)
+            var backHalf = _loopState.FrontHalfId == 0 ? _loopState.HalfB : _loopState.HalfA;
+
+            // Calculate offset: move back half forward by two half-lengths (to become the new front)
+            Vector3 offset = _loopState.ForwardDirection * _loopState.HalfLength * 2f;
+
+            // Apply offset to geometry
+            ApplyOffsetToHalf(backHalf, offset);
+
+            // Refresh GPU buffers
+            RefreshGPUBuffers();
+
+            // Swap front/back identities
+            _loopState.FrontHalfId = (_loopState.FrontHalfId + 1) % 2;
+
+            // Resync collider pool
+            ResyncColliderPool();
+
+            Debug.Log($"CityManager: Leapfrog complete. New front half is {_loopState.FrontHalfId}");
+        }
+
+        /// <summary>
+        /// Gets the front half data for loop mode.
+        /// </summary>
+        public LoopHalfData GetFrontHalf()
+        {
+            if (!_loopState.IsActive)
+                return null;
+            return _loopState.FrontHalfId == 0 ? _loopState.HalfA : _loopState.HalfB;
+        }
+
+        /// <summary>
+        /// Gets the back half data for loop mode.
+        /// </summary>
+        public LoopHalfData GetBackHalf()
+        {
+            if (!_loopState.IsActive)
+                return null;
+            return _loopState.FrontHalfId == 0 ? _loopState.HalfB : _loopState.HalfA;
         }
 
         private void OnDisable()

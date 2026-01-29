@@ -88,22 +88,57 @@ namespace HolyRail.Scripts.Enemies
 
         protected abstract void UpdateMovement();
 
-        protected Vector3 GetCollisionSafePosition(Vector3 currentPos, Vector3 targetPos)
+        protected Vector3 GetPositionWithCollisionPathing(Vector3 currentPos, Vector3 targetPos)
         {
             Vector3 direction = targetPos - currentPos;
             float distance = direction.magnitude;
 
             if (distance < 0.01f) return targetPos;
 
-            // Raycast to check for obstacles (ignore triggers)
-            if (Physics.SphereCast(currentPos, BotCollisionRadius, direction.normalized, out RaycastHit hit, distance, ~0, QueryTriggerInteraction.Ignore))
+            // Check if direct path is clear
+            if (!Physics.SphereCast(currentPos, BotCollisionRadius, direction.normalized,
+                out RaycastHit hit, distance, ~0, QueryTriggerInteraction.Ignore))
             {
-                // Stop short of the obstacle with a small buffer
-                float safeDistance = Mathf.Max(0f, hit.distance - 0.1f);
-                return currentPos + direction.normalized * safeDistance;
+                return targetPos; // Clear path
             }
 
-            return targetPos;
+            // Obstacle detected - try to slide around it
+            Vector3 toTarget = direction.normalized;
+            Vector3 slideRight = Vector3.Cross(Vector3.up, toTarget).normalized;
+
+            // Choose slide direction based on which side target is on
+            float rightDot = Vector3.Dot(targetPos - hit.point, slideRight);
+            Vector3 slideDir = rightDot > 0 ? slideRight : -slideRight;
+
+            // Try sliding around obstacle
+            float slideDistance = BotCollisionRadius * 2f;
+            Vector3 slideTarget = hit.point + slideDir * slideDistance + Vector3.up * 0.5f;
+
+            if (!Physics.SphereCast(currentPos, BotCollisionRadius * 0.8f,
+                (slideTarget - currentPos).normalized, out _,
+                Vector3.Distance(currentPos, slideTarget), ~0, QueryTriggerInteraction.Ignore))
+            {
+                return Vector3.MoveTowards(currentPos, slideTarget, BotMaxSpeed * Time.deltaTime);
+            }
+
+            // Try opposite side
+            slideTarget = hit.point - slideDir * slideDistance + Vector3.up * 0.5f;
+            if (!Physics.SphereCast(currentPos, BotCollisionRadius * 0.8f,
+                (slideTarget - currentPos).normalized, out _,
+                Vector3.Distance(currentPos, slideTarget), ~0, QueryTriggerInteraction.Ignore))
+            {
+                return Vector3.MoveTowards(currentPos, slideTarget, BotMaxSpeed * Time.deltaTime);
+            }
+
+            // Try going up
+            if (!Physics.SphereCast(currentPos, BotCollisionRadius, Vector3.up, out _,
+                slideDistance, ~0, QueryTriggerInteraction.Ignore))
+            {
+                return currentPos + Vector3.up * BotMaxSpeed * Time.deltaTime;
+            }
+
+            // Fully blocked - stay put
+            return currentPos;
         }
 
         protected virtual void OnValidate()

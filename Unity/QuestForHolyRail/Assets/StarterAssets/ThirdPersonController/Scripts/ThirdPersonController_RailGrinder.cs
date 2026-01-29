@@ -163,6 +163,7 @@ namespace StarterAssets
         private Vector3 _wallRideRight;        // Right direction along wall
         private Vector3 _currentBillboardCenter;
         private Vector3 _currentBillboardScale;
+        private float _wallPlaneDistance;        // Distance from origin to wall surface plane
         private float _wallRideExitCooldownTimer;
         private float _wallRideRotationVelocity;
 
@@ -957,11 +958,12 @@ namespace StarterAssets
             }
 
             // Start wall ride
-            StartWallRide(closestNormal, closestCenter, closestScale, projectedVelocity.normalized);
+            var surfacePoint = closestCollider.ClosestPoint(transform.position);
+            StartWallRide(closestNormal, closestCenter, closestScale, projectedVelocity.normalized, surfacePoint);
             return true;
         }
 
-        private void StartWallRide(Vector3 wallNormal, Vector3 billboardCenter, Vector3 billboardScale, Vector3 travelDirection)
+        private void StartWallRide(Vector3 wallNormal, Vector3 billboardCenter, Vector3 billboardScale, Vector3 travelDirection, Vector3 surfacePoint)
         {
             _isWallRiding = true;
             _wallRideNormal = wallNormal;
@@ -969,6 +971,9 @@ namespace StarterAssets
             _currentBillboardScale = billboardScale;
             _wallRideVelocity = travelDirection;
             _wallRideRight = Vector3.Cross(Vector3.up, wallNormal).normalized;
+
+            // Store the wall plane distance (XZ only) for accurate surface snapping
+            _wallPlaneDistance = surfacePoint.x * wallNormal.x + surfacePoint.z * wallNormal.z;
 
             // Apply speed boost
             _wallRideSpeedCurrent = WallRideSpeed + WallRideSpeedBoost;
@@ -1006,13 +1011,10 @@ namespace StarterAssets
             // Move along wall
             currentPos += _wallRideVelocity * _wallRideSpeedCurrent * Time.deltaTime;
 
-            // Keep player snapped to wall surface (offset by character radius)
-            // Push player slightly off the wall so they don't clip through
+            // Snap player to fixed distance from wall surface plane
             float snapDistance = 0.5f;
-            var toCenter = _currentBillboardCenter - currentPos;
-            toCenter.y = 0;
-            float distFromWall = Vector3.Dot(toCenter, _wallRideNormal);
-            currentPos += _wallRideNormal * (distFromWall + snapDistance);
+            float currentDistToPlane = currentPos.x * _wallRideNormal.x + currentPos.z * _wallRideNormal.z - _wallPlaneDistance;
+            currentPos += _wallRideNormal * (snapDistance - currentDistToPlane);
 
             // Edge detection - check if still on billboard
             float localX = Vector3.Dot(currentPos - _currentBillboardCenter, _wallRideRight);

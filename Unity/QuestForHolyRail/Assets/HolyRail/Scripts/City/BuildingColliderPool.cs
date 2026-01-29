@@ -248,6 +248,49 @@ namespace HolyRail.City
             ActivateCollidersForBuildings(_queryResults);
         }
 
+        /// <summary>
+        /// Reinitializes spatial grids after a loop mode leapfrog operation.
+        /// Called by CityManager when geometry positions have changed.
+        /// </summary>
+        public void ResyncAfterLeapfrog()
+        {
+            // Reinitialize building spatial grid if we have data
+            if (_initialized && CityManager != null && CityManager.HasData)
+            {
+                _spatialGrid = new BuildingSpatialGrid(DefaultCellSize, CityManager.transform.position);
+                _spatialGrid.Initialize(CityManager.Buildings);
+            }
+
+            // Reinitialize ramp spatial grid if we have data
+            if (_rampInitialized && CityManager != null && CityManager.HasRampData)
+            {
+                _rampSpatialGrid = new RampSpatialGrid(DefaultCellSize, CityManager.transform.position);
+                _rampSpatialGrid.Initialize(CityManager.Ramps);
+            }
+
+            // Reinitialize billboard spatial grid if we have data
+            if (_billboardInitialized && CityManager != null && CityManager.HasBillboardData)
+            {
+                _billboardSpatialGrid = new BillboardSpatialGrid(DefaultCellSize, CityManager.transform.position);
+                _billboardSpatialGrid.Initialize(CityManager.Billboards);
+            }
+
+            // Force update active colliders if we have a tracking target
+            if (TrackingTarget != null)
+            {
+                var currentPosition = TrackingTarget.position;
+                if (_initialized)
+                    UpdateActiveColliders(currentPosition);
+                if (_rampInitialized)
+                    UpdateActiveRampColliders(currentPosition);
+                if (_billboardInitialized)
+                    UpdateActiveBillboardColliders(currentPosition);
+                _lastUpdatePosition = currentPosition;
+            }
+
+            Debug.Log("BuildingColliderPool: Resynced spatial grids after leapfrog");
+        }
+
         public void Clear()
         {
             // Destroy all building colliders

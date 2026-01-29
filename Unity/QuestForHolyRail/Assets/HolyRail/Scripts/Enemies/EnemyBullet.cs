@@ -12,6 +12,9 @@ namespace HolyRail.Scripts.Enemies
         [Tooltip("Color of the bullet after successful parry (emission color)")]
         public Color DeflectedColor = new Color(0f, 1f, 1f); // Cyan/teal default
 
+        [Tooltip("Color of the bullet when in parry range (flashing)")]
+        public Color ParryFlashColor = new Color(1f, 0.5f, 0f); // Orange default
+
         [Tooltip("Emission intensity multiplier for deflected bullet")]
         public float DeflectedIntensity = 5f;
 
@@ -52,7 +55,15 @@ namespace HolyRail.Scripts.Enemies
             _sourceBot = sourceBot;
             _isDeflected = false;
             _inParryThreshold = false;
-            SetBrightness(1f);
+
+            // Reset to original emission color (not ParryFlashColor)
+            // This ensures bullets spawn with their normal color, making the
+            // orange parry flash visible when entering parry range
+            if (_renderer != null && _propertyBlock != null)
+            {
+                _propertyBlock.SetColor(EmissionColorID, _originalEmissionColor);
+                _renderer.SetPropertyBlock(_propertyBlock);
+            }
         }
 
         public void OnRecycle()
@@ -104,7 +115,7 @@ namespace HolyRail.Scripts.Enemies
         public void SetBrightness(float multiplier)
         {
             if (_renderer == null || _propertyBlock == null) return;
-            _propertyBlock.SetColor(EmissionColorID, _originalEmissionColor * multiplier);
+            _propertyBlock.SetColor(EmissionColorID, ParryFlashColor * multiplier);
             _renderer.SetPropertyBlock(_propertyBlock);
         }
 
@@ -116,7 +127,12 @@ namespace HolyRail.Scripts.Enemies
             // Brightness is now handled in Update via sine wave when in threshold
             if (!_isDeflected && !inThreshold)
             {
-                SetBrightness(1f);
+                // Reset to original emission color
+                if (_renderer != null && _propertyBlock != null)
+                {
+                    _propertyBlock.SetColor(EmissionColorID, _originalEmissionColor);
+                    _renderer.SetPropertyBlock(_propertyBlock);
+                }
             }
         }
 

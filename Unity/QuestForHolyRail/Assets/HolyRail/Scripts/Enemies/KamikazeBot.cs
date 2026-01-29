@@ -31,9 +31,9 @@ namespace HolyRail.Scripts.Enemies
             Vector3 targetPosition = Spawner.Player.position;
             Vector3 direction = (targetPosition - transform.position).normalized;
 
-            // Move toward player at max speed with collision check
+            // Move toward player at max speed with collision pathing
             Vector3 desiredPosition = transform.position + direction * BotMaxSpeed * Time.deltaTime;
-            transform.position = GetCollisionSafePosition(transform.position, desiredPosition);
+            transform.position = GetPositionWithCollisionPathing(transform.position, desiredPosition);
 
             // Face the player
             if (direction.sqrMagnitude > 0.001f)

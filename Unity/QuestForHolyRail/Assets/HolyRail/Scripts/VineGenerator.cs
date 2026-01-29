@@ -198,6 +198,15 @@ namespace HolyRail.Vines
         [SerializeField, HideInInspector]
         private List<BranchConnection> _branchConnections = new List<BranchConnection>();
 
+        // Loop mode vine tracking
+        [SerializeField, HideInInspector]
+        private List<SplineContainer> _halfASplines = new List<SplineContainer>();
+        [SerializeField, HideInInspector]
+        private List<SplineContainer> _halfBSplines = new List<SplineContainer>();
+
+        public IReadOnlyList<SplineContainer> HalfASplines => _halfASplines;
+        public IReadOnlyList<SplineContainer> HalfBSplines => _halfBSplines;
+
         // Compute buffers
         private ComputeBuffer _nodeBuffer;
         private ComputeBuffer _attractorBuffer;
@@ -1532,6 +1541,12 @@ namespace HolyRail.Vines
             // Spawn pickups on generated splines
             SpawnPickUpsOnSplines();
 
+            // In Path mode with loop mode enabled, assign vines to halves
+            if (AttractorGenerationMode == AttractorMode.Path && CityManager != null && CityManager.IsLoopMode)
+            {
+                AssignVinesToHalves(CityManager.LoopState);
+            }
+
             return _generatedSplines;
         }
 
@@ -1675,6 +1690,109 @@ namespace HolyRail.Vines
                 }
             }
             _generatedSplines.Clear();
+            _halfASplines.Clear();
+            _halfBSplines.Clear();
+        }
+
+        /// <summary>
+        /// Assigns generated splines to loop mode halves based on their MIDPOINT position.
+        /// Using midpoint instead of start position ensures vines that span the junction
+        /// are assigned to the half where most of their length resides.
+        /// Should be called after ConvertToSplines() when CityManager is in loop mode.
+        /// </summary>
+        public void AssignVinesToHalves(City.LoopModeState loopState)
+        {
+            if (loopState == null || !loopState.IsActive)
+                return;
+
+            _halfASplines.Clear();
+            _halfBSplines.Clear();
+
+            foreach (var splineContainer in _generatedSplines)
+            {
+                if (splineContainer == null || splineContainer.Spline == null || splineContainer.Spline.Count == 0)
+                    continue;
+
+                // Use midpoint of spline instead of start position
+                // This ensures vines spanning the junction are assigned to the correct half
+                Vector3 midPos = GetSplineMidpoint(splineContainer);
+
+                // Determine which half this spline belongs to based on midpoint
+                float distToHalfA = GetDistanceToPathPoints(midPos, loopState.HalfA.PathPoints);
+                float distToHalfB = GetDistanceToPathPoints(midPos, loopState.HalfB.PathPoints);
+
+                if (distToHalfA <= distToHalfB)
+                {
+                    _halfASplines.Add(splineContainer);
+                }
+                else
+                {
+                    _halfBSplines.Add(splineContainer);
+                }
+            }
+
+            Debug.Log($"VineGenerator: Assigned {_halfASplines.Count} vines to HalfA, {_halfBSplines.Count} vines to HalfB");
+        }
+
+        /// <summary>
+        /// Gets the world-space midpoint of a spline by evaluating at t=0.5.
+        /// </summary>
+        private Vector3 GetSplineMidpoint(SplineContainer container)
+        {
+            if (container?.Spline == null || container.Spline.Count == 0)
+                return Vector3.zero;
+
+            // Evaluate at t=0.5 to get midpoint
+            container.Spline.Evaluate(0.5f, out float3 pos, out _, out _);
+            return container.transform.TransformPoint(pos);
+        }
+
+        private float GetDistanceToPathPoints(Vector3 position, List<Vector3> pathPoints)
+        {
+            if (pathPoints == null || pathPoints.Count == 0)
+                return float.MaxValue;
+
+            float minDist = float.MaxValue;
+            foreach (var point in pathPoints)
+            {
+                float dist = Vector3.Distance(position, point);
+                minDist = Mathf.Min(minDist, dist);
+            }
+            return minDist;
+        }
+
+        /// <summary>
+        /// Moves all splines belonging to the specified half by the given offset.
+        /// Used during loop mode leapfrog operations.
+        /// </summary>
+        public void MoveVineHalf(int halfId, Vector3 offset)
+        {
+            var splinesToMove = halfId == 0 ? _halfASplines : _halfBSplines;
+
+            if (splinesToMove == null || splinesToMove.Count == 0)
+            {
+                Debug.LogWarning($"VineGenerator: No splines to move for half {halfId}");
+                return;
+            }
+
+            int movedCount = 0;
+            foreach (var splineContainer in splinesToMove)
+            {
+                if (splineContainer != null)
+                {
+                    splineContainer.transform.position += offset;
+                    movedCount++;
+
+                    // If the spline has a SplineExtrude component, rebuild the mesh
+                    var splineExtrude = splineContainer.GetComponent<SplineExtrude>();
+                    if (splineExtrude != null)
+                    {
+                        splineExtrude.Rebuild();
+                    }
+                }
+            }
+
+            Debug.Log($"VineGenerator: Moved {movedCount} vines for half {halfId} by {offset}");
         }
 
         private void OnDisable()
