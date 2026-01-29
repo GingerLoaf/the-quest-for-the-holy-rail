@@ -433,6 +433,27 @@ namespace StarterAssets
                     }
                 }
             }
+
+            // Handle spray input - enable/disable emission based on trigger
+            UpdateSprayEffect();
+        }
+
+        private void UpdateSprayEffect()
+        {
+            if (_sprayEffect == null)
+            {
+                return;
+            }
+
+            bool wantSpray = sprayInput.IsPressed();
+            var emission = _sprayEffect.emission;
+            emission.enabled = wantSpray;
+
+            // Aim at graffiti target if we have one and are spraying
+            if (wantSpray && _sprayPivot != null && _sprayTargetPosition != Vector3.zero)
+            {
+                _sprayPivot.LookAt(_sprayTargetPosition);
+            }
         }
 
         private void LateUpdate()
@@ -1400,19 +1421,6 @@ namespace StarterAssets
         {
             _sprayTargetPosition = targetPosition;
             _isSpraying = isSpraying;
-
-            if (_sprayEffect == null)
-            {
-                return;
-            }
-
-            var emission = _sprayEffect.emission;
-            emission.enabled = isSpraying;
-
-            if (isSpraying && _sprayPivot != null && targetPosition != Vector3.zero)
-            {
-                _sprayPivot.LookAt(targetPosition);
-            }
         }
 
         public GraffitiSpot ActiveGraffiti => _activeGraffiti;

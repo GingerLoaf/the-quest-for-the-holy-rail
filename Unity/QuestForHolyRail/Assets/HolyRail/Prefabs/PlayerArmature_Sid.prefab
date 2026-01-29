@@ -734,7 +734,7 @@ ParentConstraint:
   m_TranslationAtRest: {x: 0.058437724, y: 1.3911655, z: 0.06412231}
   m_RotationAtRest: {x: -59.999973, y: 0, z: 0}
   m_TranslationOffsets:
-  - {x: -0.033126235, y: 0.16264594, z: -0.04345338}
+  - {x: -0.033126235, y: 0.1626463, z: -0.04345338}
   m_RotationOffsets:
   - {x: -30.000025, y: -90.00001, z: 180}
   m_AffectTranslationX: 1
@@ -1832,7 +1832,7 @@ ParentConstraint:
   m_TranslationAtRest: {x: 0.014984306, y: 1.5283208, z: -0.11457419}
   m_RotationAtRest: {x: 0, y: 0, z: 0}
   m_TranslationOffsets:
-  - {x: -0.17028153, y: -0.016050577, z: 0}
+  - {x: -0.17028153, y: -0.016050339, z: 0}
   m_RotationOffsets:
   - {x: -90, y: 0, z: 90}
   m_AffectTranslationX: 1
@@ -1874,7 +1874,7 @@ Transform:
   m_GameObject: {fileID: 2974916950295498100}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0.115436986, y: 0.0018955097, z: -0.05986178}
+  m_LocalPosition: {x: 0.115436986, y: 0.0018955097, z: -0.059862137}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -7313,6 +7313,7 @@ Transform:
   - {fileID: 7510927264651212834}
   - {fileID: 2743661097421977021}
   - {fileID: 3894520342274182523}
+  - {fileID: 3162117168692944624}
   m_Father: {fileID: 3893294197879345259}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &3877542988220062782
@@ -7680,7 +7681,7 @@ ParentConstraint:
   m_TranslationAtRest: {x: -0.1358532, y: -0.051877536, z: -0.014011278}
   m_RotationAtRest: {x: 0, y: 0, z: 0}
   m_TranslationOffsets:
-  - {x: 0.16603482, y: -0.094583035, z: -0.0031949878}
+  - {x: 0.16603482, y: -0.09458351, z: -0.0031950474}
   m_RotationOffsets:
   - {x: 84.28317, y: -18.647892, z: 71.30663}
   m_AffectTranslationX: 1
@@ -8197,34 +8198,34 @@ MonoBehaviour:
   lookBackInput:
     m_Name: Look Back Input
     m_Type: 0
-    m_ExpectedControlType:
+    m_ExpectedControlType: 
     m_Id: 8175c6b3-4d72-402e-84c0-3c179d155e8d
-    m_Processors:
-    m_Interactions:
+    m_Processors: 
+    m_Interactions: 
     m_SingletonActionBindings: []
     m_Flags: 0
   sprayInput:
     m_Name: Spray Input
     m_Type: 0
-    m_ExpectedControlType:
+    m_ExpectedControlType: 
     m_Id: a1b2c3d4-e5f6-7890-abcd-ef0123456789
-    m_Processors:
-    m_Interactions:
+    m_Processors: 
+    m_Interactions: 
     m_SingletonActionBindings:
-    - m_Name:
+    - m_Name: 
       m_Id: b2c3d4e5-f678-9012-3456-7890abcdef01
       m_Path: <Keyboard>/rightShift
-      m_Interactions:
-      m_Processors:
-      m_Groups:
+      m_Interactions: 
+      m_Processors: 
+      m_Groups: 
       m_Action: Spray Input
       m_Flags: 0
-    - m_Name:
+    - m_Name: 
       m_Id: c3d4e5f6-7890-1234-5678-90abcdef0123
       m_Path: <Gamepad>/rightTrigger
-      m_Interactions:
-      m_Processors:
-      m_Groups:
+      m_Interactions: 
+      m_Processors: 
+      m_Groups: 
       m_Action: Spray Input
       m_Flags: 0
     m_Flags: 0
@@ -8282,6 +8283,9 @@ MonoBehaviour:
   GrindParticleSystems:
   - {fileID: 9032881063844861035}
   - {fileID: 3707445503425955965}
+  _parryTrailRenderers: []
+  _sprayEffect: {fileID: 1698221304421403764}
+  _sprayPivot: {fileID: 1450208822409777961}
   GrindGlowLight: {fileID: 7882657439995842704}
   VirtualCamera: {fileID: 0}
   GrindFOVBoost: 15
@@ -9081,7 +9085,7 @@ ParentConstraint:
   m_TranslationAtRest: {x: 0.1358532, y: -0.051877536, z: -0.014011278}
   m_RotationAtRest: {x: 0, y: 0, z: 0}
   m_TranslationOffsets:
-  - {x: -0.16542049, y: 0.09344113, z: 0.0031529665}
+  - {x: -0.16542049, y: 0.093440056, z: 0.0031529665}
   m_RotationOffsets:
   - {x: -84.463455, y: 164.73972, z: 105.31637}
   m_AffectTranslationX: 1
@@ -9549,7 +9553,7 @@ ParentConstraint:
   m_TranslationAtRest: {x: 0.014984329, y: 1.6472924, z: -0.079719625}
   m_RotationAtRest: {x: 0, y: 0, z: 0}
   m_TranslationOffsets:
-  - {x: -0.28925312, y: 0.018803954, z: 0}
+  - {x: -0.28925312, y: 0.01880455, z: 0}
   m_RotationOffsets:
   - {x: -90, y: 0, z: 90}
   m_AffectTranslationX: 1
@@ -11272,7 +11276,7 @@ ParentConstraint:
   m_TranslationAtRest: {x: -0.028469069, y: 1.3915732, z: 0.06412231}
   m_RotationAtRest: {x: -59.999973, y: 0, z: 0}
   m_TranslationOffsets:
-  - {x: -0.03353393, y: 0.16264594, z: 0.043453403}
+  - {x: -0.03353393, y: 0.1626463, z: 0.043453407}
   m_RotationOffsets:
   - {x: -30.000025, y: -90.00001, z: 180}
   m_AffectTranslationX: 1
@@ -11504,7 +11508,7 @@ Transform:
   m_GameObject: {fileID: 8781131319345794831}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: -0.11543726, y: 0.0018955693, z: -0.05986178}
+  m_LocalPosition: {x: -0.11543726, y: 0.0018955693, z: -0.059862137}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -16794,4 +16798,71 @@ PrefabInstance:
 Transform:
   m_CorrespondingSourceObject: {fileID: 7990267799329858183, guid: 4d2551f54df474b64bda56af415660e1, type: 3}
   m_PrefabInstance: {fileID: 2549037418084199966}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1001 &8152943397057588768
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 8002264680419333305}
+    m_Modifications:
+    - target: {fileID: 3892703545426186495, guid: 7e8bd04e538b84c9e84a66096b4fde37, type: 3}
+      propertyPath: m_Name
+      value: GraffitiSpray
+      objectReference: {fileID: 0}
+    - target: {fileID: 6541208105552752848, guid: 7e8bd04e538b84c9e84a66096b4fde37, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -1.89377
+      objectReference: {fileID: 0}
+    - target: {fileID: 6541208105552752848, guid: 7e8bd04e538b84c9e84a66096b4fde37, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: -0.03
+      objectReference: {fileID: 0}
+    - target: {fileID: 6541208105552752848, guid: 7e8bd04e538b84c9e84a66096b4fde37, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 2.5331898
+      objectReference: {fileID: 0}
+    - target: {fileID: 6541208105552752848, guid: 7e8bd04e538b84c9e84a66096b4fde37, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6541208105552752848, guid: 7e8bd04e538b84c9e84a66096b4fde37, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6541208105552752848, guid: 7e8bd04e538b84c9e84a66096b4fde37, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6541208105552752848, guid: 7e8bd04e538b84c9e84a66096b4fde37, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6541208105552752848, guid: 7e8bd04e538b84c9e84a66096b4fde37, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6541208105552752848, guid: 7e8bd04e538b84c9e84a66096b4fde37, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6541208105552752848, guid: 7e8bd04e538b84c9e84a66096b4fde37, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 7e8bd04e538b84c9e84a66096b4fde37, type: 3}
+--- !u!198 &1698221304421403764 stripped
+ParticleSystem:
+  m_CorrespondingSourceObject: {fileID: 7400638587105059412, guid: 7e8bd04e538b84c9e84a66096b4fde37, type: 3}
+  m_PrefabInstance: {fileID: 8152943397057588768}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &3162117168692944624 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 6541208105552752848, guid: 7e8bd04e538b84c9e84a66096b4fde37, type: 3}
+  m_PrefabInstance: {fileID: 8152943397057588768}
   m_PrefabAsset: {fileID: 0}
