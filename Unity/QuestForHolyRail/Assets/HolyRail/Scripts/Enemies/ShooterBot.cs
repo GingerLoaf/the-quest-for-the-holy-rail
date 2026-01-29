@@ -65,6 +65,14 @@ namespace HolyRail.Scripts.Enemies
         [field: SerializeField]
         public LayerMask WallLayerMask { get; private set; } = ~0; // Default to all layers
 
+        [Header("Lead Targeting")]
+        [field: Tooltip("How much to lead the target (0 = aim at current position, 1 = full prediction)")]
+        [field: SerializeField]
+        [field: Range(0f, 1.5f)]
+        public float LeadFactor { get; private set; } = 0.8f;
+
+        private Vector3 _lastPlayerPos;
+        private Vector3 _playerVelocity;
         private Renderer _renderer;
         private MaterialPropertyBlock _propertyBlock;
         private static readonly int EmissionColorID = Shader.PropertyToID("_EmissionColor");
@@ -99,6 +107,13 @@ namespace HolyRail.Scripts.Enemies
                 Random.Range(OffsetRangeY.x, OffsetRangeY.y),
                 Random.Range(OffsetRangeZ.x, OffsetRangeZ.y)
             );
+
+            // Initialize player position tracking for velocity-based lead targeting
+            if (Spawner && Spawner.Player)
+            {
+                _lastPlayerPos = Spawner.Player.position;
+                _playerVelocity = Vector3.zero;
+            }
         }
 
         protected override void UpdateMovement()
@@ -148,6 +163,23 @@ namespace HolyRail.Scripts.Enemies
             return to;
         }
 
+        private Vector3 CalculateLeadPosition(Vector3 playerPos, float distanceToPlayer)
+        {
+            if (LeadFactor <= 0f || _playerVelocity.sqrMagnitude < 0.1f)
+            {
+                return playerPos;
+            }
+
+            // Calculate time for bullet to reach player (approximate)
+            float bulletSpeed = Spawner.BulletSpeed;
+            float timeToTarget = distanceToPlayer / bulletSpeed;
+
+            // Predict where player will be, scaled by lead factor
+            Vector3 leadOffset = _playerVelocity * timeToTarget * LeadFactor;
+
+            return playerPos + leadOffset;
+        }
+
         public override void OnRecycle()
         {
             base.OnRecycle();
@@ -170,8 +202,22 @@ namespace HolyRail.Scripts.Enemies
         protected override void Update()
         {
             base.Update();
+            UpdatePlayerVelocity();
             UpdateFlash();
             UpdateFiring();
+        }
+
+        private void UpdatePlayerVelocity()
+        {
+            if (!Spawner || !Spawner.Player) return;
+
+            Vector3 currentPos = Spawner.Player.position;
+            if (Time.deltaTime > 0.0001f)
+            {
+                // Calculate velocity from position delta (works during grinding/wall-riding)
+                _playerVelocity = (currentPos - _lastPlayerPos) / Time.deltaTime;
+            }
+            _lastPlayerPos = currentPos;
         }
 
         private void UpdateFlash()
@@ -239,8 +285,10 @@ namespace HolyRail.Scripts.Enemies
 
                 if (distanceToPlayer <= effectiveRange)
                 {
-                    var direction = (playerPos - transform.position).normalized;
-                    Debug.Log($"ShooterBot [{name}]: FIRING bullet toward player at {playerPos}");
+                    // Calculate lead position based on player velocity
+                    Vector3 targetPos = CalculateLeadPosition(playerPos, distanceToPlayer);
+                    var direction = (targetPos - transform.position).normalized;
+                    Debug.Log($"ShooterBot [{name}]: FIRING bullet toward predicted position {targetPos}");
                     Spawner.SpawnBullet(transform.position, direction, this);
 
                     // Trigger fire flash at moment of shooting (overrides any current flash)
