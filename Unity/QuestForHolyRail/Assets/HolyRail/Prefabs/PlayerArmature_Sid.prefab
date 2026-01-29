@@ -734,7 +734,7 @@ ParentConstraint:
   m_TranslationAtRest: {x: 0.058437724, y: 1.3911655, z: 0.06412231}
   m_RotationAtRest: {x: -59.999973, y: 0, z: 0}
   m_TranslationOffsets:
-  - {x: -0.033126235, y: 0.1626463, z: -0.04345338}
+  - {x: -0.033126235, y: 0.16264597, z: -0.04345338}
   m_RotationOffsets:
   - {x: -30.000025, y: -90.00001, z: 180}
   m_AffectTranslationX: 1
@@ -1832,7 +1832,7 @@ ParentConstraint:
   m_TranslationAtRest: {x: 0.014984306, y: 1.5283208, z: -0.11457419}
   m_RotationAtRest: {x: 0, y: 0, z: 0}
   m_TranslationOffsets:
-  - {x: -0.17028153, y: -0.016050339, z: 0}
+  - {x: -0.17028153, y: -0.016050525, z: 0}
   m_RotationOffsets:
   - {x: -90, y: 0, z: 90}
   m_AffectTranslationX: 1
@@ -1874,7 +1874,7 @@ Transform:
   m_GameObject: {fileID: 2974916950295498100}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0.115436986, y: 0.0018955097, z: -0.059862137}
+  m_LocalPosition: {x: 0.115436986, y: 0.0018955097, z: -0.05986179}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -7681,7 +7681,7 @@ ParentConstraint:
   m_TranslationAtRest: {x: -0.1358532, y: -0.051877536, z: -0.014011278}
   m_RotationAtRest: {x: 0, y: 0, z: 0}
   m_TranslationOffsets:
-  - {x: 0.16603482, y: -0.09458351, z: -0.0031950474}
+  - {x: 0.16603482, y: -0.09458303, z: -0.0031949729}
   m_RotationOffsets:
   - {x: 84.28317, y: -18.647892, z: 71.30663}
   m_AffectTranslationX: 1
@@ -8229,6 +8229,56 @@ MonoBehaviour:
       m_Processors: 
       m_Groups: 
       m_Action: Spray Input
+      m_Flags: 0
+    m_Flags: 0
+  jumpBackflipInput:
+    m_Name: Jump Backflip Input
+    m_Type: 0
+    m_ExpectedControlType: 
+    m_Id: e88512c3-5ac7-48e3-a308-6c98d0380f50
+    m_Processors: 
+    m_Interactions: 
+    m_SingletonActionBindings:
+    - m_Name: 
+      m_Id: 91d1afb3-6beb-4d76-b300-8d1e8ea67c25
+      m_Path: <Keyboard>/z
+      m_Interactions: 
+      m_Processors: 
+      m_Groups: 
+      m_Action: Jump Backflip Input
+      m_Flags: 0
+    - m_Name: 
+      m_Id: 4c3581e5-b583-406e-824a-27f94da01876
+      m_Path: <Gamepad>/buttonWest
+      m_Interactions: 
+      m_Processors: 
+      m_Groups: 
+      m_Action: Jump Backflip Input
+      m_Flags: 0
+    m_Flags: 0
+  jumpSideflipInput:
+    m_Name: Jump Sideflip Input
+    m_Type: 0
+    m_ExpectedControlType: 
+    m_Id: 9113e0ec-7ab9-4a5a-9cf1-25fdc752af8e
+    m_Processors: 
+    m_Interactions: 
+    m_SingletonActionBindings:
+    - m_Name: 
+      m_Id: cf815960-8473-495f-86b0-7833996dff86
+      m_Path: <Keyboard>/x
+      m_Interactions: 
+      m_Processors: 
+      m_Groups: 
+      m_Action: Jump Sideflip Input
+      m_Flags: 0
+    - m_Name: 
+      m_Id: b4be584a-a10a-412b-9d1f-4113b059118b
+      m_Path: <Gamepad>/buttonEast
+      m_Interactions: 
+      m_Processors: 
+      m_Groups: 
+      m_Action: Jump Sideflip Input
       m_Flags: 0
     m_Flags: 0
   lookBack: 0
@@ -9128,7 +9178,7 @@ ParentConstraint:
   m_TranslationAtRest: {x: 0.1358532, y: -0.051877536, z: -0.014011278}
   m_RotationAtRest: {x: 0, y: 0, z: 0}
   m_TranslationOffsets:
-  - {x: -0.16542049, y: 0.093440056, z: 0.0031529665}
+  - {x: -0.1654205, y: 0.093440846, z: 0.0031529665}
   m_RotationOffsets:
   - {x: -84.463455, y: 164.73972, z: 105.31637}
   m_AffectTranslationX: 1
@@ -9596,7 +9646,7 @@ ParentConstraint:
   m_TranslationAtRest: {x: 0.014984329, y: 1.6472924, z: -0.079719625}
   m_RotationAtRest: {x: 0, y: 0, z: 0}
   m_TranslationOffsets:
-  - {x: -0.28925312, y: 0.01880455, z: 0}
+  - {x: -0.28925312, y: 0.018804036, z: 0}
   m_RotationOffsets:
   - {x: -90, y: 0, z: 90}
   m_AffectTranslationX: 1
@@ -11319,7 +11369,7 @@ ParentConstraint:
   m_TranslationAtRest: {x: -0.028469069, y: 1.3915732, z: 0.06412231}
   m_RotationAtRest: {x: -59.999973, y: 0, z: 0}
   m_TranslationOffsets:
-  - {x: -0.03353393, y: 0.1626463, z: 0.043453407}
+  - {x: -0.03353393, y: 0.16264597, z: 0.043453403}
   m_RotationOffsets:
   - {x: -30.000025, y: -90.00001, z: 180}
   m_AffectTranslationX: 1
@@ -11551,7 +11601,7 @@ Transform:
   m_GameObject: {fileID: 8781131319345794831}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: -0.11543726, y: 0.0018955693, z: -0.059862137}
+  m_LocalPosition: {x: -0.11543726, y: 0.0018955693, z: -0.059861735}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
