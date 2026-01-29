@@ -1,5 +1,6 @@
 ﻿using System.Collections;
  using UnityEngine;
+ using UnityEngine.SceneManagement;
  using UnityEngine.Splines;
  using Unity.Splines.Examples;
  using Unity.Mathematics;
@@ -356,6 +357,20 @@ namespace StarterAssets
             _hasAnimator = TryGetComponent(out _animator);
             bool gamepadLookBack = Gamepad.current != null && Gamepad.current.leftShoulder.isPressed;
             lookBack = gamepadLookBack || Input.GetKey(KeyCode.Q);
+
+            // Fall death check - kill player if they fall below -50
+            if (transform.position.y < -50f)
+            {
+                Debug.Log("<color=red>Player fell off the map!</color>");
+
+                if (ScoreManager.Instance != null)
+                {
+                    ScoreManager.Instance.ResetScore();
+                }
+
+                SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+                return;
+            }
 
             if (_isGrinding)
             {
