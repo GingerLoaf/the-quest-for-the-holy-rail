@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
  using UnityEngine;
  using UnityEngine.SceneManagement;
@@ -29,6 +29,8 @@ namespace StarterAssets
         public InputAction grindInput;
         public InputAction lookBackInput;
         public InputAction sprayInput;
+        public InputAction jumpBackflipInput;
+        public InputAction jumpSideflipInput;
         public bool lookBack;
         private SplineContainer[] _splineContainers;
         
@@ -270,6 +272,8 @@ namespace StarterAssets
         private int _animIDMotionSpeed;
         private int _animIDGrinding;
         private int _animIDParry;
+        private int _animIDJumpBackflip;
+        private int _animIDJumpSideflip;
 
 #if ENABLE_INPUT_SYSTEM 
         private PlayerInput _playerInput;
@@ -315,6 +319,8 @@ namespace StarterAssets
 
             lookBackInput.Enable();
             sprayInput.Enable();
+            jumpBackflipInput.Enable();
+            jumpSideflipInput.Enable();
         }
 
         private void OnDisable()
@@ -324,6 +330,8 @@ namespace StarterAssets
 
             lookBackInput.Disable();
             sprayInput.Disable();
+            jumpBackflipInput.Disable();
+            jumpSideflipInput.Disable();
         }
 
         private void Start()
@@ -464,6 +472,18 @@ namespace StarterAssets
                 }
             }
 
+            // Handle jump backflip input
+            if (jumpBackflipInput.triggered && _hasAnimator)
+            {
+                _animator.SetTrigger(_animIDJumpBackflip);
+            }
+
+            // Handle jump sideflip input
+            if (jumpSideflipInput.triggered && _hasAnimator)
+            {
+                _animator.SetTrigger(_animIDJumpSideflip);
+            }
+
             // Process active parry window
             if (_parryWindowActive)
             {
@@ -518,6 +538,8 @@ namespace StarterAssets
             _animIDMotionSpeed = Animator.StringToHash("MotionSpeed");
             _animIDGrinding = Animator.StringToHash("Grinding");
             _animIDParry = Animator.StringToHash("Parry");
+            _animIDJumpBackflip = Animator.StringToHash("JumpBackflip");
+            _animIDJumpSideflip = Animator.StringToHash("JumpSideflip");
         }
 
         private void GroundedCheck()
