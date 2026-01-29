@@ -42,7 +42,7 @@ GameObject:
   m_Component:
   - component: {fileID: 3325974996870563705}
   - component: {fileID: 3363011590925399864}
-  m_Layer: 8
+  m_Layer: 2
   m_Name: VFX (1)
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -64,6 +64,7 @@ Transform:
   m_Children:
   - {fileID: 7999327760160305176}
   - {fileID: 8252906182989687641}
+  - {fileID: 1772820542088728280}
   m_Father: {fileID: 6144670705462001194}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &3363011590925399864
@@ -4054,7 +4055,7 @@ GameObject:
   m_Component:
   - component: {fileID: 3761255421693979365}
   - component: {fileID: 281865421253226367}
-  m_Layer: 0
+  m_Layer: 2
   m_Name: MusicSource (1)
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -4185,7 +4186,7 @@ GameObject:
   - component: {fileID: 4441982966470843853}
   - component: {fileID: 2151601058284799554}
   - component: {fileID: 6693556625020853997}
-  m_Layer: 0
+  m_Layer: 2
   m_Name: SkateSparks_R
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -4201,7 +4202,7 @@ Transform:
   m_GameObject: {fileID: 2342037834633676799}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0.11954036, y: -0.0054952726, z: -0.034536764}
+  m_LocalPosition: {x: 0.11954036, y: -0.0054952726, z: -0.03453678}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -9437,7 +9438,7 @@ GameObject:
   - component: {fileID: 4404592012739112738}
   - component: {fileID: 3639566514789595395}
   - component: {fileID: 9036209721217961772}
-  m_Layer: 0
+  m_Layer: 2
   m_Name: Target Point (1)
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -10843,7 +10844,7 @@ GameObject:
   m_Component:
   - component: {fileID: 4638429232283672543}
   - component: {fileID: 4826309402932079196}
-  m_Layer: 8
+  m_Layer: 2
   m_Name: GrindGlowLightRoot (1)
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -12687,7 +12688,7 @@ GameObject:
   - component: {fileID: 3993024292477530654}
   - component: {fileID: 1872614915560758558}
   - component: {fileID: 8937030208810489859}
-  m_Layer: 0
+  m_Layer: 2
   m_Name: Nearest Point on Spline (1)
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -13325,7 +13326,7 @@ GameObject:
   - component: {fileID: 1711676784725139184}
   - component: {fileID: 8517562915358105337}
   - component: {fileID: 7956847412286574899}
-  m_Layer: 0
+  m_Layer: 2
   m_Name: SkateSparks_L
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -22964,7 +22965,7 @@ GameObject:
   - component: {fileID: 8162678387071090772}
   m_Layer: 2
   m_Name: Player_Ophelia
-  m_TagString: Untagged
+  m_TagString: Player
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -23253,39 +23254,23 @@ MonoBehaviour:
       m_Action: Spray Input
       m_Flags: 0
     m_Flags: 0
-  backflipInput:
-    m_Name: Backflip Input
+  jumpBackflipInput:
+    m_Name: Jump Backflip Input
     m_Type: 0
     m_ExpectedControlType: 
-    m_Id: 85ab4932-09e0-4b0f-b950-4ec9992d2ebb
+    m_Id: 1660891a-5f72-49a3-b0ef-c076c8803a8d
     m_Processors: 
     m_Interactions: 
-    m_SingletonActionBindings:
-    - m_Name: 
-      m_Id: 733aadd6-807c-4147-9d96-de01b0f0cd14
-      m_Path: <Keyboard>/z
-      m_Interactions: 
-      m_Processors: 
-      m_Groups: 
-      m_Action: Backflip Input
-      m_Flags: 0
+    m_SingletonActionBindings: []
     m_Flags: 0
-  sideflipInput:
-    m_Name: Sideflip Input
+  jumpSideflipInput:
+    m_Name: Jump Sideflip Input
     m_Type: 0
     m_ExpectedControlType: 
-    m_Id: 99c91d50-bc6a-42a5-86b1-586ccdecec09
+    m_Id: 5b2dc011-daf1-4143-b539-08b00ead455d
     m_Processors: 
     m_Interactions: 
-    m_SingletonActionBindings:
-    - m_Name: 
-      m_Id: ec50dfae-f841-45fe-a073-a6bb02987034
-      m_Path: <Keyboard>/x
-      m_Interactions: 
-      m_Processors: 
-      m_Groups: 
-      m_Action: Sideflip Input
-      m_Flags: 0
+    m_SingletonActionBindings: []
     m_Flags: 0
   lookBack: 0
   MoveSpeed: 8
@@ -23301,6 +23286,7 @@ MonoBehaviour:
   JumpHeight: 6
   Gravity: -50
   SpeedMultiplier: 1
+  DefaultBoostDuration: 8
   JumpTimeout: 0.5
   FallTimeout: 0.15
   Grounded: 1
@@ -23339,16 +23325,16 @@ MonoBehaviour:
   GrindLoopAudioClip: {fileID: 8300000, guid: 785ecc391d35ef7429875aa1c6584418, type: 3}
   GrindAudioVolume: 1
   GrindParticleSystems:
-  - {fileID: 0}
-  - {fileID: 0}
+  - {fileID: 1711676784725139184}
+  - {fileID: 4441982966470843853}
   _parryTrailRenderers: []
-  _sprayEffect: {fileID: 0}
+  _sprayEffect: {fileID: 2659658614945635420}
   _sprayPivot: {fileID: 7717445520371569659}
   GrindGlowLight: {fileID: 4826309402932079196}
   VirtualCamera: {fileID: 0}
   GrindFOVBoost: 15
   FOVLerpSpeed: 5
-  CinemachineCameraTarget: {fileID: 0}
+  CinemachineCameraTarget: {fileID: 2936809143330541495}
   TopClamp: 70
   BottomClamp: -30
   CameraAngleOverride: 0
@@ -23367,7 +23353,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: da0d5849292b54a219ef6c4984039135, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::MusicController
-  <MusicSource>k__BackingField: {fileID: 0}
+  <MusicSource>k__BackingField: {fileID: 281865421253226367}
   <Songs>k__BackingField:
   - {fileID: 8300000, guid: f33eb67d5f5354d0ab101dad99d634ee, type: 3}
   - {fileID: 8300000, guid: 575bdd94b5782401fb933f036114a7fa, type: 3}
@@ -23404,12 +23390,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7caa4e5e5d37c45efbe4c8bee43a98aa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::HolyRail.Scripts.FX.OrbitalPickupDisplay
-  <OrbitRadius>k__BackingField: 1.2
-  <OrbitSpeed>k__BackingField: 90
-  <VerticalOffset>k__BackingField: 1
-  <OrbScale>k__BackingField: 0.15
-  <OrbColor>k__BackingField: {r: 1, g: 0.85, b: 0.2, a: 1}
+  <OrbitRadius>k__BackingField: 1
+  <OrbitSpeed>k__BackingField: 180
+  <VerticalOffset>k__BackingField: 0.9
+  <OrbScale>k__BackingField: 0.2
+  <OrbColor>k__BackingField: {r: 0.32599998, g: 0.8565766, b: 1, a: 1}
   <OrbMaterial>k__BackingField: {fileID: 2100000, guid: a1b2c3d4e5f67890a1b2c3d4e5f67891, type: 2}
+  <WarningThreshold>k__BackingField: 2
+  <PulseSpeed>k__BackingField: 16
+  <MinPulseScale>k__BackingField: 0.5
+  <ExpiringColor>k__BackingField: {r: 0, g: 0.048583306, b: 0.26415092, a: 1}
+  <FadeOutDuration>k__BackingField: 0.1
 --- !u!1 &6778990951623778557
 GameObject:
   m_ObjectHideFlags: 0
@@ -27634,7 +27625,7 @@ GameObject:
   - component: {fileID: 2898168208087905776}
   - component: {fileID: 1847758432046192091}
   - component: {fileID: 7381150979382682621}
-  m_Layer: 8
+  m_Layer: 2
   m_Name: Point Light
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -29763,3 +29754,74 @@ Transform:
   - {fileID: 7637803987618752605}
   m_Father: {fileID: 8024934257304352190}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1001 &4782076229846466056
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 3325974996870563705}
+    m_Modifications:
+    - target: {fileID: 3892703545426186495, guid: 7e8bd04e538b84c9e84a66096b4fde37, type: 3}
+      propertyPath: m_Name
+      value: GraffitiSpray
+      objectReference: {fileID: 0}
+    - target: {fileID: 3892703545426186495, guid: 7e8bd04e538b84c9e84a66096b4fde37, type: 3}
+      propertyPath: m_Layer
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 6541208105552752848, guid: 7e8bd04e538b84c9e84a66096b4fde37, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6541208105552752848, guid: 7e8bd04e538b84c9e84a66096b4fde37, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 1.464
+      objectReference: {fileID: 0}
+    - target: {fileID: 6541208105552752848, guid: 7e8bd04e538b84c9e84a66096b4fde37, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: -1.618
+      objectReference: {fileID: 0}
+    - target: {fileID: 6541208105552752848, guid: 7e8bd04e538b84c9e84a66096b4fde37, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6541208105552752848, guid: 7e8bd04e538b84c9e84a66096b4fde37, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6541208105552752848, guid: 7e8bd04e538b84c9e84a66096b4fde37, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6541208105552752848, guid: 7e8bd04e538b84c9e84a66096b4fde37, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6541208105552752848, guid: 7e8bd04e538b84c9e84a66096b4fde37, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6541208105552752848, guid: 7e8bd04e538b84c9e84a66096b4fde37, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6541208105552752848, guid: 7e8bd04e538b84c9e84a66096b4fde37, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 7e8bd04e538b84c9e84a66096b4fde37, type: 3}
+--- !u!4 &1772820542088728280 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 6541208105552752848, guid: 7e8bd04e538b84c9e84a66096b4fde37, type: 3}
+  m_PrefabInstance: {fileID: 4782076229846466056}
+  m_PrefabAsset: {fileID: 0}
+--- !u!198 &2659658614945635420 stripped
+ParticleSystem:
+  m_CorrespondingSourceObject: {fileID: 7400638587105059412, guid: 7e8bd04e538b84c9e84a66096b4fde37, type: 3}
+  m_PrefabInstance: {fileID: 4782076229846466056}
+  m_PrefabAsset: {fileID: 0}
