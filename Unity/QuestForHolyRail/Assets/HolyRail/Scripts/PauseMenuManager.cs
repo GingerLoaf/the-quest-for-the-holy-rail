@@ -1,3 +1,4 @@
+using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
@@ -16,6 +17,8 @@ namespace HolyRail.Scripts
         [field: SerializeField] public GameObject PausePanel { get; private set; }
         [field: SerializeField] public Slider VolumeSlider { get; private set; }
         [field: SerializeField] public Button ExitButton { get; private set; }
+        [field: SerializeField] public TextMeshProUGUI KeyboardControlsText { get; private set; }
+        [field: SerializeField] public TextMeshProUGUI GamepadControlsText { get; private set; }
 
         [Header("Input")]
         [field: SerializeField] public InputActionReference PauseAction { get; private set; }
