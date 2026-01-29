@@ -188,7 +188,8 @@ MonoBehaviour:
   FarEnd:
   - {fileID: 3159063168894042451}
   - {fileID: 2212601458503468053}
-  EnabledOnlyWhenNotFlipped: []
+  EnabledOnlyWhenNotFlipped:
+  - {fileID: 5517462483598621843}
   PickUpPrefab: {fileID: 1634333579352156932, guid: 38a7efca9ee874f7b9f02a9fffd1fddb, type: 3}
   PickUpCount: 3
   MinPickUpSpacing: 0.1
@@ -1680,11 +1681,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 2382810566493446626, guid: 7b846d8f536f007498c941069487ce81, type: 3}
       propertyPath: m_LocalScale.x
-      value: 2.5898328
+      value: 3
       objectReference: {fileID: 0}
     - target: {fileID: 2382810566493446626, guid: 7b846d8f536f007498c941069487ce81, type: 3}
       propertyPath: m_LocalScale.y
-      value: 1.3628
+      value: 1.5
       objectReference: {fileID: 0}
     - target: {fileID: 2382810566493446626, guid: 7b846d8f536f007498c941069487ce81, type: 3}
       propertyPath: m_LocalPosition.x
@@ -1700,23 +1701,23 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 2382810566493446626, guid: 7b846d8f536f007498c941069487ce81, type: 3}
       propertyPath: m_LocalRotation.w
-      value: 0.35354432
+      value: 0.29603708
       objectReference: {fileID: 0}
     - target: {fileID: 2382810566493446626, guid: 7b846d8f536f007498c941069487ce81, type: 3}
       propertyPath: m_LocalRotation.x
-      value: -0.6092677
+      value: -0.6395464
       objectReference: {fileID: 0}
     - target: {fileID: 2382810566493446626, guid: 7b846d8f536f007498c941069487ce81, type: 3}
       propertyPath: m_LocalRotation.y
-      value: -0.6123776
+      value: -0.6421542
       objectReference: {fileID: 0}
     - target: {fileID: 2382810566493446626, guid: 7b846d8f536f007498c941069487ce81, type: 3}
       propertyPath: m_LocalRotation.z
-      value: -0.35887745
+      value: -0.30162966
       objectReference: {fileID: 0}
     - target: {fileID: 2382810566493446626, guid: 7b846d8f536f007498c941069487ce81, type: 3}
       propertyPath: m_LocalEulerAnglesHint.x
-      value: -119.501
+      value: -130
       objectReference: {fileID: 0}
     - target: {fileID: 2382810566493446626, guid: 7b846d8f536f007498c941069487ce81, type: 3}
       propertyPath: m_LocalEulerAnglesHint.y
@@ -1728,7 +1729,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3051928965768018776, guid: 7b846d8f536f007498c941069487ce81, type: 3}
       propertyPath: m_Name
-      value: Box_350x250x200_Prefab (1)
+      value: FLIPPER
       objectReference: {fileID: 0}
     - target: {fileID: 3556257425134475917, guid: 7b846d8f536f007498c941069487ce81, type: 3}
       propertyPath: m_ProbeAnchor
@@ -1742,6 +1743,11 @@ PrefabInstance:
 --- !u!4 &5177492820864329257 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 2382810566493446626, guid: 7b846d8f536f007498c941069487ce81, type: 3}
+  m_PrefabInstance: {fileID: 7407110614950299595}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1 &5517462483598621843 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 3051928965768018776, guid: 7b846d8f536f007498c941069487ce81, type: 3}
   m_PrefabInstance: {fileID: 7407110614950299595}
   m_PrefabAsset: {fileID: 0}
 --- !u!1001 &8705408072124453261
