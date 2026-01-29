@@ -63,9 +63,13 @@ namespace HolyRail.Scripts.Enemies
         public int BulletPoolSize { get; private set; } = 50;
 
         [Header("Bullet Settings")]
-        [field: Tooltip("Travel speed of bullets")]
+        [field: Tooltip("Travel speed of bullets (minimum speed when player is stationary)")]
         [field: SerializeField]
         public float BulletSpeed { get; private set; } = 15f;
+
+        [field: Tooltip("If true, bullets will always be at least 10% faster than player's current velocity")]
+        [field: SerializeField]
+        public bool BulletSpeedScalesWithPlayer { get; private set; } = true;
 
         [field: Tooltip("If true, bullets will knock the player off rails when hit")]
         [field: SerializeField]
@@ -492,6 +496,25 @@ namespace HolyRail.Scripts.Enemies
         public IReadOnlyList<BaseEnemyBot> GetActiveBots()
         {
             return _activeBots;
+        }
+
+        /// <summary>
+        /// Calculates bullet speed that is always at least 10% faster than player's current velocity
+        /// </summary>
+        public float GetDynamicBulletSpeed(CharacterController playerController)
+        {
+            if (!BulletSpeedScalesWithPlayer || playerController == null)
+            {
+                return BulletSpeed;
+            }
+
+            // Get player's horizontal velocity magnitude
+            Vector3 playerVelocity = playerController.velocity;
+            float playerSpeed = new Vector3(playerVelocity.x, 0f, playerVelocity.z).magnitude;
+
+            // Bullet speed is 110% of player's current speed, with minimum of BulletSpeed
+            float dynamicSpeed = playerSpeed * 1.1f;
+            return Mathf.Max(dynamicSpeed, BulletSpeed);
         }
 
         private void OnDrawGizmosSelected()
