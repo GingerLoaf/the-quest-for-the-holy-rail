@@ -63,11 +63,11 @@ namespace HolyRail.Scripts.Enemies
         public int BulletPoolSize { get; private set; } = 50;
 
         [Header("Bullet Settings")]
-        [field: Tooltip("Travel speed of bullets (minimum speed when player is stationary)")]
+        [field: Tooltip("Base travel speed of bullets (added to player speed for guaranteed catch-up)")]
         [field: SerializeField]
-        public float BulletSpeed { get; private set; } = 15f;
+        public float BulletSpeed { get; private set; } = 20f;
 
-        [field: Tooltip("If true, bullets will always be at least 10% faster than player's current velocity")]
+        [field: Tooltip("If true, bullet speed = player speed + base speed (guarantees bullets always catch up)")]
         [field: SerializeField]
         public bool BulletSpeedScalesWithPlayer { get; private set; } = true;
 
@@ -77,11 +77,11 @@ namespace HolyRail.Scripts.Enemies
 
         [field: Tooltip("Maximum time in seconds before bullets are automatically recycled")]
         [field: SerializeField]
-        public float BulletLifetime { get; private set; } = 5f;
+        public float BulletLifetime { get; private set; } = 8f;
 
-        [field: Tooltip("How much bullets home toward the player (0 = no homing, 1 = full homing)")]
+        [field: Tooltip("Legacy setting - bullets now always track directly to player")]
         [field: SerializeField, Range(0f, 1f)]
-        public float BulletHomingAmount { get; private set; } = 0f;
+        public float BulletHomingAmount { get; private set; } = 1f;
 
         [field: Tooltip("How fast bullets flash when in parry zone (cycles per second)")]
         [field: SerializeField]
@@ -113,13 +113,13 @@ namespace HolyRail.Scripts.Enemies
         public float GlobalFiringRange { get; private set; } = 30f;
 
         [Header("Parry Settings")]
-        [field: Tooltip("Distance from player at which bullets can be parried")]
+        [field: Tooltip("Distance from player at which bullets can be parried (should be larger than hit radius)")]
         [field: SerializeField]
-        public float ParryThresholdDistance { get; private set; } = 5f;
+        public float ParryThresholdDistance { get; private set; } = 12f;
 
-        [field: Tooltip("Duration of the parry window after input")]
+        [field: Tooltip("Duration of the parry window after input (larger = more forgiving)")]
         [field: SerializeField]
-        public float ParryWindowDuration { get; private set; } = 0.3f;
+        public float ParryWindowDuration { get; private set; } = 0.6f;
 
         [field: Tooltip("Explosion effect prefab spawned when a bot is killed by deflection")]
         [field: SerializeField]

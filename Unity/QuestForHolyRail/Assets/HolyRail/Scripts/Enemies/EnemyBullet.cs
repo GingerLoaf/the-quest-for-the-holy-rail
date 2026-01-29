@@ -31,6 +31,8 @@ namespace HolyRail.Scripts.Enemies
         private Color _originalEmissionColor;
         private bool _inParryThreshold;
         private CharacterController _playerController;
+        private Vector3 _lastPlayerPos;
+        private float _playerSpeed;
 
         public bool IsDeflected => _isDeflected;
         public BaseEnemyBot SourceBot => _sourceBot;
@@ -63,6 +65,13 @@ namespace HolyRail.Scripts.Enemies
             _sourceBot = sourceBot;
             _isDeflected = false;
             _inParryThreshold = false;
+
+            // Initialize player position tracking for velocity calculation
+            if (_spawner != null && _spawner.Player != null)
+            {
+                _lastPlayerPos = _spawner.Player.position;
+                _playerSpeed = 0f;
+            }
 
             // Reset to original emission color (not ParryFlashColor)
             // This ensures bullets spawn with their normal color, making the
@@ -127,6 +136,50 @@ namespace HolyRail.Scripts.Enemies
             _renderer.SetPropertyBlock(_propertyBlock);
         }
 
+        private void HitPlayer()
+        {
+            if (_spawner == null || _spawner.Player == null) return;
+
+            Debug.Log("EnemyBullet: Hit player (distance check)!");
+
+            // Knock player off rail if grinding and toggle is enabled
+            if (_spawner.BulletsKnockOffRail)
+            {
+                var grinder = _spawner.Player.GetComponentInParent<ThirdPersonController_RailGrinder>();
+                if (grinder != null)
+                {
+                    grinder.StopGrind();
+                }
+            }
+
+            // Flash player red for visual feedback
+            if (PlayerHitFlash.Instance != null)
+            {
+                PlayerHitFlash.Instance.Flash();
+            }
+
+            // Recycle this bullet
+            _spawner.RecycleBullet(this);
+        }
+
+        private float CalculateBulletSpeed()
+        {
+            // Base speed is always the configured bullet speed
+            float baseSpeed = _spawner.BulletSpeed;
+
+            if (!_spawner.BulletSpeedScalesWithPlayer)
+            {
+                return baseSpeed;
+            }
+
+            // Bullet speed is player speed + base speed, ensuring bullets ALWAYS catch up
+            // This guarantees the bullet closes distance regardless of player movement
+            float dynamicSpeed = _playerSpeed + baseSpeed;
+
+            // Minimum speed is still the base speed (for when player is stationary)
+            return Mathf.Max(dynamicSpeed, baseSpeed);
+        }
+
         public void SetInParryThreshold(bool inThreshold)
         {
             if (_inParryThreshold == inThreshold) return;
@@ -152,20 +205,74 @@ namespace HolyRail.Scripts.Enemies
                 return;
             }
 
-            // If deflected, home toward source bot (full homing)
-            if (_isDeflected && _sourceBot != null && _sourceBot.gameObject.activeInHierarchy)
+            // Track player speed from position delta (works during grinding when CharacterController is disabled)
+            if (_spawner.Player != null && Time.deltaTime > 0.0001f)
             {
-                _direction = (_sourceBot.transform.position - transform.position).normalized;
-            }
-            // If not deflected and homing is enabled, gradually turn toward player
-            else if (!_isDeflected && _spawner.BulletHomingAmount > 0f && _spawner.Player != null)
-            {
-                Vector3 toPlayer = (_spawner.Player.position - transform.position).normalized;
-                _direction = Vector3.Slerp(_direction, toPlayer, _spawner.BulletHomingAmount * Time.deltaTime * 5f).normalized;
+                Vector3 currentPlayerPos = _spawner.Player.position;
+                Vector3 playerDelta = currentPlayerPos - _lastPlayerPos;
+                float instantSpeed = playerDelta.magnitude / Time.deltaTime;
+                // Smooth the speed to avoid jitter
+                _playerSpeed = Mathf.Lerp(_playerSpeed, instantSpeed, Time.deltaTime * 8f);
+                _lastPlayerPos = currentPlayerPos;
             }
 
-            // Calculate bullet speed: always 10% faster than player's current velocity
-            float bulletSpeed = _spawner.GetDynamicBulletSpeed(_playerController);
+            // Calculate target position
+            Vector3 targetPos;
+            bool targetingPlayer = false;
+
+            if (_isDeflected && _sourceBot != null && _sourceBot.gameObject.activeInHierarchy)
+            {
+                // Deflected bullets home toward source bot
+                targetPos = _sourceBot.transform.position;
+            }
+            else if (!_isDeflected && _spawner.Player != null)
+            {
+                // Non-deflected bullets ALWAYS track directly to player's center
+                targetPos = _spawner.Player.position;
+                targetPos.y += 0.5f; // Slightly above feet, center of capsule
+                targetingPlayer = true;
+            }
+            else
+            {
+                // No target - continue in current direction
+                targetPos = transform.position + _direction * 10f;
+            }
+
+            // Calculate direction to target
+            Vector3 toTarget = targetPos - transform.position;
+            float distanceToTarget = toTarget.magnitude;
+
+            // GUARANTEED HIT: If within hit radius of player, trigger hit immediately
+            // This bypasses any collider issues and ensures bullets always hit
+            // Hit radius (0.6f) is much smaller than parry threshold (12f) to give time to parry
+            if (targetingPlayer && distanceToTarget < 0.6f)
+            {
+                HitPlayer();
+                return;
+            }
+
+            if (distanceToTarget > 0.01f)
+            {
+                // Direct tracking - always face the player exactly
+                _direction = toTarget.normalized;
+            }
+
+            // Rotate bullet to face movement direction
+            if (_direction.sqrMagnitude > 0.01f)
+            {
+                transform.rotation = Quaternion.LookRotation(_direction);
+            }
+
+            // Calculate bullet speed: always significantly faster than player
+            float bulletSpeed = CalculateBulletSpeed();
+
+            // Slow down when in parry range to give player reaction time
+            if (_inParryThreshold && !_isDeflected)
+            {
+                bulletSpeed *= 0.5f; // Half speed in parry zone for fair gameplay
+            }
+
+            // Move toward target
             Vector3 movement = _direction * (bulletSpeed * Time.deltaTime);
             transform.position += movement;
 
@@ -179,16 +286,9 @@ namespace HolyRail.Scripts.Enemies
                 SetBrightness(brightness);
             }
 
-            // Debug: Log position every 0.5 seconds
-            if (Mathf.FloorToInt(_lifetime * 2) != Mathf.FloorToInt((_lifetime - Time.deltaTime) * 2))
-            {
-                Debug.Log($"EnemyBullet: pos={transform.position}, dir={_direction}, speed={_spawner.BulletSpeed}, lifetime={_lifetime:F1}s");
-            }
-
             float maxLifetime = _spawner.BulletLifetime;
             if (_lifetime >= maxLifetime)
             {
-                Debug.Log($"EnemyBullet: Recycling after {maxLifetime}s lifetime");
                 _spawner.RecycleBullet(this);
             }
         }
