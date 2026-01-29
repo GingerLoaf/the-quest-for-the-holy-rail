@@ -175,6 +175,9 @@ namespace StarterAssets
         private float _wallRideExitCooldownTimer;
         private float _wallRideRotationVelocity;
 
+        // Preserved exit velocity for wall ride detection after grind exit
+        private Vector3 _preservedExitVelocity;
+
         private float _parryWindowTimer;
         private bool _parryWindowActive;
 
@@ -719,6 +722,9 @@ namespace StarterAssets
             // Preserve horizontal momentum from grind
             _speed = _grindSpeedCurrent * GrindJumpMomentumMultiplier;
             _targetRotation = Mathf.Atan2(exitDirection.x, exitDirection.z) * Mathf.Rad2Deg;
+
+            // Store exit velocity for wall ride detection (CharacterController velocity won't be updated yet)
+            _preservedExitVelocity = exitDirection * _speed;
         }
 
         private void ExitGrindWithJump(float? jumpHeight = null)
@@ -783,6 +789,9 @@ namespace StarterAssets
             // Preserve horizontal momentum from grind
             _speed = _grindSpeedCurrent * GrindJumpMomentumMultiplier;
             _targetRotation = Mathf.Atan2(exitDirection.x, exitDirection.z) * Mathf.Rad2Deg;
+
+            // Store exit velocity for wall ride detection (CharacterController velocity won't be updated yet)
+            _preservedExitVelocity = exitDirection * _speed;
 
             // Update animator if using character
             if (_hasAnimator)
@@ -944,7 +953,17 @@ namespace StarterAssets
                 }
 
                 // Velocity check: player must be moving (have some horizontal velocity)
-                var horizontalVelocity = new Vector3(_controller.velocity.x, 0f, _controller.velocity.z);
+                // Use preserved exit velocity if we just jumped off a rail (CharacterController velocity may not be updated yet)
+                Vector3 horizontalVelocity;
+                if (_momentumPreservationTimer > 0f && _preservedExitVelocity.sqrMagnitude > 1f)
+                {
+                    horizontalVelocity = new Vector3(_preservedExitVelocity.x, 0f, _preservedExitVelocity.z);
+                }
+                else
+                {
+                    horizontalVelocity = new Vector3(_controller.velocity.x, 0f, _controller.velocity.z);
+                }
+
                 if (horizontalVelocity.magnitude < 1f)
                 {
                     Debug.Log($"WallRide: {hit.name} failed velocity check (vel={horizontalVelocity.magnitude:F2})");
@@ -981,7 +1000,16 @@ namespace StarterAssets
             }
 
             // Project velocity onto wall plane (remove component perpendicular to wall)
-            var horizontalVel = new Vector3(_controller.velocity.x, 0f, _controller.velocity.z);
+            // Use preserved exit velocity if we just jumped off a rail
+            Vector3 horizontalVel;
+            if (_momentumPreservationTimer > 0f && _preservedExitVelocity.sqrMagnitude > 1f)
+            {
+                horizontalVel = new Vector3(_preservedExitVelocity.x, 0f, _preservedExitVelocity.z);
+            }
+            else
+            {
+                horizontalVel = new Vector3(_controller.velocity.x, 0f, _controller.velocity.z);
+            }
             var projectedVelocity = horizontalVel - Vector3.Dot(horizontalVel, closestNormal) * closestNormal;
 
             Debug.Log($"WallRide: Closest collider found. HorizVel={horizontalVel.magnitude:F2}, ProjectedVel={projectedVelocity.magnitude:F2}");
@@ -1007,6 +1035,9 @@ namespace StarterAssets
             _currentBillboardScale = billboardScale;
             _wallRideVelocity = travelDirection;
             _wallRideRight = Vector3.Cross(Vector3.up, wallNormal).normalized;
+
+            // Clear preserved velocity now that it's been used
+            _preservedExitVelocity = Vector3.zero;
 
             // Store the wall plane distance (XZ only) for accurate surface snapping
             _wallPlaneDistance = surfacePoint.x * wallNormal.x + surfacePoint.z * wallNormal.z;
