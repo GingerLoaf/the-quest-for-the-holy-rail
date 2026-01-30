@@ -229,6 +229,14 @@ namespace StarterAssets
         [Tooltip("Multiplier for boost effectiveness while grinding (1.0 = full effect, 0.5 = half)")]
         public float GrindBoostEffectiveness = 0.5f;
 
+        [Header("Ramp Boost")]
+        [Tooltip("Layer mask for ramp colliders")]
+        public LayerMask RampLayers;
+        [Tooltip("Speed boost applied when going over a ramp")]
+        public float RampBoostAmount = 5f;
+        [Tooltip("Cooldown before ramp boost can trigger again")]
+        public float RampBoostCooldown = 0.5f;
+
         [Header("Dash Ability")]
         [Tooltip("Speed during dash")]
         public float DashSpeed = 20f;
@@ -236,6 +244,8 @@ namespace StarterAssets
         public float DashDuration = 0.2f;
         [Tooltip("Cooldown before dash can be used again")]
         public float DashCooldown = 1.0f;
+        [Tooltip("How much dash speed carries over after dash ends (0-1)")]
+        public float DashMomentumCarry = 0.5f;
 
         [Header("Boost Ability")]
         [Tooltip("Speed increase during boost")]
@@ -312,6 +322,9 @@ namespace StarterAssets
         private float _dashDurationTimer;
         private float _dashCooldownTimer;
         private Vector3 _dashDirection;
+
+        // Ramp boost state
+        private float _rampBoostCooldownTimer;
 
         // Boost ability state
         private float _boostAbilityCooldownTimer;
@@ -533,8 +546,8 @@ namespace StarterAssets
                 StartDash();
             }
 
-            // Boost input
-            if (boostInput != null && boostInput.triggered && _boostAbilityCooldownTimer <= 0f && !_isGrinding && !_isWallRiding)
+            // Boost input (allowed while grinding)
+            if (boostInput != null && boostInput.triggered && _boostAbilityCooldownTimer <= 0f && !_isWallRiding)
             {
                 StartBoostAbility();
             }
@@ -731,14 +744,61 @@ namespace StarterAssets
             // set sphere position, with offset
             Vector3 spherePosition = new Vector3(transform.position.x, transform.position.y - GroundedOffset,
                 transform.position.z);
-            Grounded = Physics.CheckSphere(spherePosition, GroundedRadius, GroundLayers,
+
+            // Combine GroundLayers and RampLayers so player can walk on ramps
+            LayerMask combinedGroundLayers = GroundLayers | RampLayers;
+            Grounded = Physics.CheckSphere(spherePosition, GroundedRadius, combinedGroundLayers,
                 QueryTriggerInteraction.Ignore);
+
+            // Check for ramp boost
+            CheckRampBoost(spherePosition);
 
             // update animator if using character
             if (_hasAnimator)
             {
                 _animator.SetBool(_animIDGrounded, Grounded);
             }
+        }
+
+        private void CheckRampBoost(Vector3 checkPosition)
+        {
+            // Decrement cooldown
+            if (_rampBoostCooldownTimer > 0f)
+            {
+                _rampBoostCooldownTimer -= Time.deltaTime;
+                return;
+            }
+
+            // Only check for ramps if we have a valid layer mask
+            if (RampLayers == 0)
+                return;
+
+            // Check if we're touching a ramp
+            if (Physics.CheckSphere(checkPosition, GroundedRadius * 1.5f, RampLayers, QueryTriggerInteraction.Ignore))
+            {
+                // Apply ramp boost
+                ApplyRampBoost();
+                _rampBoostCooldownTimer = RampBoostCooldown;
+            }
+        }
+
+        private void ApplyRampBoost()
+        {
+            if (RampBoostAmount <= 0f)
+                return;
+
+            // Apply boost in the direction the player is moving
+            var boostDirection = _controller.velocity.normalized;
+            if (boostDirection.sqrMagnitude < 0.1f)
+            {
+                // If not moving, use forward direction
+                boostDirection = transform.forward;
+            }
+
+            // Add horizontal boost to current speed
+            _speed += RampBoostAmount;
+
+            Debug.Log($"Ramp boost applied! Speed: {_speed}");
         }
 
         private void CameraRotation()
@@ -1303,6 +1363,13 @@ namespace StarterAssets
         private void StartWallRide(Vector3 wallNormal, Vector3 billboardCenter, Vector3 billboardScale, Vector3 travelDirection, Vector3 surfacePoint)
         {
             _isWallRiding = true;
+
+            // End any active dash immediately when starting wall ride
+            if (_isDashing)
+            {
+                EndDash();
+            }
+
             _wallRideNormal = wallNormal;
             _currentBillboardCenter = billboardCenter;
             _currentBillboardScale = billboardScale;
@@ -1543,7 +1610,14 @@ namespace StarterAssets
         private void EndDash()
         {
             _isDashing = false;
-            Debug.Log("Dash ended");
+
+            // Carry forward momentum from dash
+            if (DashMomentumCarry > 0f)
+            {
+                _speed = Mathf.Max(_speed, DashSpeed * DashMomentumCarry);
+            }
+
+            Debug.Log($"Dash ended, momentum carry speed: {_speed}");
         }
 
         private void StartBoostAbility()

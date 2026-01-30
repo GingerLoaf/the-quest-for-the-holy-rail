@@ -11,7 +11,7 @@ namespace HolyRail.City
 
         [Header("References")]
         [field: SerializeField] public CityManager CityManager { get; private set; }
-        [field: SerializeField] public Transform TrackingTarget { get; private set; }
+        [field: SerializeField] public Transform TrackingTarget { get; set; }
 
         [Header("Pool Settings")]
         [field: SerializeField] public float ActivationRadius { get; private set; } = 150f;
@@ -42,6 +42,7 @@ namespace HolyRail.City
         private readonly List<int> _rampQueryResults = new();
         private readonly HashSet<int> _assignedRampIndices = new();
         private GameObject _rampPoolContainer;
+        private int _rampLayer;
         private bool _rampInitialized;
 
         // Billboard collider pool
@@ -188,8 +189,20 @@ namespace HolyRail.City
                 ClearBillboards();
             }
 
+            // Auto-find player if TrackingTarget not assigned
             if (TrackingTarget == null)
-                return;
+            {
+                var player = GameObject.FindGameObjectWithTag("Player");
+                if (player != null)
+                {
+                    TrackingTarget = player.transform;
+                    Debug.Log($"BuildingColliderPool: Auto-assigned TrackingTarget to {player.name}");
+                }
+                else
+                {
+                    return;
+                }
+            }
 
             var currentPosition = TrackingTarget.position;
             var distanceMoved = Vector3.Distance(currentPosition, _lastUpdatePosition);
@@ -203,6 +216,8 @@ namespace HolyRail.City
                 if (_billboardInitialized)
                     UpdateActiveBillboardColliders(currentPosition);
                 _lastUpdatePosition = currentPosition;
+
+                Debug.Log($"BuildingColliderPool: Updated colliders at {currentPosition} - Buildings:{ActiveColliderCount}, Ramps:{ActiveRampColliderCount}, Billboards:{ActiveBillboardColliderCount}");
             }
         }
 
@@ -228,13 +243,12 @@ namespace HolyRail.City
 
             _initialized = true;
 
-            if (TrackingTarget != null)
-            {
-                _lastUpdatePosition = TrackingTarget.position;
-                UpdateActiveColliders(_lastUpdatePosition);
-            }
+            // Use tracking target position, or fallback to CityManager position
+            var queryPosition = TrackingTarget != null ? TrackingTarget.position : CityManager.transform.position;
+            _lastUpdatePosition = queryPosition;
+            UpdateActiveColliders(queryPosition);
 
-            Debug.Log($"BuildingColliderPool: Initialized with {_colliderPool.Count} building colliders, spatial grid has {_spatialGrid.CellCount} cells.");
+            Debug.Log($"BuildingColliderPool: Initialized with {_colliderPool.Count} building colliders at {queryPosition}, spatial grid has {_spatialGrid.CellCount} cells.");
         }
 
         public void InitializeRamps()
@@ -250,18 +264,18 @@ namespace HolyRail.City
                 return;
             }
 
-            // Ensure buildings layer is set (ramps use same layer as buildings for physics)
-            if (_buildingsLayer == 0)
+            // Use dedicated Ramp layer for ramp colliders (allows player controller to detect and boost)
+            var rampLayer = LayerMask.NameToLayer("Ramp");
+            if (rampLayer == -1)
             {
-                _buildingsLayer = LayerMask.NameToLayer("Buildings");
-                if (_buildingsLayer == -1)
-                {
-                    Debug.LogWarning("BuildingColliderPool: 'Buildings' layer not found for ramps. Using Default layer.");
-                    _buildingsLayer = 0;
-                }
+                Debug.LogWarning("BuildingColliderPool: 'Ramp' layer not found. Using Buildings layer as fallback.");
+                rampLayer = LayerMask.NameToLayer("Buildings");
+                if (rampLayer == -1)
+                    rampLayer = 0;
             }
+            _rampLayer = rampLayer;
 
-            Debug.Log($"BuildingColliderPool.InitializeRamps: Initializing with {CityManager.Ramps.Count} ramps, layer={_buildingsLayer}");
+            Debug.Log($"BuildingColliderPool.InitializeRamps: Initializing with {CityManager.Ramps.Count} ramps, layer={_rampLayer}");
 
             _rampSpatialGrid = new RampSpatialGrid(DefaultCellSize, CityManager.transform.position);
             _rampSpatialGrid.Initialize(CityManager.Ramps);
@@ -270,15 +284,11 @@ namespace HolyRail.City
 
             _rampInitialized = true;
 
-            if (TrackingTarget != null)
-            {
-                UpdateActiveRampColliders(TrackingTarget.position);
-                Debug.Log($"BuildingColliderPool.InitializeRamps: Updated active colliders at {TrackingTarget.position}, ActiveRampColliderCount={ActiveRampColliderCount}");
-            }
-            else
-            {
-                Debug.LogWarning("BuildingColliderPool.InitializeRamps: No TrackingTarget assigned");
-            }
+            // Use tracking target position, or fallback to CityManager position
+            var queryPosition = TrackingTarget != null ? TrackingTarget.position : CityManager.transform.position;
+            UpdateActiveRampColliders(queryPosition);
+            _lastUpdatePosition = queryPosition;
+            Debug.Log($"BuildingColliderPool.InitializeRamps: Updated active colliders at {queryPosition}, ActiveRampColliderCount={ActiveRampColliderCount}");
 
             Debug.Log($"BuildingColliderPool: Initialized with {_rampColliderPool.Count} ramp colliders, spatial grid has {_rampSpatialGrid.CellCount} cells.");
         }
@@ -296,11 +306,12 @@ namespace HolyRail.City
                 return;
             }
 
-            _billboardsLayer = LayerMask.NameToLayer("Billboards");
+            // Billboards use WallRide layer so player can wall-ride on them
+            _billboardsLayer = LayerMask.NameToLayer("WallRide");
             if (_billboardsLayer == -1)
             {
                 _billboardsLayer = BillboardLayerFallback;
-                Debug.Log($"BuildingColliderPool: Using fallback billboard layer {_billboardsLayer}");
+                Debug.LogWarning($"BuildingColliderPool: 'WallRide' layer not found, using fallback layer {_billboardsLayer}");
             }
 
             Debug.Log($"BuildingColliderPool.InitializeBillboards: Initializing with {CityManager.Billboards.Count} billboards, layer={_billboardsLayer}");
@@ -312,15 +323,11 @@ namespace HolyRail.City
 
             _billboardInitialized = true;
 
-            if (TrackingTarget != null)
-            {
-                UpdateActiveBillboardColliders(TrackingTarget.position);
-                Debug.Log($"BuildingColliderPool.InitializeBillboards: Updated active colliders at {TrackingTarget.position}, ActiveBillboardColliderCount={ActiveBillboardColliderCount}");
-            }
-            else
-            {
-                Debug.LogWarning("BuildingColliderPool.InitializeBillboards: No TrackingTarget assigned");
-            }
+            // Use tracking target position, or fallback to CityManager position
+            var queryPosition = TrackingTarget != null ? TrackingTarget.position : CityManager.transform.position;
+            UpdateActiveBillboardColliders(queryPosition);
+            _lastUpdatePosition = queryPosition;
+            Debug.Log($"BuildingColliderPool.InitializeBillboards: Updated active colliders at {queryPosition}, ActiveBillboardColliderCount={ActiveBillboardColliderCount}");
 
             Debug.Log($"BuildingColliderPool: Initialized with {_billboardColliderPool.Count} billboard colliders, spatial grid has {_billboardSpatialGrid.CellCount} cells.");
         }
@@ -732,7 +739,7 @@ namespace HolyRail.City
                     var go = new GameObject($"RampCollider_{colliderIndex}");
                     go.transform.SetParent(_rampPoolContainer.transform);
                     go.transform.position = InactivePosition;
-                    go.layer = _buildingsLayer;
+                    go.layer = _rampLayer;
                     var newCollider = go.AddComponent<BoxCollider>();
                     newCollider.enabled = false;
                     _rampColliderPool.Add(newCollider);
