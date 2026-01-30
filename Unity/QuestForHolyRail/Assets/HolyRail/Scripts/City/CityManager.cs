@@ -64,6 +64,7 @@ namespace HolyRail.City
         [field: SerializeField] public float BillboardYOffsetMin { get; set; } = 3f;
         [field: SerializeField] public float BillboardYOffsetMax { get; set; } = 15f;
         [field: SerializeField] public float BillboardDepth { get; set; } = 0.3f;
+        [field: SerializeField] public float BillboardInwardOffset { get; set; } = 2f;
 
         [Header("Graffiti Settings")]
         [field: SerializeField] public bool EnableGraffiti { get; set; } = true;
@@ -1375,8 +1376,7 @@ namespace HolyRail.City
 
             // Position: on the corridor-facing surface of buildings, offset inward
             float avgBuildingWidth = (BuildingWidthMin + BuildingWidthMax) * 0.5f;
-            float inwardOffset = 2f; // Push billboards toward corridor center
-            float sideOffset = CorridorWidth / 2 + BuildingSetback - avgBuildingWidth / 2 - inwardOffset;
+            float sideOffset = CorridorWidth / 2 + BuildingSetback - avgBuildingWidth / 2 - BillboardInwardOffset;
             var position = pathPosition + (placeOnLeft ? -right : right) * sideOffset;
 
             // Randomize Y offset within range
@@ -1761,6 +1761,21 @@ namespace HolyRail.City
                 position - graffitiRight * graffitiHalfWidth - graffitiUp * graffitiHalfHeight,
             };
 
+            // Check that all 4 corners stay within the target building's surface
+            foreach (var corner in corners)
+            {
+                if (!IsPointOnBuildingSurface(corner, buildingData, surfaceNormal, margin: 0.5f))
+                {
+                    return false; // Graffiti would extend beyond building surface
+                }
+            }
+
+            // Check that no other buildings intersect the graffiti projection
+            if (DoesGraffitiIntersectOtherBuildings(corners, buildingData, -surfaceNormal))
+            {
+                return false; // Another building would catch part of the projection
+            }
+
             foreach (var billboard in _generatedBillboards)
             {
                 int cornersInBillboard = 0;
@@ -1851,6 +1866,127 @@ namespace HolyRail.City
             return Mathf.Abs(localPos.x) <= halfWidth &&
                    Mathf.Abs(localPos.y) <= halfHeight &&
                    Mathf.Abs(localPos.z) <= halfDepth;
+        }
+
+        private bool IsPointOnBuildingSurface(Vector3 point, BuildingData building, Vector3 surfaceNormal, float margin = 0f)
+        {
+            // Transform point to building's local space
+            var toPoint = point - building.Position;
+            var localPos = Quaternion.Inverse(building.Rotation) * toPoint;
+
+            float halfWidth = building.Scale.x * 0.5f - margin;
+            float halfHeight = building.Scale.y * 0.5f - margin;
+            float halfDepth = building.Scale.z * 0.5f - margin;
+
+            // Determine which face based on surface normal (in building local space)
+            var localNormal = Quaternion.Inverse(building.Rotation) * surfaceNormal;
+
+            // Check bounds based on which face we're on
+            if (Mathf.Abs(localNormal.z) > Mathf.Abs(localNormal.x))
+            {
+                // Front/back face - check X and Y bounds
+                return Mathf.Abs(localPos.x) <= halfWidth &&
+                       Mathf.Abs(localPos.y) <= halfHeight;
+            }
+            else
+            {
+                // Left/right face - check Z and Y bounds
+                return Mathf.Abs(localPos.z) <= halfDepth &&
+                       Mathf.Abs(localPos.y) <= halfHeight;
+            }
+        }
+
+        private bool DoesRayIntersectBuilding(Vector3 origin, Vector3 direction, float maxDistance, BuildingData building)
+        {
+            // Simple AABB ray intersection in building's local space
+            var toOrigin = origin - building.Position;
+            var localOrigin = Quaternion.Inverse(building.Rotation) * toOrigin;
+            var localDir = Quaternion.Inverse(building.Rotation) * direction;
+
+            float halfWidth = building.Scale.x * 0.5f;
+            float halfHeight = building.Scale.y * 0.5f;
+            float halfDepth = building.Scale.z * 0.5f;
+
+            // Ray-AABB intersection using slab method
+            float tMin = 0f;
+            float tMax = maxDistance;
+
+            // X axis
+            if (Mathf.Abs(localDir.x) < 0.0001f)
+            {
+                if (localOrigin.x < -halfWidth || localOrigin.x > halfWidth)
+                    return false;
+            }
+            else
+            {
+                float invD = 1f / localDir.x;
+                float t0 = (-halfWidth - localOrigin.x) * invD;
+                float t1 = (halfWidth - localOrigin.x) * invD;
+                if (invD < 0f) (t0, t1) = (t1, t0);
+                tMin = Mathf.Max(tMin, t0);
+                tMax = Mathf.Min(tMax, t1);
+                if (tMax < tMin) return false;
+            }
+
+            // Y axis
+            if (Mathf.Abs(localDir.y) < 0.0001f)
+            {
+                if (localOrigin.y < -halfHeight || localOrigin.y > halfHeight)
+                    return false;
+            }
+            else
+            {
+                float invD = 1f / localDir.y;
+                float t0 = (-halfHeight - localOrigin.y) * invD;
+                float t1 = (halfHeight - localOrigin.y) * invD;
+                if (invD < 0f) (t0, t1) = (t1, t0);
+                tMin = Mathf.Max(tMin, t0);
+                tMax = Mathf.Min(tMax, t1);
+                if (tMax < tMin) return false;
+            }
+
+            // Z axis
+            if (Mathf.Abs(localDir.z) < 0.0001f)
+            {
+                if (localOrigin.z < -halfDepth || localOrigin.z > halfDepth)
+                    return false;
+            }
+            else
+            {
+                float invD = 1f / localDir.z;
+                float t0 = (-halfDepth - localOrigin.z) * invD;
+                float t1 = (halfDepth - localOrigin.z) * invD;
+                if (invD < 0f) (t0, t1) = (t1, t0);
+                tMin = Mathf.Max(tMin, t0);
+                tMax = Mathf.Min(tMax, t1);
+                if (tMax < tMin) return false;
+            }
+
+            return true;
+        }
+
+        private bool DoesGraffitiIntersectOtherBuildings(Vector3[] corners, BuildingData targetBuilding, Vector3 projectionDirection)
+        {
+            float projectionDepth = 6f; // Slightly more than DecalProjector depth (5.29)
+
+            foreach (var building in _generatedBuildings)
+            {
+                // Skip the target building
+                if (building.Position == targetBuilding.Position)
+                    continue;
+
+                // Only check nearby buildings (innermost row)
+                if (building.NeedsCollider == 0)
+                    continue;
+
+                // Check if any corner's projection ray intersects this building
+                foreach (var corner in corners)
+                {
+                    if (DoesRayIntersectBuilding(corner, projectionDirection, projectionDepth, building))
+                        return true;
+                }
+            }
+            return false;
         }
 
         private float RandomRange(float min, float max)
