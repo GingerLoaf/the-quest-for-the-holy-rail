@@ -525,7 +525,7 @@ namespace StarterAssets
             UpdateDash();
 
             // Check for dash input
-            if (_isDashing)
+            if (_input.dash)
             {
                 _input.dash = false;
                 TryStartDash();
