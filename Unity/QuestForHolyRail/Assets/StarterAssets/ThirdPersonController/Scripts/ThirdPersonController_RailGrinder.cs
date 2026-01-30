@@ -178,6 +178,9 @@ namespace StarterAssets
         public float DashCooldown = 1.0f;
         [Tooltip("How much dash speed carries over after dash ends (0-1)")]
         public float DashMomentumCarry = 0.5f;
+        [Tooltip("DEPRECATED - No longer used. Grind dash now matches ground dash speed.")]
+        [System.Obsolete("GrindDashBoost is no longer used")]
+        public float GrindDashBoost = 0f;
 
         [Header("Boost Ability")]
         [Tooltip("Speed increase during boost")]
@@ -362,6 +365,16 @@ namespace StarterAssets
             {
                 _mainCamera = GameObject.FindGameObjectWithTag("MainCamera");
             }
+            _splineContainers = FindObjectsByType<SplineContainer>(FindObjectsSortMode.None);
+        }
+
+        /// <summary>
+        /// Refresh the cached spline containers array.
+        /// Call this when new SplineContainers are created dynamically at runtime
+        /// (e.g., by RadialSplineController).
+        /// </summary>
+        public void RefreshSplineContainers()
+        {
             _splineContainers = FindObjectsByType<SplineContainer>(FindObjectsSortMode.None);
         }
 
@@ -1071,14 +1084,17 @@ namespace StarterAssets
 
             if (_isDashing)
             {
-                // Grind dash uses same ratio as ground (dash/sprint = ~3.75x) for balanced feel
-                float dashRatio = DashSpeed / SprintSpeed;
-                targetSpeed = baseGrindSpeed * dashRatio * SpeedMultiplier;
+                // Grind dash uses identical formula to ground dash
+                targetSpeed = DashSpeed * SpeedMultiplier;
             }
             else
             {
                 targetSpeed = (baseGrindSpeed + effectiveBoost) * SpeedMultiplier;
             }
+
+            // DEBUG: Log grind speed calculation
+            Debug.Log($"[GRIND] isDashing={_isDashing}, targetSpeed={targetSpeed:F1}, currentSpeed={_grindSpeedCurrent:F1}, " +
+                      $"DashSpeed={DashSpeed}, baseGrindSpeed={baseGrindSpeed:F1}, SpeedMultiplier={SpeedMultiplier}");
 
             // Use boost decay rate when above target speed (decaying boost), otherwise use normal acceleration
             float lerpRate = _grindSpeedCurrent > targetSpeed ? GrindBoostDecayRate : GrindAcceleration;
@@ -1531,7 +1547,8 @@ namespace StarterAssets
             _dashDirection.y = 0f;
             _dashDirection.Normalize();
 
-            Debug.Log($"Dash started! Speed={DashSpeed}, Duration={DashDuration}");
+            Debug.Log($"[DASH START] IsGrinding={_isGrinding}, DashSpeed={DashSpeed}, " +
+                      $"Current grind speed={_grindSpeedCurrent:F1}, Ground speed={_speed:F1}");
         }
 
         private void EndDash()
@@ -1568,6 +1585,8 @@ namespace StarterAssets
             if (_isDashing)
             {
                 targetSpeed = DashSpeed * SpeedMultiplier;
+                float currentHorizontalSpeedForLog = new Vector3(_controller.velocity.x, 0.0f, _controller.velocity.z).magnitude;
+                Debug.Log($"[GROUND DASH] targetSpeed={targetSpeed:F1}, currentSpeed={currentHorizontalSpeedForLog:F1}");
             }
             else
             {
@@ -1578,8 +1597,8 @@ namespace StarterAssets
             // a simplistic acceleration and deceleration designed to be easy to remove, replace, or iterate upon
 
             // note: Vector2's == operator uses approximation so is not floating point error prone, and is cheaper than magnitude
-            // if there is no input, set the target speed to 0
-            if (_input.move == Vector2.zero) targetSpeed = 0.0f;
+            // if there is no input, set the target speed to 0 (but not during dash)
+            if (_input.move == Vector2.zero && !_isDashing) targetSpeed = 0.0f;
 
             // a reference to the players current horizontal velocity
             float currentHorizontalSpeed = new Vector3(_controller.velocity.x, 0.0f, _controller.velocity.z).magnitude;
@@ -1588,7 +1607,16 @@ namespace StarterAssets
             float inputMagnitude = _input.analogMovement ? _input.move.magnitude : 1f;
 
             // When airborne, preserve momentum better by reducing speed change rate
-            float effectiveSpeedChangeRate = Grounded ? SpeedChangeRate : SpeedChangeRate * _airControlMultiplier;
+            // Exception: dash should feel instant regardless of grounded state
+            float effectiveSpeedChangeRate;
+            if (_isDashing)
+            {
+                effectiveSpeedChangeRate = SpeedChangeRate * 3f; // Dash accelerates faster
+            }
+            else
+            {
+                effectiveSpeedChangeRate = Grounded ? SpeedChangeRate : SpeedChangeRate * _airControlMultiplier;
+            }
 
             // Preserve momentum after exiting grind - only allow acceleration, not deceleration
             bool preservingMomentum = _momentumPreservationTimer > 0f;
@@ -1606,7 +1634,9 @@ namespace StarterAssets
                 {
                     // creates curved result rather than a linear one giving a more organic speed change
                     // note T in Lerp is clamped, so we don't need to clamp our speed
-                    _speed = Mathf.Lerp(currentHorizontalSpeed, targetSpeed * inputMagnitude,
+                    // During dash, use full targetSpeed; otherwise scale by input magnitude
+                    float effectiveTargetSpeed = _isDashing ? targetSpeed : targetSpeed * inputMagnitude;
+                    _speed = Mathf.Lerp(currentHorizontalSpeed, effectiveTargetSpeed,
                         Time.deltaTime * effectiveSpeedChangeRate);
 
                     // round speed to 3 decimal places

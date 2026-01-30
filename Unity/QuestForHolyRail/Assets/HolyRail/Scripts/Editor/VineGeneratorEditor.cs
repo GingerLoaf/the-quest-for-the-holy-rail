@@ -94,6 +94,22 @@ namespace HolyRail.Vines.Editor
                     new GUIContent("Ground Vine Ratio", "Ratio of vines that start at ground and go up (for recovery when falling)")
                 );
 
+                // Attraction
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Attraction", EditorStyles.boldLabel);
+                EditorGUILayout.PropertyField(
+                    serializedObject.FindProperty("<BillboardAttractionStrength>k__BackingField"),
+                    new GUIContent("Billboard Attraction", "Strength of vine attraction toward billboards (0=random, 1=fully attracted)")
+                );
+                EditorGUILayout.PropertyField(
+                    serializedObject.FindProperty("<GraffitiAttractionStrength>k__BackingField"),
+                    new GUIContent("Graffiti Attraction", "Strength of vine attraction toward graffiti spots (0=random, 1=fully attracted)")
+                );
+                EditorGUILayout.PropertyField(
+                    serializedObject.FindProperty("<AttractorSearchRadius>k__BackingField"),
+                    new GUIContent("Search Radius", "Maximum distance to search for attractor connections")
+                );
+
                 // Ground settings
                 EditorGUILayout.Space();
                 EditorGUILayout.LabelField("Ground Settings", EditorStyles.boldLabel);
@@ -130,6 +146,13 @@ namespace HolyRail.Vines.Editor
                         MessageType.Info
                     );
                 }
+
+                // Billboard Vines
+                EditorGUILayout.Space();
+                EditorGUILayout.PropertyField(
+                    serializedObject.FindProperty("<PathEnableBillboardVines>k__BackingField"),
+                    new GUIContent("Enable Billboard Vines", "Also generate sagging cable vines connecting billboards")
+                );
 
             }
             else

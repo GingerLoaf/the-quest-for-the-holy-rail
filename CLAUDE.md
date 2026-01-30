@@ -49,6 +49,28 @@ This is a Unity project. Open the project folder `Unity/QuestForHolyRail/` in Un
 - `com.unity.inputsystem` (1.17.0) - Input handling
 - `com.unity.mathematics` (1.3.3) - float3, quaternions for spline math
 
+## Working with Unity
+
+### Checking for Errors
+
+- **Never use the screenshot MCP to look at logs.** Read the Unity Editor log file directly instead.
+- **Always check the editor log after writing new code** to verify no new errors were introduced.
+- Editor log location: `~/Library/Logs/Unity/Editor.log` (macOS)
+
+### Meta Files
+
+- **Never create .meta files.** Unity generates these automatically. Only edit existing .meta files if necessary (e.g., to change import settings).
+
+### Do Things Directly
+
+- **Never ask the user to do something you can do yourself.** This includes:
+  - Creating prefabs - write the YAML directly and add them to the scene
+  - Wiring up references in scenes/prefabs - edit the YAML to set references
+  - Creating assets - write the asset files directly
+  - Adding components to GameObjects - edit the scene/prefab YAML
+- **Don't create editor tools or menu items** for tasks that should just be done directly. If asked to create a prefab, create the prefab file - don't make a dropdown menu tool that the user has to click.
+- **Be autonomous.** If you can accomplish a task by editing files, do that instead of providing instructions for manual steps in the Unity Editor.
+
 ## Code Style
 
 Follow the style guide at `Assets/HolyRail/Documents/CSharp Style Guide.md`. Key points:

@@ -66,6 +66,14 @@ namespace HolyRail.Vines
             public int Active;
         }
 
+        private struct AttractorTarget
+        {
+            public Vector3 Position;
+            public Vector3 Normal;
+            public float Weight;
+            public bool IsBillboard;
+        }
+
         [Header("Editor")]
         [field: SerializeField] public bool AutoRegenerate { get; set; } = false;
 
@@ -122,6 +130,17 @@ namespace HolyRail.Vines
         [field: SerializeField] public float PathStartOffset { get; set; } = 10f;
         [field: SerializeField] public bool StartBelowGround { get; set; } = true;
         [field: SerializeField] public float GroundStartDepth { get; set; } = 5f;
+        [field: SerializeField] public bool PathEnableBillboardVines { get; set; } = false;
+
+        [Header("Path Mode - Attraction")]
+        [field: SerializeField, Range(0f, 1f)]
+        public float BillboardAttractionStrength { get; set; } = 0f;
+
+        [field: SerializeField, Range(0f, 1f)]
+        public float GraffitiAttractionStrength { get; set; } = 0f;
+
+        [field: SerializeField]
+        public float AttractorSearchRadius { get; set; } = 50f;
 
         [Header("Billboard Mode Settings")]
         [field: SerializeField] public float BillboardMaxConnectionDistance { get; set; } = 100f;
@@ -544,148 +563,187 @@ namespace HolyRail.Vines
             }
 
             int totalVines = 0;
+            int attractedVines = 0;
+            int corridorVines = 0;
             int skippedDueToSpacing = 0;
             var vineStartPositions = new List<Vector3>();
 
-            // Generate vines along each corridor path
-            foreach (var path in corridorPaths)
+            // Calculate total vines across all corridors
+            int totalRequestedVines = VinesPerCorridor * corridorPaths.Count;
+
+            // Calculate effective attraction and attracted vine count
+            float effectiveAttraction = Mathf.Max(BillboardAttractionStrength, GraffitiAttractionStrength);
+            int attractedVineCount = Mathf.RoundToInt(totalRequestedVines * effectiveAttraction);
+
+            // Generate attracted vines first (connecting billboards/graffiti)
+            if (attractedVineCount > 0)
             {
-                // Calculate total path length for distributing vines
-                float totalPathLength = 0f;
-                for (int i = 1; i < path.Count; i++)
+                var attractorTargets = GatherAttractorTargets(BillboardAttractionStrength, GraffitiAttractionStrength);
+
+                if (attractorTargets.Count >= 2)
                 {
-                    totalPathLength += Vector3.Distance(path[i - 1], path[i]);
+                    var usedPairs = new HashSet<(int, int)>();
+
+                    for (int i = 0; i < attractedVineCount; i++)
+                    {
+                        var pair = SelectAttractorPair(attractorTargets, usedPairs, random);
+                        if (!pair.HasValue)
+                            break;
+
+                        var (start, end) = pair.Value;
+
+                        // Track vine start position for spacing
+                        vineStartPositions.Add(start.Position);
+
+                        GenerateAttractedVine(start, end, random, totalVines);
+                        totalVines++;
+                        attractedVines++;
+                    }
                 }
+            }
 
-                // Distribute vines evenly along the path
-                for (int vineIdx = 0; vineIdx < VinesPerCorridor; vineIdx++)
+            // Calculate remaining corridor vines to generate
+            int remainingVines = totalRequestedVines - attractedVines;
+
+            // Generate remaining vines along each corridor path
+            if (remainingVines > 0)
+            {
+                // Distribute remaining vines across corridors
+                int vinesPerPath = remainingVines / corridorPaths.Count;
+                int extraVines = remainingVines % corridorPaths.Count;
+
+                for (int pathIdx = 0; pathIdx < corridorPaths.Count; pathIdx++)
                 {
-                    // Pick a position along the path
-                    float targetDist = (float)random.NextDouble() * totalPathLength;
-                    float accumulatedDist = 0f;
-                    int segmentIdx = 0;
-                    float segmentT = 0f;
+                    var path = corridorPaths[pathIdx];
+                    int vinesForThisPath = vinesPerPath + (pathIdx < extraVines ? 1 : 0);
 
-                    // Find which segment this distance falls on
+                    // Calculate total path length for distributing vines
+                    float totalPathLength = 0f;
                     for (int i = 1; i < path.Count; i++)
                     {
-                        float segmentLength = Vector3.Distance(path[i - 1], path[i]);
-                        if (accumulatedDist + segmentLength >= targetDist)
+                        totalPathLength += Vector3.Distance(path[i - 1], path[i]);
+                    }
+
+                    // Distribute vines along the path
+                    for (int vineIdx = 0; vineIdx < vinesForThisPath; vineIdx++)
+                    {
+                        // Pick a position along the path
+                        float targetDist = (float)random.NextDouble() * totalPathLength;
+                        float accumulatedDist = 0f;
+                        int segmentIdx = 0;
+                        float segmentT = 0f;
+
+                        // Find which segment this distance falls on
+                        for (int i = 1; i < path.Count; i++)
                         {
-                            segmentIdx = i - 1;
-                            segmentT = (targetDist - accumulatedDist) / segmentLength;
-                            break;
+                            float segmentLength = Vector3.Distance(path[i - 1], path[i]);
+                            if (accumulatedDist + segmentLength >= targetDist)
+                            {
+                                segmentIdx = i - 1;
+                                segmentT = (targetDist - accumulatedDist) / segmentLength;
+                                break;
+                            }
+                            accumulatedDist += segmentLength;
                         }
-                        accumulatedDist += segmentLength;
-                    }
 
-                    // Interpolate position on the path
-                    Vector3 pathPos = Vector3.Lerp(path[segmentIdx], path[Mathf.Min(segmentIdx + 1, path.Count - 1)], segmentT);
+                        // Interpolate position on the path
+                        Vector3 pathPos = Vector3.Lerp(path[segmentIdx], path[Mathf.Min(segmentIdx + 1, path.Count - 1)], segmentT);
 
-                    // Calculate tangent direction along the path
-                    Vector3 tangent;
-                    if (segmentIdx + 1 < path.Count)
-                    {
-                        tangent = (path[segmentIdx + 1] - path[segmentIdx]).normalized;
-                    }
-                    else if (segmentIdx > 0)
-                    {
-                        tangent = (path[segmentIdx] - path[segmentIdx - 1]).normalized;
-                    }
-                    else
-                    {
-                        tangent = Vector3.forward;
-                    }
-
-                    // Calculate right vector (perpendicular to tangent, in horizontal plane)
-                    Vector3 right = Vector3.Cross(Vector3.up, tangent).normalized;
-                    if (right.sqrMagnitude < 0.01f)
-                    {
-                        right = Vector3.right;
-                    }
-
-                    // Determine if this is a ground vine
-                    bool isGroundVine = (float)random.NextDouble() < GroundVineRatio;
-
-                    // Offset position laterally within corridor width
-                    float lateralOffset = ((float)random.NextDouble() * 2 - 1) * PathCorridorWidth / 2;
-
-                    // Determine height
-                    float height;
-                    if (isGroundVine)
-                    {
-                        height = 0f;
-                    }
-                    else
-                    {
-                        height = Mathf.Lerp(VolumeHeightRange.x, VolumeHeightRange.y, (float)random.NextDouble());
-                    }
-
-                    Vector3 startPos = pathPos + right * lateralOffset;
-                    startPos.y = height;
-
-                    // Check spacing against existing vines
-                    bool tooClose = false;
-                    foreach (var existingPos in vineStartPositions)
-                    {
-                        if (Vector3.Distance(startPos, existingPos) < MinVineSpacing)
+                        // Calculate tangent direction along the path
+                        Vector3 tangent;
+                        if (segmentIdx + 1 < path.Count)
                         {
-                            tooClose = true;
-                            break;
+                            tangent = (path[segmentIdx + 1] - path[segmentIdx]).normalized;
                         }
+                        else if (segmentIdx > 0)
+                        {
+                            tangent = (path[segmentIdx] - path[segmentIdx - 1]).normalized;
+                        }
+                        else
+                        {
+                            tangent = Vector3.forward;
+                        }
+
+                        // Calculate right vector (perpendicular to tangent, in horizontal plane)
+                        Vector3 right = Vector3.Cross(Vector3.up, tangent).normalized;
+                        if (right.sqrMagnitude < 0.01f)
+                        {
+                            right = Vector3.right;
+                        }
+
+                        // Determine if this is a ground vine
+                        bool isGroundVine = (float)random.NextDouble() < GroundVineRatio;
+
+                        // Offset position laterally within corridor width
+                        float lateralOffset = ((float)random.NextDouble() * 2 - 1) * PathCorridorWidth / 2;
+
+                        // Determine height
+                        float height;
+                        if (isGroundVine)
+                        {
+                            height = 0f;
+                        }
+                        else
+                        {
+                            height = Mathf.Lerp(VolumeHeightRange.x, VolumeHeightRange.y, (float)random.NextDouble());
+                        }
+
+                        Vector3 startPos = pathPos + right * lateralOffset;
+                        startPos.y = height;
+
+                        // Check spacing against existing vines
+                        bool tooClose = false;
+                        foreach (var existingPos in vineStartPositions)
+                        {
+                            if (Vector3.Distance(startPos, existingPos) < MinVineSpacing)
+                            {
+                                tooClose = true;
+                                break;
+                            }
+                        }
+
+                        if (tooClose)
+                        {
+                            skippedDueToSpacing++;
+                            continue;
+                        }
+
+                        vineStartPositions.Add(startPos);
+
+                        // Random vine length
+                        float vineLength = Mathf.Lerp(PathLengthRange.x, PathLengthRange.y, (float)random.NextDouble());
+
+                        if (isGroundVine)
+                        {
+                            // Ground vines rise from ground while following corridor curve
+                            float targetHeight = Mathf.Lerp(VolumeHeightRange.x, VolumeHeightRange.y, (float)random.NextDouble()) * 0.5f;
+
+                            GenerateGroundVine(
+                                path,
+                                targetDist,
+                                vineLength,
+                                lateralOffset,
+                                targetHeight,
+                                random,
+                                totalVines
+                            );
+                        }
+                        else
+                        {
+                            // Non-ground vines follow the corridor curve
+                            GenerateCorridorFollowingVine(
+                                path,
+                                targetDist,
+                                vineLength,
+                                lateralOffset,
+                                height,
+                                random,
+                                totalVines
+                            );
+                        }
+                        totalVines++;
+                        corridorVines++;
                     }
-
-                    if (tooClose)
-                    {
-                        skippedDueToSpacing++;
-                        continue;
-                    }
-
-                    vineStartPositions.Add(startPos);
-
-                    // Random vine length
-                    float vineLength = Mathf.Lerp(PathLengthRange.x, PathLengthRange.y, (float)random.NextDouble());
-
-                    // Vine direction follows the path tangent with some variation
-                    Vector3 vineDir;
-                    if (isGroundVine)
-                    {
-                        // Ground vines go primarily upward
-                        float targetHeight = VolumeHeightRange.y * 0.25f;
-                        vineDir = new Vector3(
-                            (float)(random.NextDouble() * 2 - 1) * 0.3f,
-                            targetHeight / vineLength,
-                            tangent.z * 0.5f + (float)(random.NextDouble() * 2 - 1) * 0.2f
-                        ).normalized;
-                    }
-                    else
-                    {
-                        // Regular vines follow the path with variation
-                        float dirVariation = 0.3f;
-                        vineDir = (tangent + new Vector3(
-                            (float)(random.NextDouble() * 2 - 1) * dirVariation,
-                            (float)(random.NextDouble() * 2 - 1) * dirVariation * 0.5f,
-                            (float)(random.NextDouble() * 2 - 1) * dirVariation
-                        )).normalized;
-                    }
-
-                    // Perpendicular direction for undulation
-                    var vineRight = Vector3.Cross(Vector3.up, vineDir).normalized;
-                    if (vineRight.sqrMagnitude < 0.01f)
-                    {
-                        vineRight = Vector3.Cross(Vector3.forward, vineDir).normalized;
-                    }
-
-                    // Generate the vine segment
-                    GenerateVolumePathVine(
-                        startPos,
-                        vineDir,
-                        vineLength,
-                        vineRight,
-                        random,
-                        totalVines
-                    );
-                    totalVines++;
                 }
             }
 
@@ -693,7 +751,22 @@ namespace HolyRail.Vines
             {
                 Debug.Log($"VineGenerator (Path): Skipped {skippedDueToSpacing} vines due to MinVineSpacing ({MinVineSpacing}m)");
             }
-            Debug.Log($"VineGenerator (Path): Generated {_generatedNodes.Count} nodes across {totalVines} vines following {corridorPaths.Count} corridor path(s)");
+
+            string attractionInfo = effectiveAttraction > 0
+                ? $" ({attractedVines} attracted, {corridorVines} corridor)"
+                : "";
+            Debug.Log($"VineGenerator (Path): Generated {_generatedNodes.Count} nodes across {totalVines} vines{attractionInfo} following {corridorPaths.Count} corridor path(s)");
+
+            // Optionally generate billboard-connecting vines
+            if (PathEnableBillboardVines)
+            {
+                int nodesBefore = _generatedNodes.Count;
+                int chainsCreated = GenerateBillboardChains();
+                if (chainsCreated > 0)
+                {
+                    Debug.Log($"VineGenerator (Path): Added {_generatedNodes.Count - nodesBefore} billboard vine nodes across {chainsCreated} chain(s)");
+                }
+            }
         }
 
         private void GenerateBillboardSplines()
@@ -710,17 +783,24 @@ namespace HolyRail.Vines
                 return;
             }
 
-            var billboards = CityManager.Billboards;
-            if (billboards.Count < 2)
-            {
-                Debug.LogWarning("VineGenerator: Need at least 2 billboards for Billboard mode.");
-                return;
-            }
-
-            var random = new System.Random(Seed);
             _generatedNodes.Clear();
             _generatedAttractors.Clear();
 
+            int totalChains = GenerateBillboardChains();
+
+            Debug.Log($"VineGenerator (Billboard): Generated {_generatedNodes.Count} nodes across {totalChains} continuous cable chain(s)");
+        }
+
+        private int GenerateBillboardChains()
+        {
+            if (CityManager == null || !CityManager.HasBillboardData)
+                return 0;
+
+            var billboards = CityManager.Billboards;
+            if (billboards.Count < 2)
+                return 0;
+
+            var random = new System.Random(Seed + 999);  // Different seed offset for billboard vines
             int totalChains = 0;
 
             if (BillboardSameSideOnly)
@@ -741,7 +821,7 @@ namespace HolyRail.Vines
                 totalChains = GenerateBillboardChain(sortedBillboards, random, 0);
             }
 
-            Debug.Log($"VineGenerator (Billboard): Generated {_generatedNodes.Count} nodes across {totalChains} continuous cable chain(s)");
+            return totalChains;
         }
 
         private int GenerateBillboardChain(List<BillboardData> sortedBillboards, System.Random random, int noiseIndexOffset)
@@ -818,19 +898,6 @@ namespace HolyRail.Vines
                 // This gives 0 at t=0, -sagAmount at t=0.5, and 0 at t=1
                 float sagY = -4f * BillboardSagAmount * t * (1f - t);
                 position.y += sagY;
-
-                // Apply lateral noise using existing Free mode noise settings
-                var direction = (endPos - startPos).normalized;
-                var right = Vector3.Cross(Vector3.up, direction).normalized;
-                if (right.sqrMagnitude < 0.01f)
-                {
-                    right = Vector3.Cross(Vector3.forward, direction).normalized;
-                }
-
-                float noiseRight = (Mathf.PerlinNoise(t * FreeNoiseFrequency.x + noiseOffset, 0f) * 2f - 1f) * FreeNoiseAmplitude.x * 0.3f;
-                float noiseUp = (Mathf.PerlinNoise(t * FreeNoiseFrequency.y + noiseOffset + 33f, 100f) * 2f - 1f) * FreeNoiseAmplitude.y * 0.3f;
-
-                position += right * noiseRight + Vector3.up * noiseUp;
 
                 // Apply obstacle avoidance if enabled
                 if (EnableObstacleAvoidance && i > 0 && Physics.CheckSphere(position, ObstacleAvoidanceDistance))
@@ -1158,6 +1225,405 @@ namespace HolyRail.Vines
                     + Vector3.up * noiseUp;
 
                 // Clamp to stay above ground (y >= 0)
+                position.y = Mathf.Max(position.y, 0f);
+
+                // Apply obstacle avoidance if enabled
+                if (EnableObstacleAvoidance && i > 0 && Physics.CheckSphere(position, ObstacleAvoidanceDistance))
+                {
+                    var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
+                    var dir = (position - prevPos).normalized;
+                    float dist = Vector3.Distance(prevPos, position);
+
+                    if (Physics.SphereCast(prevPos, ObstacleAvoidanceDistance * 0.5f, dir, out var hit, dist + ObstacleAvoidanceDistance))
+                    {
+                        position = hit.point - dir * ObstacleAvoidanceDistance + hit.normal * ObstacleAvoidanceDistance;
+                    }
+                }
+
+                // Final ground clamp after obstacle avoidance
+                position.y = Mathf.Max(position.y, 0f);
+
+                _generatedNodes.Add(new VineNode
+                {
+                    Position = position,
+                    ParentIndex = (i == 0) ? -1 : _generatedNodes.Count - 1,
+                    IsTip = (i == pointCount - 1) ? 1 : 0,
+                    LastGrowIteration = 0
+                });
+            }
+        }
+
+        private (Vector3 position, Vector3 tangent) SampleCorridorPath(IReadOnlyList<Vector3> path, float distance)
+        {
+            if (path.Count < 2)
+            {
+                return (path[0], Vector3.forward);
+            }
+
+            float accumulatedDist = 0f;
+
+            for (int i = 1; i < path.Count; i++)
+            {
+                float segmentLength = Vector3.Distance(path[i - 1], path[i]);
+                if (accumulatedDist + segmentLength >= distance)
+                {
+                    float t = (distance - accumulatedDist) / segmentLength;
+                    var position = Vector3.Lerp(path[i - 1], path[i], t);
+                    var tangent = (path[i] - path[i - 1]).normalized;
+                    return (position, tangent);
+                }
+                accumulatedDist += segmentLength;
+            }
+
+            // Past end of path - return last point and tangent
+            var lastTangent = (path[path.Count - 1] - path[path.Count - 2]).normalized;
+            return (path[path.Count - 1], lastTangent);
+        }
+
+        private void GenerateCorridorFollowingVine(
+            IReadOnlyList<Vector3> corridorPath,
+            float startDistance,
+            float vineLength,
+            float lateralOffset,
+            float height,
+            System.Random random,
+            int noiseOffset)
+        {
+            int pointCount = FreePointsPerSpline;
+
+            // Per-vine: sample random target values within level chunk ranges
+            float vineRandom = Mathf.PerlinNoise(noiseOffset * 0.1f, 0f);
+            float vineRandomY = Mathf.PerlinNoise(noiseOffset * 0.1f, 50f);
+
+            // Target amplitude from level chunk ranges (half span = amplitude)
+            float targetAmplitudeX = Mathf.Lerp(
+                LevelChunkRules.LateralSpanMin / 2f,
+                LevelChunkRules.LateralSpanMax / 2f,
+                vineRandom
+            );
+            float targetAmplitudeY = Mathf.Lerp(
+                LevelChunkRules.HeightVariationMin / 2f,
+                LevelChunkRules.HeightVariationMax / 2f,
+                vineRandomY
+            );
+
+            // Target frequency from level chunk range
+            float targetFreqX = Mathf.Lerp(LevelChunkRules.FrequencyMin, LevelChunkRules.FrequencyMax, vineRandom);
+            float targetFreqY = Mathf.Lerp(LevelChunkRules.FrequencyMin, LevelChunkRules.FrequencyMax, 1f - vineRandom);
+
+            // Blend current settings toward randomized level chunk targets
+            float influencedAmplitudeX = Mathf.Lerp(FreeNoiseAmplitude.x, targetAmplitudeX, LevelChunkInfluence);
+            float influencedAmplitudeY = Mathf.Lerp(FreeNoiseAmplitude.y, targetAmplitudeY, LevelChunkInfluence);
+            float influencedFreqX = Mathf.Lerp(FreeNoiseFrequency.x, targetFreqX, LevelChunkInfluence);
+            float influencedFreqY = Mathf.Lerp(FreeNoiseFrequency.y, targetFreqY, LevelChunkInfluence);
+
+            for (int i = 0; i < pointCount; i++)
+            {
+                float t = (float)i / (pointCount - 1);
+                float currentDistance = startDistance + t * vineLength;
+
+                // Sample the corridor path at this distance
+                var (pathPos, tangent) = SampleCorridorPath(corridorPath, currentDistance);
+
+                // Calculate right vector perpendicular to tangent in horizontal plane
+                var right = Vector3.Cross(Vector3.up, tangent).normalized;
+                if (right.sqrMagnitude < 0.01f)
+                {
+                    right = Vector3.right;
+                }
+
+                // Sample noise for lateral and vertical undulation
+                float noiseRight = (Mathf.PerlinNoise(t * influencedFreqX + noiseOffset, 0f) * 2f - 1f) * influencedAmplitudeX;
+                float noiseUp = (Mathf.PerlinNoise(t * influencedFreqY + noiseOffset + 33f, 100f) * 2f - 1f) * influencedAmplitudeY;
+
+                // Build position: path position + lateral offset + noise
+                var position = pathPos
+                    + right * (lateralOffset + noiseRight)
+                    + Vector3.up * (height + noiseUp);
+
+                // Clamp to stay above ground (y >= 0)
+                position.y = Mathf.Max(position.y, 0f);
+
+                // Apply obstacle avoidance if enabled
+                if (EnableObstacleAvoidance && i > 0 && Physics.CheckSphere(position, ObstacleAvoidanceDistance))
+                {
+                    var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
+                    var dir = (position - prevPos).normalized;
+                    float dist = Vector3.Distance(prevPos, position);
+
+                    if (Physics.SphereCast(prevPos, ObstacleAvoidanceDistance * 0.5f, dir, out var hit, dist + ObstacleAvoidanceDistance))
+                    {
+                        position = hit.point - dir * ObstacleAvoidanceDistance + hit.normal * ObstacleAvoidanceDistance;
+                    }
+                }
+
+                // Final ground clamp after obstacle avoidance
+                position.y = Mathf.Max(position.y, 0f);
+
+                _generatedNodes.Add(new VineNode
+                {
+                    Position = position,
+                    ParentIndex = (i == 0) ? -1 : _generatedNodes.Count - 1,
+                    IsTip = (i == pointCount - 1) ? 1 : 0,
+                    LastGrowIteration = 0
+                });
+            }
+        }
+
+        private void GenerateGroundVine(
+            IReadOnlyList<Vector3> corridorPath,
+            float startDistance,
+            float vineLength,
+            float lateralOffset,
+            float targetHeight,
+            System.Random random,
+            int noiseOffset)
+        {
+            int pointCount = FreePointsPerSpline;
+
+            // Per-vine noise parameters (smaller amplitude to stay within corridor)
+            float vineRandom = Mathf.PerlinNoise(noiseOffset * 0.1f, 0f);
+            float vineRandomY = Mathf.PerlinNoise(noiseOffset * 0.1f, 50f);
+
+            // Lateral noise amplitude - constrained to stay within corridor bounds
+            float maxLateralNoise = (PathCorridorWidth / 2f) - Mathf.Abs(lateralOffset);
+            maxLateralNoise = Mathf.Max(maxLateralNoise * 0.5f, 0.5f); // At least some wiggle room
+
+            float targetFreqX = Mathf.Lerp(LevelChunkRules.FrequencyMin, LevelChunkRules.FrequencyMax, vineRandom);
+            float targetFreqY = Mathf.Lerp(LevelChunkRules.FrequencyMin, LevelChunkRules.FrequencyMax, 1f - vineRandom);
+
+            float influencedFreqX = Mathf.Lerp(FreeNoiseFrequency.x, targetFreqX, LevelChunkInfluence);
+            float influencedFreqY = Mathf.Lerp(FreeNoiseFrequency.y, targetFreqY, LevelChunkInfluence);
+
+            for (int i = 0; i < pointCount; i++)
+            {
+                float t = (float)i / (pointCount - 1);
+                float currentDistance = startDistance + t * vineLength;
+
+                // Sample the corridor path at this distance
+                var (pathPos, tangent) = SampleCorridorPath(corridorPath, currentDistance);
+
+                // Calculate right vector perpendicular to tangent in horizontal plane
+                var right = Vector3.Cross(Vector3.up, tangent).normalized;
+                if (right.sqrMagnitude < 0.01f)
+                {
+                    right = Vector3.right;
+                }
+
+                // Interpolate height from ground (0) to target height
+                float currentHeight = Mathf.Lerp(0f, targetHeight, t);
+
+                // Small lateral noise, clamped to corridor bounds
+                float noiseRight = (Mathf.PerlinNoise(t * influencedFreqX + noiseOffset, 0f) * 2f - 1f) * maxLateralNoise;
+                float noiseUp = (Mathf.PerlinNoise(t * influencedFreqY + noiseOffset + 33f, 100f) * 2f - 1f) * 1f;
+
+                // Clamp total lateral offset to stay within corridor
+                float totalLateralOffset = lateralOffset + noiseRight;
+                float halfWidth = PathCorridorWidth / 2f;
+                totalLateralOffset = Mathf.Clamp(totalLateralOffset, -halfWidth, halfWidth);
+
+                // Build position: path position + clamped lateral offset + height
+                var position = pathPos
+                    + right * totalLateralOffset
+                    + Vector3.up * (currentHeight + noiseUp);
+
+                // Clamp to stay above ground
+                position.y = Mathf.Max(position.y, 0f);
+
+                // Apply obstacle avoidance if enabled
+                if (EnableObstacleAvoidance && i > 0 && Physics.CheckSphere(position, ObstacleAvoidanceDistance))
+                {
+                    var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
+                    var dir = (position - prevPos).normalized;
+                    float dist = Vector3.Distance(prevPos, position);
+
+                    if (Physics.SphereCast(prevPos, ObstacleAvoidanceDistance * 0.5f, dir, out var hit, dist + ObstacleAvoidanceDistance))
+                    {
+                        position = hit.point - dir * ObstacleAvoidanceDistance + hit.normal * ObstacleAvoidanceDistance;
+                    }
+                }
+
+                // Final ground clamp after obstacle avoidance
+                position.y = Mathf.Max(position.y, 0f);
+
+                _generatedNodes.Add(new VineNode
+                {
+                    Position = position,
+                    ParentIndex = (i == 0) ? -1 : _generatedNodes.Count - 1,
+                    IsTip = (i == pointCount - 1) ? 1 : 0,
+                    LastGrowIteration = 0
+                });
+            }
+        }
+
+        private List<AttractorTarget> GatherAttractorTargets(float billboardWeight, float graffitiWeight)
+        {
+            var targets = new List<AttractorTarget>();
+
+            if (CityManager == null)
+                return targets;
+
+            // Gather billboard positions
+            if (billboardWeight > 0f && CityManager.HasBillboardData)
+            {
+                foreach (var billboard in CityManager.Billboards)
+                {
+                    targets.Add(new AttractorTarget
+                    {
+                        Position = billboard.Position,
+                        Normal = billboard.Normal,
+                        Weight = billboardWeight,
+                        IsBillboard = true
+                    });
+                }
+            }
+
+            // Gather graffiti positions
+            if (graffitiWeight > 0f && CityManager.GraffitiSpots != null && CityManager.GraffitiSpots.Count > 0)
+            {
+                foreach (var graffiti in CityManager.GraffitiSpots)
+                {
+                    targets.Add(new AttractorTarget
+                    {
+                        Position = graffiti.Position,
+                        Normal = graffiti.Normal,
+                        Weight = graffitiWeight,
+                        IsBillboard = false
+                    });
+                }
+            }
+
+            return targets;
+        }
+
+        private (AttractorTarget start, AttractorTarget end)? SelectAttractorPair(
+            List<AttractorTarget> targets,
+            HashSet<(int, int)> usedPairs,
+            System.Random random)
+        {
+            if (targets.Count < 2)
+                return null;
+
+            // Build list of valid pairs with weights
+            var validPairs = new List<(int startIdx, int endIdx, float weight)>();
+
+            for (int i = 0; i < targets.Count; i++)
+            {
+                for (int j = i + 1; j < targets.Count; j++)
+                {
+                    // Skip already used pairs
+                    if (usedPairs.Contains((i, j)) || usedPairs.Contains((j, i)))
+                        continue;
+
+                    float dist = Vector3.Distance(targets[i].Position, targets[j].Position);
+
+                    // Skip pairs outside valid vine length range
+                    // Use PathLengthRange for min/max, capped by AttractorSearchRadius
+                    if (dist < PathLengthRange.x || dist > Mathf.Min(PathLengthRange.y, AttractorSearchRadius))
+                        continue;
+
+                    // Combined weight favors higher attraction strengths
+                    float pairWeight = targets[i].Weight + targets[j].Weight;
+                    validPairs.Add((i, j, pairWeight));
+                }
+            }
+
+            if (validPairs.Count == 0)
+                return null;
+
+            // Weighted random selection
+            float totalWeight = 0f;
+            foreach (var pair in validPairs)
+                totalWeight += pair.weight;
+
+            float selection = (float)random.NextDouble() * totalWeight;
+            float accumulated = 0f;
+
+            foreach (var pair in validPairs)
+            {
+                accumulated += pair.weight;
+                if (accumulated >= selection)
+                {
+                    usedPairs.Add((pair.startIdx, pair.endIdx));
+                    return (targets[pair.startIdx], targets[pair.endIdx]);
+                }
+            }
+
+            // Fallback to first valid pair
+            var fallback = validPairs[0];
+            usedPairs.Add((fallback.startIdx, fallback.endIdx));
+            return (targets[fallback.startIdx], targets[fallback.endIdx]);
+        }
+
+        private void GenerateAttractedVine(
+            AttractorTarget start,
+            AttractorTarget end,
+            System.Random random,
+            int noiseOffset)
+        {
+            int pointCount = FreePointsPerSpline;
+
+            // Per-vine noise parameters
+            float vineRandom = Mathf.PerlinNoise(noiseOffset * 0.1f, 0f);
+            float vineRandomY = Mathf.PerlinNoise(noiseOffset * 0.1f, 50f);
+
+            // Target amplitude from level chunk ranges
+            float targetAmplitudeX = Mathf.Lerp(
+                LevelChunkRules.LateralSpanMin / 2f,
+                LevelChunkRules.LateralSpanMax / 2f,
+                vineRandom
+            );
+            float targetAmplitudeY = Mathf.Lerp(
+                LevelChunkRules.HeightVariationMin / 2f,
+                LevelChunkRules.HeightVariationMax / 2f,
+                vineRandomY
+            );
+
+            // Target frequency from level chunk range
+            float targetFreqX = Mathf.Lerp(LevelChunkRules.FrequencyMin, LevelChunkRules.FrequencyMax, vineRandom);
+            float targetFreqY = Mathf.Lerp(LevelChunkRules.FrequencyMin, LevelChunkRules.FrequencyMax, 1f - vineRandom);
+
+            // Blend current settings toward randomized level chunk targets
+            float influencedAmplitudeX = Mathf.Lerp(FreeNoiseAmplitude.x, targetAmplitudeX, LevelChunkInfluence);
+            float influencedAmplitudeY = Mathf.Lerp(FreeNoiseAmplitude.y, targetAmplitudeY, LevelChunkInfluence);
+            float influencedFreqX = Mathf.Lerp(FreeNoiseFrequency.x, targetFreqX, LevelChunkInfluence);
+            float influencedFreqY = Mathf.Lerp(FreeNoiseFrequency.y, targetFreqY, LevelChunkInfluence);
+
+            // Calculate direction and perpendicular vectors
+            Vector3 direction = (end.Position - start.Position).normalized;
+            float totalLength = Vector3.Distance(start.Position, end.Position);
+
+            Vector3 right = Vector3.Cross(Vector3.up, direction).normalized;
+            if (right.sqrMagnitude < 0.01f)
+                right = Vector3.right;
+
+            // Small sag amount like billboard cables (reduced for more flowing paths)
+            float sagAmount = BillboardSagAmount * 0.3f;
+
+            for (int i = 0; i < pointCount; i++)
+            {
+                float t = (float)i / (pointCount - 1);
+
+                // Base position interpolated between start and end
+                Vector3 basePosition = Vector3.Lerp(start.Position, end.Position, t);
+
+                // Apply parabolic sag
+                float sagY = -4f * sagAmount * t * (1f - t);
+
+                // Endpoint fade: noise fades to 0 at both ends
+                // endpointFade = 1 - (2 * |t - 0.5|)^2 gives smooth fade
+                float distFromCenter = Mathf.Abs(t - 0.5f) * 2f;
+                float endpointFade = 1f - distFromCenter * distFromCenter;
+
+                // Sample noise with endpoint fade
+                float noiseRight = (Mathf.PerlinNoise(t * influencedFreqX + noiseOffset, 0f) * 2f - 1f) * influencedAmplitudeX * endpointFade;
+                float noiseUp = (Mathf.PerlinNoise(t * influencedFreqY + noiseOffset + 33f, 100f) * 2f - 1f) * influencedAmplitudeY * endpointFade;
+
+                var position = basePosition
+                    + right * noiseRight
+                    + Vector3.up * (sagY + noiseUp);
+
+                // Clamp to stay above ground
                 position.y = Mathf.Max(position.y, 0f);
 
                 // Apply obstacle avoidance if enabled
