@@ -49,10 +49,10 @@ namespace HolyRail.Splines
         [field: SerializeField]
         public SplineNoiseType NoiseType { get; private set; } = SplineNoiseType.Simplex;
 
-        [field: SerializeField, Range(0.01f, 10f)]
+        [field: SerializeField]
         public float NoiseFrequency { get; private set; } = 1f;
 
-        [field: SerializeField, Range(0f, 5f)]
+        [field: SerializeField]
         public float NoiseAmplitude { get; private set; } = 0.5f;
 
         [field: SerializeField, Tooltip("Per-axis amplitude multiplier")]
@@ -93,6 +93,11 @@ namespace HolyRail.Splines
         // Original knot data for non-destructive noise application
         private List<List<BezierKnot>> _originalKnots = new List<List<BezierKnot>>();
         private bool _knotsCached;
+        private bool _isApplyingNoise;
+
+        // Edit debouncing - don't regenerate while user is actively dragging
+        private double _lastSplineEditTime;
+        private const double EditDebounceSeconds = 0.15;
 
         public IReadOnlyList<RadialCloneData> CloneData => _cloneData;
         public int ActiveCloneCount => _cloneData.Count;
@@ -135,6 +140,22 @@ namespace HolyRail.Splines
 
             if (_needsRegeneration)
             {
+#if UNITY_EDITOR
+                // In editor, debounce during active spline editing to prevent fighting
+                if (!Application.isPlaying)
+                {
+                    double timeSinceEdit = EditorApplication.timeSinceStartup - _lastSplineEditTime;
+                    if (timeSinceEdit < EditDebounceSeconds)
+                    {
+                        // Still editing, defer regeneration until user stops dragging
+                        if (_buffersInitialized && SplineMaterial != null && SourceMesh != null)
+                        {
+                            RenderClones();
+                        }
+                        return;
+                    }
+                }
+#endif
                 _needsRegeneration = false;
                 Regenerate();
             }
@@ -251,23 +272,31 @@ namespace HolyRail.Splines
             if (MasterSpline == null || _originalKnots.Count == 0)
                 return;
 
-            for (int s = 0; s < MasterSpline.Splines.Count && s < _originalKnots.Count; s++)
+            _isApplyingNoise = true;
+            try
             {
-                var spline = MasterSpline.Splines[s];
-                var originalKnotList = _originalKnots[s];
-
-                for (int k = 0; k < spline.Count && k < originalKnotList.Count; k++)
+                for (int s = 0; s < MasterSpline.Splines.Count && s < _originalKnots.Count; s++)
                 {
-                    var originalKnot = originalKnotList[k];
-                    var noisyKnot = originalKnot;
+                    var spline = MasterSpline.Splines[s];
+                    var originalKnotList = _originalKnots[s];
 
-                    if (NoiseEnabled && NoiseAmplitude > 0f)
+                    for (int k = 0; k < spline.Count && k < originalKnotList.Count; k++)
                     {
-                        noisyKnot.Position = ApplyNoiseToPosition(originalKnot.Position, s, k);
-                    }
+                        var originalKnot = originalKnotList[k];
+                        var noisyKnot = originalKnot;
 
-                    spline[k] = noisyKnot;
+                        if (NoiseEnabled && NoiseAmplitude > 0f)
+                        {
+                            noisyKnot.Position = ApplyNoiseToPosition(originalKnot.Position, s, k);
+                        }
+
+                        spline[k] = noisyKnot;
+                    }
                 }
+            }
+            finally
+            {
+                _isApplyingNoise = false;
             }
         }
 
@@ -629,14 +658,48 @@ namespace HolyRail.Splines
         /// </summary>
         private void OnSplineChanged(Spline spline, int knotIndex, SplineModification modification)
         {
+            // Ignore changes we're making programmatically during noise application
+            if (_isApplyingNoise)
+                return;
+
             if (MasterSpline == null)
                 return;
 
+#if UNITY_EDITOR
+            // Track edit time for debouncing
+            _lastSplineEditTime = EditorApplication.timeSinceStartup;
+#endif
+
             // Check if the changed spline belongs to our master
-            foreach (var masterSpline in MasterSpline.Splines)
+            for (int s = 0; s < MasterSpline.Splines.Count; s++)
             {
-                if (ReferenceEquals(masterSpline, spline))
+                if (ReferenceEquals(MasterSpline.Splines[s], spline))
                 {
+                    // User edited the spline - update the cached original to reflect their edit
+                    // We need to account for the fact that the spline currently has noise applied
+                    if (_knotsCached && knotIndex >= 0 && s < _originalKnots.Count && knotIndex < _originalKnots[s].Count)
+                    {
+                        // Get the current (edited) knot from the spline
+                        var editedKnot = spline[knotIndex];
+
+                        // If noise was applied, the user is editing the noisy position
+                        // We need to store their edit as the new "original" (pre-noise) position
+                        // by subtracting what the noise offset would have been
+                        if (NoiseEnabled && NoiseAmplitude > 0f)
+                        {
+                            var originalPos = _originalKnots[s][knotIndex].Position;
+                            var noiseOffset = ApplyNoiseToPosition(originalPos, s, knotIndex) - originalPos;
+                            editedKnot.Position = (float3)editedKnot.Position - noiseOffset;
+                        }
+
+                        _originalKnots[s][knotIndex] = editedKnot;
+                    }
+                    else
+                    {
+                        // Cache structure changed, need full recache
+                        _knotsCached = false;
+                    }
+
                     _needsRegeneration = true;
                     return;
                 }
