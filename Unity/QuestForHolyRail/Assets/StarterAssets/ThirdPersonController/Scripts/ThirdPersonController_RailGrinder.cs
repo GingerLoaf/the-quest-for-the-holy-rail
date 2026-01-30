@@ -1158,7 +1158,7 @@ namespace StarterAssets
             if (_isDashing)
             {
                 // Grind dash uses identical formula to ground dash
-                targetSpeed = DashSpeed * SpeedMultiplier;
+                targetSpeed = DashSpeed;
             }
             else
             {
@@ -1167,7 +1167,7 @@ namespace StarterAssets
 
             // DEBUG: Log grind speed calculation
             Debug.Log($"[GRIND] isDashing={_isDashing}, targetSpeed={targetSpeed:F1}, currentSpeed={_grindSpeedCurrent:F1}, " +
-                      $"DashSpeed={DashSpeed}, baseGrindSpeed={baseGrindSpeed:F1}, SpeedMultiplier={SpeedMultiplier}");
+                      $"DashSpeed={DashSpeed}, baseGrindSpeed={baseGrindSpeed:F1}");
 
             // Use boost decay rate when above target speed (decaying boost), otherwise use normal acceleration
             float lerpRate = _grindSpeedCurrent > targetSpeed ? GrindBoostDecayRate : GrindAcceleration;
@@ -1657,7 +1657,7 @@ namespace StarterAssets
             float targetSpeed;
             if (_isDashing)
             {
-                targetSpeed = DashSpeed * SpeedMultiplier;
+                targetSpeed = DashSpeed;
                 float currentHorizontalSpeedForLog = new Vector3(_controller.velocity.x, 0.0f, _controller.velocity.z).magnitude;
                 Debug.Log($"[GROUND DASH] targetSpeed={targetSpeed:F1}, currentSpeed={currentHorizontalSpeedForLog:F1}");
             }

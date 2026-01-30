@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Splines;
+using Unity.Mathematics;
 using StarterAssets;
 
 #if UNITY_EDITOR
@@ -41,6 +42,25 @@ namespace HolyRail.Splines
         [field: SerializeField]
         public RadialSymmetryMode SymmetryMode { get; private set; } = RadialSymmetryMode.None;
 
+        [Header("Spline Noise")]
+        [field: SerializeField, Tooltip("Enable procedural noise deformation on spline knots")]
+        public bool NoiseEnabled { get; private set; }
+
+        [field: SerializeField]
+        public SplineNoiseType NoiseType { get; private set; } = SplineNoiseType.Simplex;
+
+        [field: SerializeField, Range(0.01f, 10f)]
+        public float NoiseFrequency { get; private set; } = 1f;
+
+        [field: SerializeField, Range(0f, 5f)]
+        public float NoiseAmplitude { get; private set; } = 0.5f;
+
+        [field: SerializeField, Tooltip("Per-axis amplitude multiplier")]
+        public Vector3 NoiseScale { get; private set; } = Vector3.one;
+
+        [field: SerializeField]
+        public int NoiseSeed { get; private set; }
+
         [Header("Rendering")]
         [field: SerializeField]
         public Material SplineMaterial { get; private set; }
@@ -69,6 +89,10 @@ namespace HolyRail.Splines
         private bool _needsRegeneration;
         private Vector3 _lastPosition;
         private Quaternion _lastRotation;
+
+        // Original knot data for non-destructive noise application
+        private List<List<BezierKnot>> _originalKnots = new List<List<BezierKnot>>();
+        private bool _knotsCached;
 
         public IReadOnlyList<RadialCloneData> CloneData => _cloneData;
         public int ActiveCloneCount => _cloneData.Count;
@@ -152,6 +176,12 @@ namespace HolyRail.Splines
                 TryExtractMeshFromSplineExtrude();
             }
 
+            // Cache original knots before applying noise
+            CacheOriginalKnots();
+
+            // Apply noise to master spline (non-destructive, uses cached originals)
+            ApplyNoiseToMasterSpline();
+
             CalculateCloneTransforms();
 
             // Position the master spline at clone position 0
@@ -159,6 +189,107 @@ namespace HolyRail.Splines
 
             CreateGrindableContainers();
             InitializeBuffers();
+        }
+
+        /// <summary>
+        /// Cache original knot positions from master spline for non-destructive noise.
+        /// Only caches once per master spline assignment.
+        /// </summary>
+        private void CacheOriginalKnots()
+        {
+            if (MasterSpline == null)
+                return;
+
+            // Check if cache is valid
+            bool needsRecache = !_knotsCached || _originalKnots.Count != MasterSpline.Splines.Count;
+
+            if (!needsRecache)
+            {
+                // Verify knot counts match
+                for (int s = 0; s < MasterSpline.Splines.Count; s++)
+                {
+                    if (_originalKnots[s].Count != MasterSpline.Splines[s].Count)
+                    {
+                        needsRecache = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!needsRecache)
+                return;
+
+            _originalKnots.Clear();
+
+            foreach (var spline in MasterSpline.Splines)
+            {
+                var knotList = new List<BezierKnot>();
+                foreach (var knot in spline.Knots)
+                {
+                    knotList.Add(knot);
+                }
+                _originalKnots.Add(knotList);
+            }
+
+            _knotsCached = true;
+        }
+
+        /// <summary>
+        /// Force recache of original knots. Call this after manually editing the master spline.
+        /// </summary>
+        public void InvalidateKnotCache()
+        {
+            _knotsCached = false;
+        }
+
+        /// <summary>
+        /// Apply noise offsets to master spline knots.
+        /// Uses cached original positions for non-destructive editing.
+        /// </summary>
+        private void ApplyNoiseToMasterSpline()
+        {
+            if (MasterSpline == null || _originalKnots.Count == 0)
+                return;
+
+            for (int s = 0; s < MasterSpline.Splines.Count && s < _originalKnots.Count; s++)
+            {
+                var spline = MasterSpline.Splines[s];
+                var originalKnotList = _originalKnots[s];
+
+                for (int k = 0; k < spline.Count && k < originalKnotList.Count; k++)
+                {
+                    var originalKnot = originalKnotList[k];
+                    var noisyKnot = originalKnot;
+
+                    if (NoiseEnabled && NoiseAmplitude > 0f)
+                    {
+                        noisyKnot.Position = ApplyNoiseToPosition(originalKnot.Position, s, k);
+                    }
+
+                    spline[k] = noisyKnot;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Apply noise offset to a single knot position.
+        /// </summary>
+        private float3 ApplyNoiseToPosition(float3 originalPos, int splineIndex, int knotIndex)
+        {
+            // Create sample position with seed offset for variation
+            var seedOffset = new float3(NoiseSeed * 17.31f, NoiseSeed * 31.17f, NoiseSeed * 47.73f);
+            var samplePos = originalPos * NoiseFrequency + seedOffset;
+
+            // Add unique offset per knot to prevent all knots moving identically
+            samplePos += new float3(knotIndex * 7.13f, splineIndex * 11.37f, 0f);
+
+            // Sample noise for each axis
+            var noiseValue = SplineNoise.SampleNoise3D(samplePos, NoiseType, 1f);
+
+            // Apply per-axis amplitude scaling
+            var offset = noiseValue * NoiseAmplitude * (float3)NoiseScale;
+
+            return originalPos + offset;
         }
 
         /// <summary>
