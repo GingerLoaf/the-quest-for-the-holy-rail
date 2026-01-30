@@ -127,6 +127,9 @@ namespace HolyRail.Vines
         [field: SerializeField] public float BillboardMaxConnectionDistance { get; set; } = 100f;
         [field: SerializeField] public float BillboardSagAmount { get; set; } = 5f;
         [field: SerializeField] public int BillboardPointsPerSpline { get; set; } = 15;
+        [field: SerializeField, Range(0f, 1f)] public float BillboardConnectionOffset { get; set; } = 0.1f;
+        [field: SerializeField] public float BillboardInwardOffset { get; set; } = 2f;
+        [field: SerializeField] public bool BillboardSameSideOnly { get; set; } = true;
 
         [Header("Level Chunk Influence")]
         [field: SerializeField, Range(0f, 1f)]
@@ -525,102 +528,103 @@ namespace HolyRail.Vines
             _generatedNodes.Clear();
             _generatedAttractors.Clear();
 
-            var convergence = CityManager.ConvergencePoint.position;
-            var hasEndPoint = CityManager.ConvergenceEndPoint != null;
-            var endPointPos = hasEndPoint ? CityManager.ConvergenceEndPoint.position : Vector3.zero;
+            // Gather enabled corridor paths
+            var corridorPaths = new List<IReadOnlyList<Vector3>>();
+            if (CityManager.EnableCorridorA && CityManager.CorridorPathA != null && CityManager.CorridorPathA.Count > 0)
+                corridorPaths.Add(CityManager.CorridorPathA);
+            if (CityManager.EnableCorridorB && CityManager.CorridorPathB != null && CityManager.CorridorPathB.Count > 0)
+                corridorPaths.Add(CityManager.CorridorPathB);
+            if (CityManager.EnableCorridorC && CityManager.CorridorPathC != null && CityManager.CorridorPathC.Count > 0)
+                corridorPaths.Add(CityManager.CorridorPathC);
 
-            // Build list of enabled corridors with their waypoints
-            var enabledCorridors = new List<(Transform waypoint, int index)>();
-            if (CityManager.EnableCorridorA && CityManager.EndpointA != null)
-                enabledCorridors.Add((CityManager.EndpointA, 0));
-            if (CityManager.EnableCorridorB && CityManager.EndpointB != null)
-                enabledCorridors.Add((CityManager.EndpointB, 1));
-            if (CityManager.EnableCorridorC && CityManager.EndpointC != null)
-                enabledCorridors.Add((CityManager.EndpointC, 2));
-
-            if (enabledCorridors.Count == 0)
+            if (corridorPaths.Count == 0)
             {
-                Debug.LogWarning("VineGenerator: No enabled corridors with valid waypoints!");
+                Debug.LogWarning("VineGenerator: No corridor paths available! Generate city first.");
                 return;
             }
-
-            // Calculate the overall corridor bounds for volume-based spawning
-            var allPoints = new List<Vector3> { convergence };
-            foreach (var (waypoint, _) in enabledCorridors)
-            {
-                allPoints.Add(waypoint.position);
-            }
-            if (hasEndPoint)
-            {
-                allPoints.Add(endPointPos);
-            }
-
-            // Find min/max bounds
-            Vector3 minBounds = allPoints[0];
-            Vector3 maxBounds = allPoints[0];
-            foreach (var p in allPoints)
-            {
-                minBounds = Vector3.Min(minBounds, p);
-                maxBounds = Vector3.Max(maxBounds, p);
-            }
-
-            // Expand bounds by corridor width and set height range
-            minBounds -= new Vector3(PathCorridorWidth / 2, 0, PathCorridorWidth / 2);
-            maxBounds += new Vector3(PathCorridorWidth / 2, 0, PathCorridorWidth / 2);
-
-            // Apply explicit height constraints
-            minBounds.y = VolumeHeightRange.x;
-            maxBounds.y = VolumeHeightRange.y;
 
             int totalVines = 0;
             int skippedDueToSpacing = 0;
             var vineStartPositions = new List<Vector3>();
 
-            // Pre-calculate average direction for all vines
-            Vector3 avgDir = Vector3.zero;
-            foreach (var (waypoint, _) in enabledCorridors)
+            // Generate vines along each corridor path
+            foreach (var path in corridorPaths)
             {
-                avgDir += (waypoint.position - convergence).normalized;
-            }
-            if (hasEndPoint)
-            {
-                avgDir += (endPointPos - convergence).normalized;
-            }
-            avgDir = avgDir.normalized;
-
-            // Volume-based spawning: scatter vines throughout the corridor bounds
-            for (int vineIdx = 0; vineIdx < VinesPerCorridor; vineIdx++)
-            {
-                // Determine if this is a ground vine (for climbing back up when you fall)
-                bool isGroundVine = (float)random.NextDouble() < GroundVineRatio;
-
-                // Try to find a valid position that respects minimum spacing
-                Vector3 startPos = Vector3.zero;
-                bool foundValidPosition = false;
-                int maxAttempts = 20;
-
-                for (int attempt = 0; attempt < maxAttempts; attempt++)
+                // Calculate total path length for distributing vines
+                float totalPathLength = 0f;
+                for (int i = 1; i < path.Count; i++)
                 {
-                    if (isGroundVine)
+                    totalPathLength += Vector3.Distance(path[i - 1], path[i]);
+                }
+
+                // Distribute vines evenly along the path
+                for (int vineIdx = 0; vineIdx < VinesPerCorridor; vineIdx++)
+                {
+                    // Pick a position along the path
+                    float targetDist = (float)random.NextDouble() * totalPathLength;
+                    float accumulatedDist = 0f;
+                    int segmentIdx = 0;
+                    float segmentT = 0f;
+
+                    // Find which segment this distance falls on
+                    for (int i = 1; i < path.Count; i++)
                     {
-                        // Ground vines start at ground level
-                        startPos = new Vector3(
-                            Mathf.Lerp(minBounds.x, maxBounds.x, (float)random.NextDouble()),
-                            0f,  // Start at ground
-                            Mathf.Lerp(minBounds.z, maxBounds.z, (float)random.NextDouble())
-                        );
+                        float segmentLength = Vector3.Distance(path[i - 1], path[i]);
+                        if (accumulatedDist + segmentLength >= targetDist)
+                        {
+                            segmentIdx = i - 1;
+                            segmentT = (targetDist - accumulatedDist) / segmentLength;
+                            break;
+                        }
+                        accumulatedDist += segmentLength;
+                    }
+
+                    // Interpolate position on the path
+                    Vector3 pathPos = Vector3.Lerp(path[segmentIdx], path[Mathf.Min(segmentIdx + 1, path.Count - 1)], segmentT);
+
+                    // Calculate tangent direction along the path
+                    Vector3 tangent;
+                    if (segmentIdx + 1 < path.Count)
+                    {
+                        tangent = (path[segmentIdx + 1] - path[segmentIdx]).normalized;
+                    }
+                    else if (segmentIdx > 0)
+                    {
+                        tangent = (path[segmentIdx] - path[segmentIdx - 1]).normalized;
                     }
                     else
                     {
-                        // Regular vines spawn anywhere in volume
-                        startPos = new Vector3(
-                            Mathf.Lerp(minBounds.x, maxBounds.x, (float)random.NextDouble()),
-                            Mathf.Lerp(minBounds.y, maxBounds.y, (float)random.NextDouble()),
-                            Mathf.Lerp(minBounds.z, maxBounds.z, (float)random.NextDouble())
-                        );
+                        tangent = Vector3.forward;
                     }
 
-                    // Check distance to all existing vine start positions
+                    // Calculate right vector (perpendicular to tangent, in horizontal plane)
+                    Vector3 right = Vector3.Cross(Vector3.up, tangent).normalized;
+                    if (right.sqrMagnitude < 0.01f)
+                    {
+                        right = Vector3.right;
+                    }
+
+                    // Determine if this is a ground vine
+                    bool isGroundVine = (float)random.NextDouble() < GroundVineRatio;
+
+                    // Offset position laterally within corridor width
+                    float lateralOffset = ((float)random.NextDouble() * 2 - 1) * PathCorridorWidth / 2;
+
+                    // Determine height
+                    float height;
+                    if (isGroundVine)
+                    {
+                        height = 0f;
+                    }
+                    else
+                    {
+                        height = Mathf.Lerp(VolumeHeightRange.x, VolumeHeightRange.y, (float)random.NextDouble());
+                    }
+
+                    Vector3 startPos = pathPos + right * lateralOffset;
+                    startPos.y = height;
+
+                    // Check spacing against existing vines
                     bool tooClose = false;
                     foreach (var existingPos in vineStartPositions)
                     {
@@ -631,75 +635,65 @@ namespace HolyRail.Vines
                         }
                     }
 
-                    if (!tooClose)
+                    if (tooClose)
                     {
-                        foundValidPosition = true;
-                        break;
+                        skippedDueToSpacing++;
+                        continue;
                     }
+
+                    vineStartPositions.Add(startPos);
+
+                    // Random vine length
+                    float vineLength = Mathf.Lerp(PathLengthRange.x, PathLengthRange.y, (float)random.NextDouble());
+
+                    // Vine direction follows the path tangent with some variation
+                    Vector3 vineDir;
+                    if (isGroundVine)
+                    {
+                        // Ground vines go primarily upward
+                        float targetHeight = VolumeHeightRange.y * 0.25f;
+                        vineDir = new Vector3(
+                            (float)(random.NextDouble() * 2 - 1) * 0.3f,
+                            targetHeight / vineLength,
+                            tangent.z * 0.5f + (float)(random.NextDouble() * 2 - 1) * 0.2f
+                        ).normalized;
+                    }
+                    else
+                    {
+                        // Regular vines follow the path with variation
+                        float dirVariation = 0.3f;
+                        vineDir = (tangent + new Vector3(
+                            (float)(random.NextDouble() * 2 - 1) * dirVariation,
+                            (float)(random.NextDouble() * 2 - 1) * dirVariation * 0.5f,
+                            (float)(random.NextDouble() * 2 - 1) * dirVariation
+                        )).normalized;
+                    }
+
+                    // Perpendicular direction for undulation
+                    var vineRight = Vector3.Cross(Vector3.up, vineDir).normalized;
+                    if (vineRight.sqrMagnitude < 0.01f)
+                    {
+                        vineRight = Vector3.Cross(Vector3.forward, vineDir).normalized;
+                    }
+
+                    // Generate the vine segment
+                    GenerateVolumePathVine(
+                        startPos,
+                        vineDir,
+                        vineLength,
+                        vineRight,
+                        random,
+                        totalVines
+                    );
+                    totalVines++;
                 }
-
-                if (!foundValidPosition)
-                {
-                    skippedDueToSpacing++;
-                    continue;
-                }
-
-                // Track this vine's start position
-                vineStartPositions.Add(startPos);
-
-                // Random vine length
-                float vineLength = Mathf.Lerp(PathLengthRange.x, PathLengthRange.y, (float)random.NextDouble());
-
-                Vector3 vineDir;
-                if (isGroundVine)
-                {
-                    // Ground vines go primarily upward with some forward/lateral variation
-                    // Target height is roughly 1/4 of the height range
-                    float targetHeight = VolumeHeightRange.y * 0.25f;
-                    float horizontalDist = vineLength * 0.5f;  // Some horizontal travel
-
-                    // Direction goes up and slightly forward
-                    vineDir = new Vector3(
-                        (float)(random.NextDouble() * 2 - 1) * 0.3f,  // Slight lateral
-                        targetHeight / vineLength,  // Upward component
-                        avgDir.z * 0.5f + (float)(random.NextDouble() * 2 - 1) * 0.2f  // Mostly forward
-                    ).normalized;
-                }
-                else
-                {
-                    // Regular vines go mostly forward with variation
-                    float dirVariation = 0.3f;
-                    vineDir = (avgDir + new Vector3(
-                        (float)(random.NextDouble() * 2 - 1) * dirVariation,
-                        (float)(random.NextDouble() * 2 - 1) * dirVariation * 0.5f,
-                        (float)(random.NextDouble() * 2 - 1) * dirVariation
-                    )).normalized;
-                }
-
-                // Perpendicular direction for undulation
-                var right = Vector3.Cross(Vector3.up, vineDir).normalized;
-                if (right.sqrMagnitude < 0.01f)
-                {
-                    right = Vector3.Cross(Vector3.forward, vineDir).normalized;
-                }
-
-                // Generate the vine segment
-                GenerateVolumePathVine(
-                    startPos,
-                    vineDir,
-                    vineLength,
-                    right,
-                    random,
-                    vineIdx
-                );
-                totalVines++;
             }
 
             if (skippedDueToSpacing > 0)
             {
                 Debug.Log($"VineGenerator (Path): Skipped {skippedDueToSpacing} vines due to MinVineSpacing ({MinVineSpacing}m)");
             }
-            Debug.Log($"VineGenerator (Path): Generated {_generatedNodes.Count} nodes across {totalVines} vines (volume-based)");
+            Debug.Log($"VineGenerator (Path): Generated {_generatedNodes.Count} nodes across {totalVines} vines following {corridorPaths.Count} corridor path(s)");
         }
 
         private void GenerateBillboardSplines()
@@ -727,56 +721,93 @@ namespace HolyRail.Vines
             _generatedNodes.Clear();
             _generatedAttractors.Clear();
 
-            // Track processed pairs to avoid duplicate connections (A-B and B-A)
-            var processedPairs = new HashSet<(int, int)>();
-            int totalCables = 0;
+            int totalChains = 0;
 
-            // For each billboard, find the nearest other billboard within max distance
-            for (int i = 0; i < billboards.Count; i++)
+            if (BillboardSameSideOnly)
             {
-                var billboardA = billboards[i];
-                float nearestDist = float.MaxValue;
-                int nearestIdx = -1;
+                // Separate billboards by corridor side (based on normal X direction)
+                var leftSide = billboards.Where(b => b.Normal.x > 0).OrderBy(b => b.Position.z).ToList();
+                var rightSide = billboards.Where(b => b.Normal.x <= 0).OrderBy(b => b.Position.z).ToList();
 
-                // Find nearest billboard
-                for (int j = 0; j < billboards.Count; j++)
-                {
-                    if (i == j) continue;
-
-                    // Skip if already processed this pair
-                    var pairKey = i < j ? (i, j) : (j, i);
-                    if (processedPairs.Contains(pairKey)) continue;
-
-                    var billboardB = billboards[j];
-                    float dist = Vector3.Distance(billboardA.Position, billboardB.Position);
-
-                    if (dist <= BillboardMaxConnectionDistance && dist < nearestDist)
-                    {
-                        nearestDist = dist;
-                        nearestIdx = j;
-                    }
-                }
-
-                // Create cable spline if we found a valid connection
-                if (nearestIdx >= 0)
-                {
-                    var pairKey = i < nearestIdx ? (i, nearestIdx) : (nearestIdx, i);
-                    processedPairs.Add(pairKey);
-
-                    var billboardB = billboards[nearestIdx];
-                    GenerateBillboardCableSpline(billboardA.Position, billboardB.Position, random, totalCables);
-                    totalCables++;
-                }
+                if (leftSide.Count >= 2)
+                    totalChains += GenerateBillboardChain(leftSide, random, 0);
+                if (rightSide.Count >= 2)
+                    totalChains += GenerateBillboardChain(rightSide, random, leftSide.Count);
+            }
+            else
+            {
+                // Zigzag: connect all billboards sorted by Z
+                var sortedBillboards = billboards.OrderBy(b => b.Position.z).ToList();
+                totalChains = GenerateBillboardChain(sortedBillboards, random, 0);
             }
 
-            Debug.Log($"VineGenerator (Billboard): Generated {_generatedNodes.Count} nodes across {totalCables} cable splines");
+            Debug.Log($"VineGenerator (Billboard): Generated {_generatedNodes.Count} nodes across {totalChains} continuous cable chain(s)");
         }
 
-        private void GenerateBillboardCableSpline(Vector3 startPos, Vector3 endPos, System.Random random, int noiseOffset)
+        private int GenerateBillboardChain(List<BillboardData> sortedBillboards, System.Random random, int noiseIndexOffset)
+        {
+            if (sortedBillboards.Count < 2) return 0;
+
+            int chainsCreated = 0;
+            bool chainActive = false;
+
+            for (int i = 0; i < sortedBillboards.Count - 1; i++)
+            {
+                var billboardA = sortedBillboards[i];
+                var billboardB = sortedBillboards[i + 1];
+
+                float dist = Vector3.Distance(billboardA.Position, billboardB.Position);
+
+                // If gap too large, end current chain and skip
+                if (dist > BillboardMaxConnectionDistance)
+                {
+                    if (chainActive && _generatedNodes.Count > 0)
+                    {
+                        var lastNode = _generatedNodes[_generatedNodes.Count - 1];
+                        lastNode.IsTip = 1;
+                        _generatedNodes[_generatedNodes.Count - 1] = lastNode;
+                        chainsCreated++;
+                    }
+                    chainActive = false;
+                    continue;
+                }
+
+                var startPos = billboardA.Position + billboardA.Normal * BillboardInwardOffset;
+                var endPos = billboardB.Position + billboardB.Normal * BillboardInwardOffset;
+
+                bool isFirstInChain = !chainActive;
+                if (isFirstInChain) chainActive = true;
+
+                bool isLastSegment = (i == sortedBillboards.Count - 2) ||
+                    (i + 2 < sortedBillboards.Count &&
+                     Vector3.Distance(billboardB.Position, sortedBillboards[i + 2].Position) > BillboardMaxConnectionDistance);
+
+                GenerateBillboardSegment(startPos, endPos, random, i + noiseIndexOffset, isFirstInChain, isLastSegment);
+            }
+
+            // Finalize last chain
+            if (chainActive && _generatedNodes.Count > 0)
+            {
+                var lastNode = _generatedNodes[_generatedNodes.Count - 1];
+                if (lastNode.IsTip != 1)
+                {
+                    lastNode.IsTip = 1;
+                    _generatedNodes[_generatedNodes.Count - 1] = lastNode;
+                }
+                chainsCreated++;
+            }
+
+            return chainsCreated;
+        }
+
+        private void GenerateBillboardSegment(Vector3 startPos, Vector3 endPos, System.Random random, int noiseOffset, bool isFirstInChain, bool isLastSegment)
         {
             int pointCount = BillboardPointsPerSpline;
 
-            for (int i = 0; i < pointCount; i++)
+            // Skip first point if continuing a chain (previous segment ended at this position)
+            int startIndex = isFirstInChain ? 0 : 1;
+
+            for (int i = startIndex; i < pointCount; i++)
             {
                 float t = (float)i / (pointCount - 1);
 
@@ -814,11 +845,17 @@ namespace HolyRail.Vines
                     }
                 }
 
+                // Parent index: only root node has -1
+                int parentIndex = (isFirstInChain && i == 0) ? -1 : _generatedNodes.Count - 1;
+
+                // Tip: only the very last node of a chain
+                int isTip = (isLastSegment && i == pointCount - 1) ? 1 : 0;
+
                 _generatedNodes.Add(new VineNode
                 {
                     Position = position,
-                    ParentIndex = (i == 0) ? -1 : _generatedNodes.Count - 1,
-                    IsTip = (i == pointCount - 1) ? 1 : 0,
+                    ParentIndex = parentIndex,
+                    IsTip = isTip,
                     LastGrowIteration = 0
                 });
             }
@@ -1929,9 +1966,30 @@ namespace HolyRail.Vines
             Debug.Log($"VineGenerator: Moved {movedCount} vines for half {halfId} by {offset}");
         }
 
+        private void OnEnable()
+        {
+            if (CityManager != null)
+            {
+                CityManager.OnCityRegenerated += HandleCityRegenerated;
+            }
+        }
+
         private void OnDisable()
         {
+            if (CityManager != null)
+            {
+                CityManager.OnCityRegenerated -= HandleCityRegenerated;
+            }
             ReleaseBuffers();
+        }
+
+        private void HandleCityRegenerated()
+        {
+            if (AttractorGenerationMode == AttractorMode.Path ||
+                AttractorGenerationMode == AttractorMode.Billboard)
+            {
+                Regenerate();
+            }
         }
 
         private void OnDrawGizmos()

@@ -132,6 +132,10 @@ namespace HolyRail.City
 
         public LoopModeState LoopState => _loopState;
         public IReadOnlyList<Vector3> CorridorPathA => _corridorPathA;
+        public IReadOnlyList<Vector3> CorridorPathB => _corridorPathB;
+        public IReadOnlyList<Vector3> CorridorPathC => _corridorPathC;
+
+        public event System.Action OnCityRegenerated;
 
         // Serialized generated data (persists through play mode)
         [SerializeField, HideInInspector]
@@ -544,6 +548,8 @@ namespace HolyRail.City
                 Debug.Log($"CityManager Loop Mode: HalfA has {_loopState.HalfA.BuildingCount} buildings, {_loopState.HalfA.RampCount} ramps, {_loopState.HalfA.BillboardCount} billboards, {_loopState.HalfA.GraffitiCount} graffiti");
                 Debug.Log($"CityManager Loop Mode: HalfB has {_loopState.HalfB.BuildingCount} buildings, {_loopState.HalfB.RampCount} ramps, {_loopState.HalfB.BillboardCount} billboards, {_loopState.HalfB.GraffitiCount} graffiti");
             }
+
+            OnCityRegenerated?.Invoke();
         }
 
         private List<Vector3> GenerateCurvedPath(Vector3 start, Vector3 waypoint, int corridorIndex)
@@ -1604,22 +1610,41 @@ namespace HolyRail.City
 
                 var billboard = _generatedBillboards[billboardIndex];
 
-                // Position graffiti on billboard surface
-                // Y offset is relative to billboard bottom, within reasonable range
-                float yOffset = RandomRange(GraffitiYOffsetMin, Mathf.Min(GraffitiYOffsetMax, billboard.Scale.y * 0.5f));
-                var position = billboard.Position;
-                // Adjust Y to be within billboard bounds (billboard.Position is center)
-                position.y = billboard.Position.y - billboard.Scale.y * 0.5f + yOffset;
+                // Ensure graffiti stays fully within billboard bounds
+                float graffitiSize = 2f; // Approximate graffiti decal size
+                float margin = graffitiSize * 0.5f + 0.5f; // Half size plus extra margin
 
-                // DecalProjector projects along -Z, so we need to rotate 180 from billboard
-                // Billboard faces INTO corridor, but decal should project INTO billboard surface
-                var graffitiRotation = billboard.Rotation * Quaternion.Euler(0f, 180f, 0f);
+                // Skip billboards that are too small for graffiti
+                if (billboard.Scale.y < graffitiSize + 1f || billboard.Scale.x < graffitiSize + 1f)
+                    continue;
+
+                // Y position: keep graffiti fully within billboard height
+                float billboardBottom = billboard.Position.y - billboard.Scale.y * 0.5f;
+                float billboardTop = billboard.Position.y + billboard.Scale.y * 0.5f;
+                float minY = billboardBottom + margin;
+                float maxY = billboardTop - margin;
+                float yPos = RandomRange(minY, maxY);
+
+                // X offset along billboard width (in billboard's local space)
+                float maxXOffset = billboard.Scale.x * 0.5f - margin;
+                float xOffset = RandomRange(-maxXOffset, maxXOffset);
+
+                // Calculate position: start at billboard center, offset in front, then adjust
+                var billboardRight = billboard.Rotation * Vector3.right;
+                var position = billboard.Position + billboard.Normal * 0.5f; // In front of billboard
+                position += billboardRight * xOffset; // Horizontal offset along billboard
+                position.y = yPos;
+
+                // DecalProjector projects along -Z
+                // billboard.Normal points toward corridor, so forward (+Z) = billboard.Normal
+                // This makes -Z point into the billboard surface
+                var graffitiRotation = Quaternion.LookRotation(billboard.Normal, Vector3.up);
 
                 var graffiti = new GraffitiSpotData
                 {
                     Position = position,
                     Rotation = graffitiRotation,
-                    Normal = -billboard.Normal, // Direction decal projects (into wall)
+                    Normal = -billboard.Normal, // Direction decal projects (into billboard)
                     BillboardIndex = billboardIndex
                 };
 
@@ -1678,30 +1703,17 @@ namespace HolyRail.City
                 surfaceOffset = surfaceNormal * halfWidth;
             }
 
-            // Position on the building surface, offset slightly inward
-            float inwardOffset = 0.1f;
-            var position = buildingData.Position + surfaceOffset - surfaceNormal * inwardOffset;
+            // Position in front of the building surface (toward corridor)
+            // surfaceNormal points toward corridor, so add a small offset in that direction
+            float outwardOffset = 0.5f; // Position slightly in front of wall for decal projection
+            var position = buildingData.Position + surfaceOffset + surfaceNormal * outwardOffset;
 
-            // Clamp X/Z to stay within building bounds (with edge clearance)
-            var localPos = Quaternion.Inverse(buildingData.Rotation) * (position - buildingData.Position);
-            float edgeClearance = GraffitiEdgeClearance;
-            localPos.x = Mathf.Clamp(localPos.x, -halfWidth + edgeClearance, halfWidth - edgeClearance);
-            localPos.z = Mathf.Clamp(localPos.z, -halfDepth + edgeClearance, halfDepth - edgeClearance);
-
-            // Add some random offset along the surface
-            float surfaceRandomOffset = RandomRange(-2f, 2f);
-            if (Mathf.Abs(dotForward) > Mathf.Abs(dotRight))
-            {
-                localPos.x += surfaceRandomOffset;
-                localPos.x = Mathf.Clamp(localPos.x, -halfWidth + edgeClearance, halfWidth - edgeClearance);
-            }
-            else
-            {
-                localPos.z += surfaceRandomOffset;
-                localPos.z = Mathf.Clamp(localPos.z, -halfDepth + edgeClearance, halfDepth - edgeClearance);
-            }
-
-            position = buildingData.Position + buildingData.Rotation * localPos;
+            // Add random horizontal offset along the wall surface
+            // Get a vector perpendicular to surfaceNormal (along the wall)
+            var alongWall = Vector3.Cross(Vector3.up, surfaceNormal).normalized;
+            float maxOffset = Mathf.Min(halfWidth, halfDepth) - GraffitiEdgeClearance;
+            float randomOffset = RandomRange(-maxOffset, maxOffset);
+            position += alongWall * randomOffset;
 
             // Randomize Y offset within range (player-reachable height)
             float yOffset = RandomRange(GraffitiYOffsetMin, GraffitiYOffsetMax);
@@ -1728,26 +1740,41 @@ namespace HolyRail.City
                 }
             }
 
-            // If GraffitiOnBillboardPercent < 1, check distance to billboards (avoid them)
-            if (GraffitiOnBillboardPercent < 1f)
+            // Check that graffiti doesn't overlap with any billboard
+            // Use proper bounds checking, not just distance
+            foreach (var billboard in _generatedBillboards)
             {
-                foreach (var billboard in _generatedBillboards)
-                {
-                    float dx = position.x - billboard.Position.x;
-                    float dz = position.z - billboard.Position.z;
-                    float distSq = dx * dx + dz * dz;
+                // Check if graffiti Y is within billboard's Y range
+                float billboardBottom = billboard.Position.y - billboard.Scale.y * 0.5f;
+                float billboardTop = billboard.Position.y + billboard.Scale.y * 0.5f;
+                float graffitiMargin = 1.5f; // Margin to prevent partial overlap
 
-                    if (distSq < GraffitiBillboardAvoidDistance * GraffitiBillboardAvoidDistance)
-                    {
-                        return false;
-                    }
+                bool yOverlaps = position.y >= (billboardBottom - graffitiMargin) &&
+                                 position.y <= (billboardTop + graffitiMargin);
+
+                if (!yOverlaps)
+                    continue; // No Y overlap, safe
+
+                // Check XZ overlap - transform to billboard's local space
+                var toGraffiti = position - billboard.Position;
+                var localPos = Quaternion.Inverse(billboard.Rotation) * toGraffiti;
+
+                float billboardHalfWidth = billboard.Scale.x * 0.5f + graffitiMargin;
+                float billboardHalfDepth = billboard.Scale.z * 0.5f + graffitiMargin;
+
+                bool xzOverlaps = Mathf.Abs(localPos.x) < billboardHalfWidth &&
+                                  Mathf.Abs(localPos.z) < billboardHalfDepth;
+
+                if (xzOverlaps)
+                {
+                    return false; // Would overlap with billboard
                 }
             }
 
-            // Rotation: DecalProjector projects along -Z, so object's -Z should point toward wall
-            // surfaceNormal points AWAY from wall (toward corridor), so use it directly for -Z
-            float yaw = Mathf.Atan2(surfaceNormal.x, surfaceNormal.z) * Mathf.Rad2Deg;
-            var rotation = Quaternion.Euler(0f, yaw, 0f);
+            // Rotation: DecalProjector projects along -Z (backward)
+            // surfaceNormal points toward corridor (away from wall)
+            // We want -Z to point at wall, so forward (+Z) should point toward corridor = surfaceNormal
+            var rotation = Quaternion.LookRotation(surfaceNormal, Vector3.up);
 
             var graffiti = new GraffitiSpotData
             {

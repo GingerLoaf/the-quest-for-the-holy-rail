@@ -17,7 +17,7 @@ namespace HolyRail.City.Editor
 
             EditorGUILayout.Space(20);
 
-            // Action Buttons Section
+            // Status Section
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
 
             var headerStyle = new GUIStyle(EditorStyles.boldLabel)
@@ -25,7 +25,7 @@ namespace HolyRail.City.Editor
                 fontSize = 14,
                 alignment = TextAnchor.MiddleCenter
             };
-            EditorGUILayout.LabelField("COLLIDER POOL", headerStyle);
+            EditorGUILayout.LabelField("COLLIDER POOL STATUS", headerStyle);
 
             EditorGUILayout.Space(10);
 
@@ -49,37 +49,8 @@ namespace HolyRail.City.Editor
                 EditorGUILayout.Space(5);
             }
 
-            // Initialize Button
-            EditorGUI.BeginDisabledGroup(!hasAllReferences || (pool.CityManager != null && !pool.CityManager.HasData));
-            GUI.backgroundColor = new Color(0.3f, 0.9f, 0.3f);
-            if (GUILayout.Button("INITIALIZE POOL", GUILayout.Height(30)))
-            {
-                pool.Initialize();
-                EditorUtility.SetDirty(pool);
-                SceneView.RepaintAll();
-            }
-            GUI.backgroundColor = Color.white;
-            EditorGUI.EndDisabledGroup();
-
-            if (pool.CityManager != null && !pool.CityManager.HasData)
-            {
-                EditorGUILayout.HelpBox(
-                    "CityManager has no generated data. Generate city data first.",
-                    MessageType.Warning);
-            }
-
-            EditorGUILayout.Space(5);
-
-            // Refresh Button
-            EditorGUI.BeginDisabledGroup(!pool.Initialized);
-            GUI.backgroundColor = new Color(0.3f, 0.7f, 1f);
-            if (GUILayout.Button("Refresh Colliders", GUILayout.Height(25)))
-            {
-                pool.RefreshColliders();
-                SceneView.RepaintAll();
-            }
-            GUI.backgroundColor = Color.white;
-            EditorGUI.EndDisabledGroup();
+            // Initialization status
+            DrawInitializationStatus(pool);
 
             EditorGUILayout.EndVertical();
 
@@ -93,9 +64,9 @@ namespace HolyRail.City.Editor
             {
                 EditorGUILayout.Space(5);
 
-                if (!pool.Initialized)
+                if (!pool.Initialized && !pool.RampInitialized && !pool.BillboardInitialized)
                 {
-                    EditorGUILayout.HelpBox("Pool not initialized. Click 'INITIALIZE POOL' to start.", MessageType.Info);
+                    EditorGUILayout.HelpBox("Pool not initialized. Generate city data to auto-initialize.", MessageType.Info);
                 }
                 else
                 {
@@ -108,12 +79,12 @@ namespace HolyRail.City.Editor
             // Help Box
             EditorGUILayout.Space(10);
             EditorGUILayout.HelpBox(
+                "Colliders are auto-initialized when the city generates.\n\n" +
                 "Setup:\n" +
                 "1. Assign the CityManager reference\n" +
                 "2. Assign a Tracking Target (usually the player)\n" +
                 "3. Generate city data in CityManager\n" +
-                "4. Click INITIALIZE POOL or enter Play mode\n" +
-                "5. Colliders auto-update as the target moves\n\n" +
+                "4. Colliders auto-update as the target moves\n\n" +
                 "For VineGenerator:\n" +
                 "- Set AttractorSurfaceLayers to include 'Buildings'\n" +
                 "- Call ActivateCollidersInBounds() with the vine bounds",
@@ -126,6 +97,40 @@ namespace HolyRail.City.Editor
             }
         }
 
+        private void DrawInitializationStatus(BuildingColliderPool pool)
+        {
+            var labelStyle = new GUIStyle(EditorStyles.label);
+            var initializedStyle = new GUIStyle(EditorStyles.boldLabel)
+            {
+                normal = { textColor = new Color(0.3f, 0.9f, 0.3f) }
+            };
+            var notInitializedStyle = new GUIStyle(EditorStyles.boldLabel)
+            {
+                normal = { textColor = new Color(0.7f, 0.7f, 0.7f) }
+            };
+
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("Buildings:", labelStyle, GUILayout.Width(80));
+            EditorGUILayout.LabelField(
+                pool.Initialized ? "Initialized" : "Not Initialized",
+                pool.Initialized ? initializedStyle : notInitializedStyle);
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("Ramps:", labelStyle, GUILayout.Width(80));
+            EditorGUILayout.LabelField(
+                pool.RampInitialized ? "Initialized" : "Not Initialized",
+                pool.RampInitialized ? initializedStyle : notInitializedStyle);
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("Billboards:", labelStyle, GUILayout.Width(80));
+            EditorGUILayout.LabelField(
+                pool.BillboardInitialized ? "Initialized" : "Not Initialized",
+                pool.BillboardInitialized ? initializedStyle : notInitializedStyle);
+            EditorGUILayout.EndHorizontal();
+        }
+
         private void DrawStatistics(BuildingColliderPool pool)
         {
             var labelStyle = new GUIStyle(EditorStyles.label);
@@ -134,16 +139,35 @@ namespace HolyRail.City.Editor
                 normal = { textColor = new Color(0.3f, 0.8f, 1f) }
             };
 
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("Active Colliders:", labelStyle, GUILayout.Width(140));
-            EditorGUILayout.LabelField($"{pool.ActiveColliderCount} / {pool.TotalPoolSize}", valueStyle);
-            EditorGUILayout.EndHorizontal();
+            // Building stats
+            if (pool.Initialized)
+            {
+                EditorGUILayout.LabelField("Buildings", EditorStyles.boldLabel);
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("  Active Colliders:", labelStyle, GUILayout.Width(140));
+                EditorGUILayout.LabelField($"{pool.ActiveColliderCount} / {pool.TotalPoolSize}", valueStyle);
+                EditorGUILayout.EndHorizontal();
+            }
 
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("Pool Utilization:", labelStyle, GUILayout.Width(140));
-            float utilization = pool.TotalPoolSize > 0 ? (float)pool.ActiveColliderCount / pool.TotalPoolSize * 100f : 0f;
-            EditorGUILayout.LabelField($"{utilization:F1}%", valueStyle);
-            EditorGUILayout.EndHorizontal();
+            // Ramp stats
+            if (pool.RampInitialized)
+            {
+                EditorGUILayout.LabelField("Ramps", EditorStyles.boldLabel);
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("  Active Colliders:", labelStyle, GUILayout.Width(140));
+                EditorGUILayout.LabelField($"{pool.ActiveRampColliderCount} / {pool.TotalRampPoolSize}", valueStyle);
+                EditorGUILayout.EndHorizontal();
+            }
+
+            // Billboard stats
+            if (pool.BillboardInitialized)
+            {
+                EditorGUILayout.LabelField("Billboards", EditorStyles.boldLabel);
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("  Active Colliders:", labelStyle, GUILayout.Width(140));
+                EditorGUILayout.LabelField($"{pool.ActiveBillboardColliderCount} / {pool.TotalBillboardPoolSize}", valueStyle);
+                EditorGUILayout.EndHorizontal();
+            }
 
             EditorGUILayout.Space(5);
 

@@ -9,7 +9,8 @@ using System.Collections.Generic;
  using HolyRail.Scripts.Enemies;
  using HolyRail.Scripts.FX;
  using HolyRail.Graffiti;
- using Random = UnityEngine.Random;
+using HolyRail.UI;
+using Random = UnityEngine.Random;
 #if ENABLE_INPUT_SYSTEM 
 using UnityEngine.InputSystem;
 #endif
@@ -31,6 +32,8 @@ namespace StarterAssets
         public InputAction sprayInput;
         public InputAction jumpBackflipInput;
         public InputAction jumpSideflipInput;
+        public InputAction dashInput;
+        public InputAction boostInput;
         public bool lookBack;
         private SplineContainer[] _splineContainers;
         
@@ -155,6 +158,25 @@ namespace StarterAssets
         [Tooltip("How quickly the start boost decays toward base grind speed")]
         public float GrindBoostDecayRate = 8f;
 
+        [Tooltip("Multiplier for boost effectiveness while grinding (1.0 = full effect, 0.5 = half)")]
+        public float GrindBoostEffectiveness = 0.5f;
+
+        [Header("Dash Ability")]
+        [Tooltip("Speed during dash")]
+        public float DashSpeed = 20f;
+        [Tooltip("How long the dash lasts")]
+        public float DashDuration = 0.2f;
+        [Tooltip("Cooldown before dash can be used again")]
+        public float DashCooldown = 1.0f;
+
+        [Header("Boost Ability")]
+        [Tooltip("Speed increase during boost")]
+        public float BoostSpeedIncrease = 5f;
+        [Tooltip("How long the boost lasts")]
+        public float BoostAbilityDuration = 3f;
+        [Tooltip("Cooldown before boost can be used again")]
+        public float BoostAbilityCooldown = 5f;
+
         [Space(10)]
         [Tooltip("Sound effects played when landing on a rail (random selection)")]
         public AudioClip[] GrindStartAudioClips;
@@ -216,6 +238,15 @@ namespace StarterAssets
         private GraffitiSpot _activeGraffiti;
         private Vector3 _sprayTargetPosition;
         private bool _isSpraying;
+
+        // Dash state
+        private bool _isDashing;
+        private float _dashDurationTimer;
+        private float _dashCooldownTimer;
+        private Vector3 _dashDirection;
+
+        // Boost ability state
+        private float _boostAbilityCooldownTimer;
 
         [Header("Grind Camera Effects")]
         [Tooltip("Reference to the Cinemachine Virtual Camera")]
@@ -330,6 +361,8 @@ namespace StarterAssets
             sprayInput.Enable();
             jumpBackflipInput.Enable();
             jumpSideflipInput.Enable();
+            dashInput.Enable();
+            boostInput.Enable();
         }
 
         private void OnDisable()
@@ -341,6 +374,8 @@ namespace StarterAssets
             sprayInput.Disable();
             jumpBackflipInput.Disable();
             jumpSideflipInput.Disable();
+            dashInput.Disable();
+            boostInput.Disable();
         }
 
         private void Start()
@@ -412,6 +447,24 @@ namespace StarterAssets
             {
                 _jumpBufferTimer -= Time.deltaTime;
             }
+
+            // Dash input (allowed while grinding for speed boost)
+            if (dashInput != null && dashInput.triggered && _dashCooldownTimer <= 0f && !_isDashing && !_isWallRiding)
+            {
+                StartDash();
+            }
+
+            // Boost input
+            if (boostInput != null && boostInput.triggered && _boostAbilityCooldownTimer <= 0f && !_isGrinding && !_isWallRiding)
+            {
+                StartBoostAbility();
+            }
+
+            // Update dash/boost cooldown timers
+            if (_dashCooldownTimer > 0f)
+                _dashCooldownTimer -= Time.deltaTime;
+            if (_boostAbilityCooldownTimer > 0f)
+                _boostAbilityCooldownTimer -= Time.deltaTime;
 
             UpdateSpeedBoosts();
 
@@ -495,6 +548,16 @@ namespace StarterAssets
                         }
 
                         Debug.Log("Wall ride coyote jump GRANTED!");
+                    }
+                }
+
+                // Update dash duration
+                if (_isDashing)
+                {
+                    _dashDurationTimer -= Time.deltaTime;
+                    if (_dashDurationTimer <= 0f)
+                    {
+                        EndDash();
                     }
                 }
 
@@ -930,10 +993,32 @@ namespace StarterAssets
                 return;
             }
 
+            // Update dash duration while grinding
+            if (_isDashing)
+            {
+                _dashDurationTimer -= Time.deltaTime;
+                if (_dashDurationTimer <= 0f)
+                {
+                    EndDash();
+                }
+            }
+
             // Determine target speed (apply same sprint ratio as ground movement)
-            // Include temporary boost speed bonus
-            float boostedGrindSpeed = GrindSpeed + _totalBoostSpeed;
-            float targetSpeed = (_input.sprint ? boostedGrindSpeed * (SprintSpeed / MoveSpeed) : boostedGrindSpeed) * SpeedMultiplier;
+            // Boost is added separately with reduced effectiveness to prevent excessive speed
+            float baseGrindSpeed = _input.sprint ? GrindSpeed * (SprintSpeed / MoveSpeed) : GrindSpeed;
+            float effectiveBoost = _totalBoostSpeed * GrindBoostEffectiveness;
+            float targetSpeed;
+
+            if (_isDashing)
+            {
+                // Grind dash is fixed speed, like ground dash (DashSpeed/MoveSpeed = 10x)
+                float dashRatio = DashSpeed / MoveSpeed;
+                targetSpeed = GrindSpeed * dashRatio * SpeedMultiplier;
+            }
+            else
+            {
+                targetSpeed = (baseGrindSpeed + effectiveBoost) * SpeedMultiplier;
+            }
 
             // Use boost decay rate when above target speed (decaying boost), otherwise use normal acceleration
             float lerpRate = _grindSpeedCurrent > targetSpeed ? GrindBoostDecayRate : GrindAcceleration;
@@ -1368,12 +1453,53 @@ namespace StarterAssets
             Debug.Log("Wall ride exit at edge!");
         }
 
+        private void StartDash()
+        {
+            _isDashing = true;
+            _dashDurationTimer = DashDuration;
+            _dashCooldownTimer = DashCooldown;
+
+            // Dash in facing direction
+            _dashDirection = transform.forward;
+            _dashDirection.y = 0f;
+            _dashDirection.Normalize();
+
+            Debug.Log($"Dash started! Speed={DashSpeed}, Duration={DashDuration}");
+        }
+
+        private void EndDash()
+        {
+            _isDashing = false;
+            Debug.Log("Dash ended");
+        }
+
+        private void StartBoostAbility()
+        {
+            AddTemporarySpeedBoost(BoostSpeedIncrease, BoostAbilityDuration);
+            _boostAbilityCooldownTimer = BoostAbilityCooldown;
+
+            if (BoostMeterUI.Instance != null)
+            {
+                BoostMeterUI.Instance.StartBoost(BoostAbilityDuration, BoostAbilityCooldown);
+            }
+
+            Debug.Log($"Boost activated! +{BoostSpeedIncrease} speed for {BoostAbilityDuration}s");
+        }
+
         private void Move()
         {
             // set target speed based on move speed, sprint speed and if sprint is pressed
             // Include temporary boost speed bonus
-            float baseSpeed = (_input.sprint ? SprintSpeed : MoveSpeed) + _totalBoostSpeed;
-            float targetSpeed = baseSpeed * SpeedMultiplier;
+            float targetSpeed;
+            if (_isDashing)
+            {
+                targetSpeed = DashSpeed * SpeedMultiplier;
+            }
+            else
+            {
+                float baseSpeed = (_input.sprint ? SprintSpeed : MoveSpeed) + _totalBoostSpeed;
+                targetSpeed = baseSpeed * SpeedMultiplier;
+            }
 
             // a simplistic acceleration and deceleration designed to be easy to remove, replace, or iterate upon
 
@@ -1438,7 +1564,15 @@ namespace StarterAssets
             }
 
 
-            Vector3 targetDirection = Quaternion.Euler(0.0f, _targetRotation, 0.0f) * Vector3.forward;
+            Vector3 targetDirection;
+            if (_isDashing)
+            {
+                targetDirection = _dashDirection;
+            }
+            else
+            {
+                targetDirection = Quaternion.Euler(0.0f, _targetRotation, 0.0f) * Vector3.forward;
+            }
 
             // move the player
             _controller.Move(targetDirection.normalized * (_speed * Time.deltaTime) +
