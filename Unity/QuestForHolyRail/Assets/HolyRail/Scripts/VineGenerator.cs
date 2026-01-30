@@ -196,7 +196,7 @@ namespace HolyRail.Vines
         [Header("Mesh Rendering")]
         [field: SerializeField] public Material VineMaterial { get; set; }
         [field: SerializeField, Range(0.01f, 0.5f)] public float VineRadius { get; set; } = 0.05f;
-        [field: SerializeField, Range(0, 16)] public int VineSegments { get; set; } = 4;
+        [field: SerializeField, Range(3, 16)] public int VineSegments { get; set; } = 4;
         [field: SerializeField, Range(0, 64)] public int VineSegmentsPerUnit { get; set; } = 4;
         [field: SerializeField] public bool GenerateMeshes { get; set; } = true;
 
@@ -2237,6 +2237,13 @@ namespace HolyRail.Vines
 
                 // Create SplineContainer at world origin so knot positions work correctly
                 var splineGO = new GameObject($"VinePath_{_generatedSplines.Count}");
+#if UNITY_EDITOR
+                // Register with Undo system so the GameObject persists through play mode transitions
+                if (!Application.isPlaying)
+                {
+                    UnityEditor.Undo.RegisterCreatedObjectUndo(splineGO, "Create Vine Spline");
+                }
+#endif
                 splineGO.transform.SetParent(transform, true);
                 splineGO.transform.position = Vector3.zero;
                 splineGO.transform.rotation = Quaternion.identity;
@@ -2293,8 +2300,32 @@ namespace HolyRail.Vines
                     var splineExtrude = splineGO.AddComponent<SplineExtrude>();
                     splineExtrude.Container = splineContainer;
                     splineExtrude.Radius = VineRadius;
-                    // Minimum 3 sides for a valid polygon (triangle), 4+ for rounder shapes
-                    splineExtrude.Sides = Mathf.Max(3, VineSegments);
+
+                    // Set radial segments
+                    int sides = Mathf.Max(3, VineSegments);
+                    splineExtrude.Sides = sides;
+
+                    // Also set Sides on the internal Shape via SerializedObject
+                    // SplineExtrude's Circle shape has its own m_Sides that takes precedence
+#if UNITY_EDITOR
+                    var so = new UnityEditor.SerializedObject(splineExtrude);
+                    var shapeProp = so.FindProperty("m_Shape");
+                    if (shapeProp != null)
+                    {
+                        // The shape is a managed reference, find its Sides property
+                        var shapeRef = shapeProp.managedReferenceValue;
+                        if (shapeRef != null)
+                        {
+                            var sidesField = shapeRef.GetType().GetField("m_Sides", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                            if (sidesField != null)
+                            {
+                                sidesField.SetValue(shapeRef, sides);
+                                so.ApplyModifiedPropertiesWithoutUndo();
+                            }
+                        }
+                    }
+#endif
+
                     splineExtrude.SegmentsPerUnit = Mathf.Max(1, VineSegmentsPerUnit);
                     splineExtrude.Capped = true;
                     splineExtrude.Rebuild();
@@ -2360,6 +2391,14 @@ namespace HolyRail.Vines
                 AssignVinesToHalves(CityManager.LoopState);
             }
 
+#if UNITY_EDITOR
+            // Mark scene dirty so generated splines are saved
+            if (!Application.isPlaying)
+            {
+                UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(gameObject.scene);
+            }
+#endif
+
             return _generatedSplines;
         }
 
@@ -2418,9 +2457,17 @@ namespace HolyRail.Vines
             if (_combinedMeshObject != null)
             {
                 if (Application.isPlaying)
+                {
                     Destroy(_combinedMeshObject);
+                }
                 else
+                {
+#if UNITY_EDITOR
+                    UnityEditor.Undo.DestroyObjectImmediate(_combinedMeshObject);
+#else
                     DestroyImmediate(_combinedMeshObject);
+#endif
+                }
 
                 _combinedMeshObject = null;
             }
@@ -2497,9 +2544,17 @@ namespace HolyRail.Vines
                 if (spline != null)
                 {
                     if (Application.isPlaying)
+                    {
                         Destroy(spline.gameObject);
+                    }
                     else
+                    {
+#if UNITY_EDITOR
+                        UnityEditor.Undo.DestroyObjectImmediate(spline.gameObject);
+#else
                         DestroyImmediate(spline.gameObject);
+#endif
+                    }
                 }
             }
             _generatedSplines.Clear();

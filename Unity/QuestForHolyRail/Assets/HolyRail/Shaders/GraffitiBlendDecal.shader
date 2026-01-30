@@ -8,6 +8,7 @@ Shader "HolyRail/GraffitiBlendDecal"
         [HDR] _EnemyColor("Enemy Color", Color) = (1, 0, 0, 1)
         [HDR] _PlayerColor("Player Color", Color) = (0, 1, 1, 1)
         _EmissionIntensity("Emission Intensity", Range(0, 10)) = 2
+        _BlacknessThreshold("Blackness Threshold", Range(0, 1)) = 0.1
 
         // Decal properties
         [HideInInspector] _DecalMeshDepthBias("Depth Bias", Float) = 0
@@ -35,7 +36,7 @@ Shader "HolyRail/GraffitiBlendDecal"
 
             ZWrite Off
             ZTest LEqual
-            Blend One One, Zero One
+            Blend SrcAlpha OneMinusSrcAlpha, Zero One
             BlendOp Add, Add
 
             HLSLPROGRAM
@@ -59,6 +60,7 @@ Shader "HolyRail/GraffitiBlendDecal"
                 half4 _EnemyColor;
                 half4 _PlayerColor;
                 half _EmissionIntensity;
+                half _BlacknessThreshold;
                 float _DecalMeshDepthBias;
                 float _DecalMeshViewBias;
                 float _DecalMeshBiasType;
@@ -127,10 +129,16 @@ Shader "HolyRail/GraffitiBlendDecal"
                 // Calculate final color with emission
                 half4 finalColor = blendedTex * blendedColor * _EmissionIntensity;
 
-                // Use texture alpha for transparency
-                finalColor.a = blendedTex.a * blendedColor.a;
+                // Calculate luminance (brightness) of the blended texture
+                half luminance = dot(blendedTex.rgb, half3(0.299, 0.587, 0.114));
 
-                // Cutout very dark pixels
+                // Treat dark pixels as transparent (alpha cutout)
+                half blackMask = step(_BlacknessThreshold, luminance);
+
+                // Apply black mask to alpha
+                finalColor.a = blendedTex.a * blendedColor.a * blackMask;
+
+                // Clip fully transparent pixels
                 clip(finalColor.a - 0.01);
 
                 return half4(finalColor.rgb * finalColor.a, finalColor.a);
@@ -170,6 +178,7 @@ Shader "HolyRail/GraffitiBlendDecal"
                 half4 _EnemyColor;
                 half4 _PlayerColor;
                 half _EmissionIntensity;
+                half _BlacknessThreshold;
                 float _DecalMeshDepthBias;
                 float _DecalMeshViewBias;
                 float _DecalMeshBiasType;
@@ -227,8 +236,17 @@ Shader "HolyRail/GraffitiBlendDecal"
                 half4 blendedColor = lerp(_EnemyColor, _PlayerColor, _BlendAmount);
 
                 half4 finalColor = blendedTex * blendedColor * _EmissionIntensity;
-                finalColor.a = blendedTex.a * blendedColor.a;
 
+                // Calculate luminance (brightness) of the blended texture
+                half luminance = dot(blendedTex.rgb, half3(0.299, 0.587, 0.114));
+
+                // Treat dark pixels as transparent (alpha cutout)
+                half blackMask = step(_BlacknessThreshold, luminance);
+
+                // Apply black mask to alpha
+                finalColor.a = blendedTex.a * blendedColor.a * blackMask;
+
+                // Clip fully transparent pixels
                 clip(finalColor.a - 0.01);
 
                 return finalColor;
@@ -269,6 +287,7 @@ Shader "HolyRail/GraffitiBlendDecal"
                 half4 _EnemyColor;
                 half4 _PlayerColor;
                 half _EmissionIntensity;
+                half _BlacknessThreshold;
                 float _DecalMeshDepthBias;
                 float _DecalMeshViewBias;
                 float _DecalMeshBiasType;
@@ -334,8 +353,17 @@ Shader "HolyRail/GraffitiBlendDecal"
                 half4 blendedColor = lerp(_EnemyColor, _PlayerColor, _BlendAmount);
 
                 half4 finalColor = blendedTex * blendedColor;
-                half alpha = blendedTex.a * blendedColor.a;
 
+                // Calculate luminance (brightness) of the blended texture
+                half luminance = dot(blendedTex.rgb, half3(0.299, 0.587, 0.114));
+
+                // Treat dark pixels as transparent (alpha cutout)
+                half blackMask = step(_BlacknessThreshold, luminance);
+
+                // Apply black mask to alpha
+                half alpha = blendedTex.a * blendedColor.a * blackMask;
+
+                // Clip fully transparent pixels
                 clip(alpha - 0.01);
 
                 // Output to DBuffer
