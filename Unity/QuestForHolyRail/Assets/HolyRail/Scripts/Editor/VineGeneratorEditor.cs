@@ -122,6 +122,31 @@ namespace HolyRail.Vines.Editor
                 }
                 EditorGUILayout.HelpBox("Vines are clamped to stay above ground (Y >= 0)", MessageType.None);
 
+                // Ramp Avoidance
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Ramp Avoidance", EditorStyles.boldLabel);
+                EditorGUILayout.PropertyField(
+                    serializedObject.FindProperty("<EnableRampAvoidance>k__BackingField"),
+                    new GUIContent("Enable", "Push vines away from spawned ramps")
+                );
+                if (generator.EnableRampAvoidance)
+                {
+                    EditorGUI.indentLevel++;
+                    EditorGUILayout.PropertyField(
+                        serializedObject.FindProperty("<RampAvoidanceDistance>k__BackingField"),
+                        new GUIContent("Avoidance Distance", "How far vines stay from ramps")
+                    );
+                    if (generator.CityManager != null && generator.CityManager.HasRampData)
+                    {
+                        EditorGUILayout.HelpBox($"CityManager has {generator.CityManager.Ramps.Count} ramps", MessageType.Info);
+                    }
+                    else
+                    {
+                        EditorGUILayout.HelpBox("No ramp data available. Generate city first.", MessageType.Warning);
+                    }
+                    EditorGUI.indentLevel--;
+                }
+
                 // Reuse Free mode noise settings for undulation
                 EditorGUILayout.Space();
                 EditorGUILayout.LabelField("Undulation", EditorStyles.boldLabel);

@@ -111,6 +111,10 @@ namespace HolyRail.Vines
         [field: SerializeField] public bool EnableObstacleAvoidance { get; set; } = false;
         [field: SerializeField, Range(0.1f, 5f)] public float ObstacleAvoidanceDistance { get; set; } = 0.5f;
 
+        [Header("Ramp Avoidance")]
+        [field: SerializeField] public bool EnableRampAvoidance { get; set; } = true;
+        [field: SerializeField, Range(0.5f, 20f)] public float RampAvoidanceDistance { get; set; } = 3f;
+
         [Header("Direction Bias")]
         [field: SerializeField] public Vector3 ForwardDirection { get; set; } = Vector3.forward;
         [field: SerializeField, Range(0f, 2f)] public float ForwardBias { get; set; } = 0.5f;
@@ -192,8 +196,8 @@ namespace HolyRail.Vines
         [Header("Mesh Rendering")]
         [field: SerializeField] public Material VineMaterial { get; set; }
         [field: SerializeField, Range(0.01f, 0.5f)] public float VineRadius { get; set; } = 0.05f;
-        [field: SerializeField, Range(3, 16)] public int VineSegments { get; set; } = 4;
-        [field: SerializeField, Range(4, 64)] public int VineSegmentsPerUnit { get; set; } = 4;
+        [field: SerializeField, Range(0, 16)] public int VineSegments { get; set; } = 4;
+        [field: SerializeField, Range(0, 64)] public int VineSegmentsPerUnit { get; set; } = 4;
         [field: SerializeField] public bool GenerateMeshes { get; set; } = true;
 
         [Header("Pickup Spawning")]
@@ -297,6 +301,19 @@ namespace HolyRail.Vines
                 return;
             }
 
+            // Debug ramp avoidance state
+            if (EnableRampAvoidance)
+            {
+                bool hasCityManager = CityManager != null;
+                bool hasRampData = hasCityManager && CityManager.HasRampData;
+                int rampCount = hasRampData ? CityManager.Ramps.Count : 0;
+                Debug.Log($"VineGenerator: Ramp avoidance ENABLED - CityManager:{hasCityManager}, HasRampData:{hasRampData}, RampCount:{rampCount}, AvoidDist:{RampAvoidanceDistance}");
+            }
+            else
+            {
+                Debug.Log("VineGenerator: Ramp avoidance DISABLED");
+            }
+
             Clear();
 
             // Free mode bypasses attractors and GPU algorithm
@@ -380,17 +397,111 @@ namespace HolyRail.Vines
 
         private void FilterAttractorsNearObstacles()
         {
-            if (!EnableObstacleAvoidance)
-                return;
-
             int originalCount = _generatedAttractors.Count;
-            _generatedAttractors = _generatedAttractors
-                .Where(a => !Physics.CheckSphere(a.Position, ObstacleAvoidanceDistance))
-                .ToList();
+            int obstacleFiltered = 0;
+            int rampFiltered = 0;
 
-            int removed = originalCount - _generatedAttractors.Count;
-            if (removed > 0)
-                Debug.Log($"VineGenerator: Filtered {removed} attractors near obstacles");
+            if (EnableObstacleAvoidance)
+            {
+                int beforeObstacle = _generatedAttractors.Count;
+                _generatedAttractors = _generatedAttractors
+                    .Where(a => !Physics.CheckSphere(a.Position, ObstacleAvoidanceDistance))
+                    .ToList();
+                obstacleFiltered = beforeObstacle - _generatedAttractors.Count;
+            }
+
+            if (EnableRampAvoidance)
+            {
+                int beforeRamp = _generatedAttractors.Count;
+                _generatedAttractors = _generatedAttractors
+                    .Where(a => !IsPositionNearRamp(a.Position, RampAvoidanceDistance))
+                    .ToList();
+                rampFiltered = beforeRamp - _generatedAttractors.Count;
+            }
+
+            int totalRemoved = originalCount - _generatedAttractors.Count;
+            if (totalRemoved > 0)
+                Debug.Log($"VineGenerator: Filtered {totalRemoved} attractors ({obstacleFiltered} near obstacles, {rampFiltered} near ramps)");
+        }
+
+        private int _rampAvoidanceHitCount = 0;
+
+        private bool IsPositionNearRamp(Vector3 position, float distance)
+        {
+            if (CityManager == null || !CityManager.HasRampData)
+                return false;
+
+            foreach (var ramp in CityManager.Ramps)
+            {
+                // Ramp Scale: x = width, y = depth (thin), z = length
+                // Use the ramp's maximum extent plus avoidance distance as radius
+                float rampRadius = Mathf.Max(ramp.Scale.x, ramp.Scale.z) * 0.5f + distance;
+                float rampRadiusSq = rampRadius * rampRadius;
+
+                // Check XZ distance (horizontal plane) - most important for ground-based ramps
+                var toRamp = position - ramp.Position;
+                float horizDistSq = toRamp.x * toRamp.x + toRamp.z * toRamp.z;
+
+                // Check if within horizontal radius and reasonable vertical range
+                float verticalTolerance = ramp.Scale.z * 0.5f + distance + 5f; // Extra vertical buffer for tilted ramps
+                if (horizDistSq < rampRadiusSq && Mathf.Abs(toRamp.y) < verticalTolerance)
+                {
+                    _rampAvoidanceHitCount++;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private Vector3 GetRampAvoidanceOffset(Vector3 position, Vector3 prevPosition)
+        {
+            if (CityManager == null || !CityManager.HasRampData)
+                return Vector3.zero;
+
+            Vector3 totalPush = Vector3.zero;
+            int pushCount = 0;
+
+            foreach (var ramp in CityManager.Ramps)
+            {
+                // Ramp Scale: x = width, y = depth (thin), z = length
+                float rampRadius = Mathf.Max(ramp.Scale.x, ramp.Scale.z) * 0.5f + RampAvoidanceDistance;
+
+                var toPosition = position - ramp.Position;
+                float horizDist = Mathf.Sqrt(toPosition.x * toPosition.x + toPosition.z * toPosition.z);
+
+                if (horizDist < rampRadius)
+                {
+                    // Calculate push direction (away from ramp center, in XZ plane)
+                    Vector3 pushDir;
+                    if (horizDist > 0.1f)
+                    {
+                        pushDir = new Vector3(toPosition.x, 0f, toPosition.z).normalized;
+                    }
+                    else
+                    {
+                        // Too close to center, use travel direction or ramp's forward
+                        var travelDir = (position - prevPosition);
+                        travelDir.y = 0f;
+                        if (travelDir.sqrMagnitude > 0.01f)
+                        {
+                            pushDir = travelDir.normalized;
+                        }
+                        else
+                        {
+                            // Use ramp's right direction as escape
+                            pushDir = ramp.Rotation * Vector3.right;
+                        }
+                    }
+
+                    // Push strength based on how deep inside the avoidance zone
+                    float pushStrength = rampRadius - horizDist + 1f;
+                    totalPush += pushDir * pushStrength;
+                    pushCount++;
+                }
+            }
+
+            return pushCount > 0 ? totalPush / pushCount : Vector3.zero;
         }
 
         private void GenerateSurfaceAttractors(System.Random random, int count)
@@ -516,6 +627,13 @@ namespace HolyRail.Vines
                             // Push position back along travel direction and away along surface normal
                             position = hit.point - dir * ObstacleAvoidanceDistance + hit.normal * ObstacleAvoidanceDistance;
                         }
+                    }
+
+                    // Ramp avoidance: push position away from ramps
+                    if (EnableRampAvoidance && i > 0 && IsPositionNearRamp(position, RampAvoidanceDistance))
+                    {
+                        var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
+                        position += GetRampAvoidanceOffset(position, prevPos);
                     }
 
                     _generatedNodes.Add(new VineNode
@@ -757,6 +875,12 @@ namespace HolyRail.Vines
                 : "";
             Debug.Log($"VineGenerator (Path): Generated {_generatedNodes.Count} nodes across {totalVines} vines{attractionInfo} following {corridorPaths.Count} corridor path(s)");
 
+            if (EnableRampAvoidance)
+            {
+                Debug.Log($"VineGenerator (Path): Ramp avoidance triggered {_rampAvoidanceHitCount} times");
+                _rampAvoidanceHitCount = 0;
+            }
+
             // Optionally generate billboard-connecting vines
             if (PathEnableBillboardVines)
             {
@@ -910,6 +1034,13 @@ namespace HolyRail.Vines
                     {
                         position = hit.point - dir * ObstacleAvoidanceDistance + hit.normal * ObstacleAvoidanceDistance;
                     }
+                }
+
+                // Ramp avoidance: push position away from ramps
+                if (EnableRampAvoidance && i > 0 && IsPositionNearRamp(position, RampAvoidanceDistance))
+                {
+                    var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
+                    position += GetRampAvoidanceOffset(position, prevPos);
                 }
 
                 // Parent index: only root node has -1
@@ -1085,6 +1216,13 @@ namespace HolyRail.Vines
                     }
                 }
 
+                // Ramp avoidance: push position away from ramps
+                if (EnableRampAvoidance && i > 0 && IsPositionNearRamp(position, RampAvoidanceDistance))
+                {
+                    var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
+                    position += GetRampAvoidanceOffset(position, prevPos);
+                }
+
                 // Final ground clamp after obstacle avoidance
                 position.y = Mathf.Max(position.y, 0f);
 
@@ -1168,6 +1306,13 @@ namespace HolyRail.Vines
                     }
                 }
 
+                // Ramp avoidance: push position away from ramps
+                if (EnableRampAvoidance && i > 0 && IsPositionNearRamp(position, RampAvoidanceDistance))
+                {
+                    var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
+                    position += GetRampAvoidanceOffset(position, prevPos);
+                }
+
                 // Final ground clamp after obstacle avoidance
                 position.y = Mathf.Max(position.y, 0f);
 
@@ -1238,6 +1383,13 @@ namespace HolyRail.Vines
                     {
                         position = hit.point - dir * ObstacleAvoidanceDistance + hit.normal * ObstacleAvoidanceDistance;
                     }
+                }
+
+                // Ramp avoidance: push position away from ramps
+                if (EnableRampAvoidance && i > 0 && IsPositionNearRamp(position, RampAvoidanceDistance))
+                {
+                    var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
+                    position += GetRampAvoidanceOffset(position, prevPos);
                 }
 
                 // Final ground clamp after obstacle avoidance
@@ -1357,6 +1509,13 @@ namespace HolyRail.Vines
                     }
                 }
 
+                // Ramp avoidance: push position away from ramps
+                if (EnableRampAvoidance && i > 0 && IsPositionNearRamp(position, RampAvoidanceDistance))
+                {
+                    var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
+                    position += GetRampAvoidanceOffset(position, prevPos);
+                }
+
                 // Final ground clamp after obstacle avoidance
                 position.y = Mathf.Max(position.y, 0f);
 
@@ -1441,6 +1600,13 @@ namespace HolyRail.Vines
                     {
                         position = hit.point - dir * ObstacleAvoidanceDistance + hit.normal * ObstacleAvoidanceDistance;
                     }
+                }
+
+                // Ramp avoidance: push position away from ramps
+                if (EnableRampAvoidance && i > 0 && IsPositionNearRamp(position, RampAvoidanceDistance))
+                {
+                    var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
+                    position += GetRampAvoidanceOffset(position, prevPos);
                 }
 
                 // Final ground clamp after obstacle avoidance
@@ -1637,6 +1803,13 @@ namespace HolyRail.Vines
                     {
                         position = hit.point - dir * ObstacleAvoidanceDistance + hit.normal * ObstacleAvoidanceDistance;
                     }
+                }
+
+                // Ramp avoidance: push position away from ramps
+                if (EnableRampAvoidance && i > 0 && IsPositionNearRamp(position, RampAvoidanceDistance))
+                {
+                    var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
+                    position += GetRampAvoidanceOffset(position, prevPos);
                 }
 
                 // Final ground clamp after obstacle avoidance
@@ -2120,8 +2293,9 @@ namespace HolyRail.Vines
                     var splineExtrude = splineGO.AddComponent<SplineExtrude>();
                     splineExtrude.Container = splineContainer;
                     splineExtrude.Radius = VineRadius;
-                    splineExtrude.Sides = VineSegments;
-                    splineExtrude.SegmentsPerUnit = VineSegmentsPerUnit;
+                    // Minimum 3 sides for a valid polygon (triangle), 4+ for rounder shapes
+                    splineExtrude.Sides = Mathf.Max(3, VineSegments);
+                    splineExtrude.SegmentsPerUnit = Mathf.Max(1, VineSegmentsPerUnit);
                     splineExtrude.Capped = true;
                     splineExtrude.Rebuild();
 
