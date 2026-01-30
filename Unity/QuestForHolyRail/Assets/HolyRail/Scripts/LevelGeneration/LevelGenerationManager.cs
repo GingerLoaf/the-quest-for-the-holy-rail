@@ -75,6 +75,56 @@ namespace HolyRail.Scripts.LevelGeneration
             }
 
             _plotPoints = allPoints.ToArray();
+
+            ComputePlotPointEdges();
+        }
+
+        private void ComputePlotPointEdges()
+        {
+            var pathGroups = new SortedDictionary<int, List<PlotPoint>>();
+            foreach (var point in _plotPoints)
+            {
+                if (point == null) continue;
+
+                if (!pathGroups.ContainsKey(point.PathIndex))
+                    pathGroups[point.PathIndex] = new List<PlotPoint>();
+
+                pathGroups[point.PathIndex].Add(point);
+            }
+
+            foreach (var kvp in pathGroups)
+            {
+                var points = kvp.Value;
+                for (int i = 0; i < points.Count; i++)
+                {
+                    int entryEdge = -1;
+                    int exitEdge = -1;
+
+                    if (i > 0)
+                    {
+                        var dir = points[i - 1].transform.position - points[i].transform.position;
+                        dir.y = 0f;
+                        if (dir.sqrMagnitude > 0.001f)
+                            entryEdge = HexConstants.GetBestEdgeForWorldDirection(dir);
+                    }
+
+                    if (i < points.Count - 1)
+                    {
+                        var dir = points[i + 1].transform.position - points[i].transform.position;
+                        dir.y = 0f;
+                        if (dir.sqrMagnitude > 0.001f)
+                            exitEdge = HexConstants.GetBestEdgeForWorldDirection(dir);
+                    }
+
+                    points[i].EntryEdge = entryEdge;
+                    points[i].ExitEdge = exitEdge;
+
+#if UNITY_EDITOR
+                    if (!Application.isPlaying)
+                        UnityEditor.EditorUtility.SetDirty(points[i]);
+#endif
+                }
+            }
         }
 
         private List<PlotPoint> ComputePointsFromSplines()
@@ -215,6 +265,7 @@ namespace HolyRail.Scripts.LevelGeneration
             }
 
             _circumradius = _sectionPrefabs[0].Circumradius;
+            Debug.Log("GENERATION: Starting to generate level");
 
             // Group plot points by path, maintaining order
             var pathGroups = new SortedDictionary<int, List<PlotPoint>>();
@@ -230,6 +281,7 @@ namespace HolyRail.Scripts.LevelGeneration
 
             var occupiedCells = new HashSet<Vector2Int>();
             int sectionIndex = 0;
+            Debug.Log("GENERATION: Finished grouping plot points");
 
             foreach (var kvp in pathGroups)
             {
@@ -402,28 +454,22 @@ namespace HolyRail.Scripts.LevelGeneration
 
             for (int i = 0; i < pathPoints.Count; i++)
             {
-                var cell = pathPoints[i].HexCell;
+                Debug.Log("GENERATION: Starting new section spawn");
+                var plotPoint = pathPoints[i];
+                var cell = plotPoint.HexCell;
                 if (occupiedCells.Contains(cell)) continue;
+                Debug.Log("GENERATION: new section in occupied cell");
 
-                int entryEdge = 3;
-                int exitEdge = 0;
+                int entryEdge = plotPoint.EntryEdge;
+                int exitEdge = plotPoint.ExitEdge;
 
-                if (i > 0)
-                {
-                    int edge = HexConstants.GetEdgeFromDirection(pathPoints[i - 1].HexCell, cell);
-                    if (edge >= 0)
-                        entryEdge = HexConstants.GetOppositeEdge(edge);
-                }
+                // Skip points without both edges (first/last in path)
+                //if (entryEdge < 0 || exitEdge < 0) continue;
+                //Debug.Log("GENERATION: new section has entry/exit edges");
 
-                if (i < pathPoints.Count - 1)
-                {
-                    int edge = HexConstants.GetEdgeFromDirection(cell, pathPoints[i + 1].HexCell);
-                    if (edge >= 0)
-                        exitEdge = edge;
-                }
-
-                if (entryEdge == exitEdge) continue;
-                if (HexConstants.AreEdgesAdjacent(entryEdge, exitEdge)) continue;
+                //if (entryEdge == exitEdge) continue;
+                //if (HexConstants.AreEdgesAdjacent(entryEdge, exitEdge)) continue;
+                //Debug.Log("GENERATION: new section edge check passed");
 
                 var prefab = _sectionPrefabs[Random.Range(0, _sectionPrefabs.Length)];
                 if (prefab == null) continue;
@@ -432,9 +478,9 @@ namespace HolyRail.Scripts.LevelGeneration
                 section.gameObject.name = $"Section_{sectionIndex}_{prefab.name}";
                 section.EntryEdge = entryEdge;
                 section.ExitEdge = exitEdge;
+                Debug.Log("GENERATION: Added section at: " + transform);
 
-                // Use the plot point's world position (on the spline) rather than hex grid center
-                var worldPos = pathPoints[i].transform.position;
+                var worldPos = plotPoint.transform.position;
                 AlignSectionToPlotPoint(section, worldPos, entryEdge);
 
                 section.SectionIndex = sectionIndex;
