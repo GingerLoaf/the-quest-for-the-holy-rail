@@ -274,6 +274,8 @@ namespace HolyRail.City
                 var spot = _pool[poolIndex];
                 var data = graffitiSpots[spotIndex];
 
+                spot.ResetForPoolReuse();
+
                 // Apply offset for HalfB instances in loop mode
                 var position = data.Position;
                 if (spotIndex >= halfBStartIndex)
