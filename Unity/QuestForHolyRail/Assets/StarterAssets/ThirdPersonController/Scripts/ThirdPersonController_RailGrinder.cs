@@ -2,13 +2,12 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
- using UnityEngine.Splines;
- using Unity.Mathematics;
- using HolyRail.Scripts;
- using HolyRail.Scripts.Enemies;
- using HolyRail.Scripts.FX;
- using HolyRail.Graffiti;
-using HolyRail.Scripts.UI;
+using UnityEngine.Splines;
+using Unity.Mathematics;
+using HolyRail.Scripts;
+using HolyRail.Scripts.Enemies;
+using HolyRail.Scripts.FX;
+using HolyRail.Graffiti;
 using Random = UnityEngine.Random;
 
 #if ENABLE_INPUT_SYSTEM 
@@ -1642,11 +1641,6 @@ namespace StarterAssets
         {
             AddTemporarySpeedBoost(BoostSpeedIncrease, BoostAbilityDuration);
             _boostAbilityCooldownTimer = BoostAbilityCooldown;
-
-            if (BoostMeterUI.Instance != null)
-            {
-                BoostMeterUI.Instance.StartBoost(BoostAbilityDuration, BoostAbilityCooldown);
-            }
 
             Debug.Log($"Boost activated! +{BoostSpeedIncrease} speed for {BoostAbilityDuration}s");
         }
