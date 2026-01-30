@@ -7,8 +7,8 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: CityBuildings
-  m_Shader: {fileID: 4800000, guid: e5d1a61e0acdb42ef9ae36140955da8d, type: 3}
+  m_Name: LaserLattice
+  m_Shader: {fileID: 4800000, guid: a1b2c3d4e5f6789012345678abcdef01, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
@@ -16,8 +16,9 @@ Material:
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 0
   m_DoubleSidedGI: 0
-  m_CustomRenderQueue: -1
-  stringTagMap: {}
+  m_CustomRenderQueue: 3000
+  stringTagMap:
+    RenderType: Transparent
   disabledShaderPasses: []
   m_LockedProperties: 
   m_SavedProperties:
@@ -25,10 +26,20 @@ Material:
     m_TexEnvs: []
     m_Ints: []
     m_Floats:
-    - _WindowDensity: 20
-    - _WindowEmission: 1.11
+    - _AnimationSpeed: 1
+    - _EdgeFalloff: 0.15
+    - _Frequency: 10
+    - _Intensity: 2.71
+    - _IntersectionIntensity: 3
+    - _IntersectionThreshold: 0.1
+    - _LineWidth: 0.03
+    - _NoiseAmount: 0.1
+    - _PatternRotationBack: 0
+    - _PatternRotationFront: 0.03
+    - _PatternSpinBack: 0
+    - _PatternSpinFront: 0
     m_Colors:
-    - _DowntownColor: {r: 0.43543077, g: 0.6116729, b: 0.8962264, a: 1}
-    - _IndustrialColor: {r: 0.55, g: 0.4, b: 0.35, a: 1}
+    - _IntersectionColor: {r: 2, g: 0, b: 0, a: 1}
+    - _LaserColor: {r: 1, g: 0, b: 0, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

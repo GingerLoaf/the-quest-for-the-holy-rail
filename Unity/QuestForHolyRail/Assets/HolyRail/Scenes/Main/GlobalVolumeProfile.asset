@@ -28,6 +28,116 @@ MonoBehaviour:
   rounded:
     m_OverrideState: 0
     m_Value: 0
+--- !u!114 &-5639281746382910564
+MonoBehaviour:
+  m_ObjectHideFlags: 3
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0f109436f26b840c9b633ba29ceec69e, type: 3}
+  m_Name: HeightFogVolume
+  m_EditorClassIdentifier: 
+  active: 1
+  bottomColor:
+    m_OverrideState: 1
+    m_Value: {r: 0.1, g: 0.1, b: 0.2, a: 1}
+  middleColor:
+    m_OverrideState: 1
+    m_Value: {r: 0.3, g: 0.3, b: 0.4, a: 0.8}
+  topColor:
+    m_OverrideState: 1
+    m_Value: {r: 0.6, g: 0.7, b: 0.9, a: 0.3}
+  bottomHeight:
+    m_OverrideState: 1
+    m_Value: 0
+  middleHeight:
+    m_OverrideState: 1
+    m_Value: 50
+  topHeight:
+    m_OverrideState: 1
+    m_Value: 150
+  bottomToMiddleFalloff:
+    m_OverrideState: 1
+    m_Value: 20
+  middleToTopFalloff:
+    m_OverrideState: 1
+    m_Value: 30
+  bottomDensity:
+    m_OverrideState: 1
+    m_Value: 1
+  middleDensity:
+    m_OverrideState: 1
+    m_Value: 0.7
+  topDensity:
+    m_OverrideState: 1
+    m_Value: 0.3
+  globalDensity:
+    m_OverrideState: 1
+    m_Value: 1
+  minDistance:
+    m_OverrideState: 1
+    m_Value: 10
+  maxDistance:
+    m_OverrideState: 1
+    m_Value: 500
+--- !u!114 &-435062991700174532
+MonoBehaviour:
+  m_ObjectHideFlags: 3
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0f109436f26b840c9b633ba29ceec69e, type: 3}
+  m_Name: HeightFogVolume
+  m_EditorClassIdentifier: Assembly-CSharp::HolyRail.PostProcessing.HeightFogVolume
+  active: 1
+  bottomColor:
+    m_OverrideState: 1
+    m_Value: {r: 0.1, g: 0.1, b: 0.2, a: 1}
+  middleColor:
+    m_OverrideState: 1
+    m_Value: {r: 0.3, g: 0.3, b: 0.4, a: 0.8}
+  topColor:
+    m_OverrideState: 1
+    m_Value: {r: 0.6, g: 0.7, b: 0.9, a: 0.3}
+  bottomHeight:
+    m_OverrideState: 1
+    m_Value: 0
+  middleHeight:
+    m_OverrideState: 0
+    m_Value: 50
+  topHeight:
+    m_OverrideState: 0
+    m_Value: 150
+  bottomToMiddleFalloff:
+    m_OverrideState: 0
+    m_Value: 20
+  middleToTopFalloff:
+    m_OverrideState: 0
+    m_Value: 30
+  bottomDensity:
+    m_OverrideState: 1
+    m_Value: 1
+  middleDensity:
+    m_OverrideState: 1
+    m_Value: 0.7
+  topDensity:
+    m_OverrideState: 1
+    m_Value: 0.3
+  globalDensity:
+    m_OverrideState: 1
+    m_Value: 1
+  minDistance:
+    m_OverrideState: 1
+    m_Value: 0
+  maxDistance:
+    m_OverrideState: 1
+    m_Value: 500
 --- !u!114 &-32820517437979890
 MonoBehaviour:
   m_ObjectHideFlags: 3
@@ -98,6 +208,7 @@ MonoBehaviour:
   - {fileID: 6537519557706506099}
   - {fileID: 6360144404329802011}
   - {fileID: 3937550164080222128}
+  - {fileID: -435062991700174532}
 --- !u!114 &1881579288749618558
 MonoBehaviour:
   m_ObjectHideFlags: 3

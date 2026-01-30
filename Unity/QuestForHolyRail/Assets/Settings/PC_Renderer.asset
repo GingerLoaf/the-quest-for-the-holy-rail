@@ -1,5 +1,21 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
+--- !u!114 &-8472619384726193847
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d7258d96fad554344819f41cd85a944c, type: 3}
+  m_Name: HeightFogRenderFeature
+  m_EditorClassIdentifier:
+  m_Active: 1
+  settings:
+    renderPassEvent: 9
+    fogMaterial: {fileID: 2100000, guid: b9c9182c870b34c5eba6c5a29c26c8cc, type: 2}
 --- !u!114 &-4388276215733514893
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -48,6 +64,7 @@ MonoBehaviour:
   m_RendererFeatures:
   - {fileID: 7833122117494664109}
   - {fileID: -4388276215733514893}
+  - {fileID: -8472619384726193847}
   m_RendererFeatureMap: ad6b866f10d7b46c738de82808b619c3
   m_UseNativeRenderPass: 1
   xrSystemData: {fileID: 0}

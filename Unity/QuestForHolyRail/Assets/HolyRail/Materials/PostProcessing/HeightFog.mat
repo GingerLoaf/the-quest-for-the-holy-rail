@@ -7,8 +7,8 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: CityBuildings
-  m_Shader: {fileID: 4800000, guid: e5d1a61e0acdb42ef9ae36140955da8d, type: 3}
+  m_Name: HeightFog
+  m_Shader: {fileID: 4800000, guid: 0c1bfcc38e1f04121bbf5414e253d43d, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
@@ -25,10 +25,20 @@ Material:
     m_TexEnvs: []
     m_Ints: []
     m_Floats:
-    - _WindowDensity: 20
-    - _WindowEmission: 1.11
+    - _BottomDensity: 1
+    - _BottomHeight: 0
+    - _BottomMiddleFalloff: 20
+    - _GlobalDensity: 1
+    - _MaxDistance: 500
+    - _MiddleDensity: 0.7
+    - _MiddleHeight: 50
+    - _MiddleTopFalloff: 30
+    - _MinDistance: 0
+    - _TopDensity: 0.3
+    - _TopHeight: 150
     m_Colors:
-    - _DowntownColor: {r: 0.43543077, g: 0.6116729, b: 0.8962264, a: 1}
-    - _IndustrialColor: {r: 0.55, g: 0.4, b: 0.35, a: 1}
+    - _BottomColor: {r: 0.1, g: 0.1, b: 0.2, a: 1}
+    - _MiddleColor: {r: 0.3, g: 0.3, b: 0.4, a: 0.8}
+    - _TopColor: {r: 0.6, g: 0.7, b: 0.9, a: 0.3}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
