@@ -9,6 +9,8 @@ namespace HolyRail.Scripts.LevelGeneration
         [field: SerializeField] public int PointIndex { get; set; }
         [field: SerializeField] public bool FirstInPath { get; set; }
         [field: SerializeField] public bool LastInPath { get; set; }
+        [field: SerializeField] public int EntryEdge { get; set; } = -1;
+        [field: SerializeField] public int ExitEdge { get; set; } = -1;
 
         private void OnDrawGizmos()
         {
@@ -34,11 +36,12 @@ namespace HolyRail.Scripts.LevelGeneration
                     circumradius = prefabs[0].Circumradius;
             }
 
+            var pos = transform.position;
             var gridPos = HexConstants.AxialToWorld(HexCell, circumradius);
 
             // Line from plot point to hex center
             Gizmos.color = new Color(1f, 1f, 0f, 0.6f);
-            Gizmos.DrawLine(transform.position, gridPos);
+            Gizmos.DrawLine(pos, gridPos);
 
             // Hex outline at the grid cell
             Gizmos.color = new Color(1f, 1f, 0f, 0.4f);
@@ -48,6 +51,22 @@ namespace HolyRail.Scripts.LevelGeneration
                 var v0 = gridPos + vertices[v];
                 var v1 = gridPos + vertices[(v + 1) % HexConstants.EdgeCount];
                 Gizmos.DrawLine(v0, v1);
+            }
+
+            // Entry edge direction
+            if (EntryEdge >= 0)
+            {
+                var entryNormal = HexConstants.GetEdgeNormal(EntryEdge, circumradius).normalized;
+                Gizmos.color = Color.green;
+                Gizmos.DrawLine(pos, pos + entryNormal * circumradius * 0.6f);
+            }
+
+            // Exit edge direction
+            if (ExitEdge >= 0)
+            {
+                var exitNormal = HexConstants.GetEdgeNormal(ExitEdge, circumradius).normalized;
+                Gizmos.color = Color.red;
+                Gizmos.DrawLine(pos, pos + exitNormal * circumradius * 0.6f);
             }
         }
     }

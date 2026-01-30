@@ -194,6 +194,23 @@ namespace HolyRail.Scripts.LevelGeneration
             return -1;
         }
 
+        public static int GetBestEdgeForWorldDirection(Vector3 direction)
+        {
+            float bestDot = float.MinValue;
+            int bestEdge = 0;
+            for (int i = 0; i < EdgeCount; i++)
+            {
+                var normal = GetEdgeNormal(i, 1f);
+                float dot = normal.x * direction.x + normal.z * direction.z;
+                if (dot > bestDot)
+                {
+                    bestDot = dot;
+                    bestEdge = i;
+                }
+            }
+            return bestEdge;
+        }
+
         private static Vector2 ClosestPointOnSegment(Vector2 point, Vector2 a, Vector2 b)
         {
             var ab = b - a;
