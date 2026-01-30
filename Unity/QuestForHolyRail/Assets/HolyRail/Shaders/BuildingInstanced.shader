@@ -456,6 +456,121 @@ Shader "HolyRail/BuildingInstanced"
             }
             ENDHLSL
         }
+
+        // DepthNormals pass for DBuffer decals
+        Pass
+        {
+            Name "DepthNormals"
+            Tags { "LightMode" = "DepthNormals" }
+
+            ZWrite On
+            Cull Back
+
+            HLSLPROGRAM
+            #pragma vertex DepthNormalsVertex
+            #pragma fragment DepthNormalsFragment
+            #pragma multi_compile_instancing
+            #pragma instancing_options procedural:ConfigureProcedural
+
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+
+            struct BuildingData
+            {
+                float3 Position;
+                float3 Scale;
+                float4 Rotation;
+                int NeedsCollider;
+                int StyleIndex;
+            };
+
+            #ifdef UNITY_PROCEDURAL_INSTANCING_ENABLED
+            StructuredBuffer<BuildingData> _BuildingBuffer;
+            #endif
+
+            float3 _HalfAOffset;
+            float3 _HalfBOffset;
+            int _HalfBStartIndex;
+
+            // Rotate vector by quaternion
+            float3 rotateByQuaternion(float3 v, float4 q)
+            {
+                float3 u = q.xyz;
+                float s = q.w;
+                return 2.0 * dot(u, v) * u
+                     + (s * s - dot(u, u)) * v
+                     + 2.0 * s * cross(u, v);
+            }
+
+            void ConfigureProcedural()
+            {
+                #ifdef UNITY_PROCEDURAL_INSTANCING_ENABLED
+                uint instanceID = unity_InstanceID;
+                BuildingData building = _BuildingBuffer[instanceID];
+
+                float3 pos = building.Position;
+                pos += (instanceID >= (uint)_HalfBStartIndex) ? _HalfBOffset : _HalfAOffset;
+                float3 scale = building.Scale;
+                float4 rot = building.Rotation;
+
+                float3 right = rotateByQuaternion(float3(1, 0, 0), rot) * scale.x;
+                float3 up = rotateByQuaternion(float3(0, 1, 0), rot) * scale.y;
+                float3 forward = rotateByQuaternion(float3(0, 0, 1), rot) * scale.z;
+
+                unity_ObjectToWorld = float4x4(
+                    float4(right.x, up.x, forward.x, pos.x),
+                    float4(right.y, up.y, forward.y, pos.y),
+                    float4(right.z, up.z, forward.z, pos.z),
+                    float4(0, 0, 0, 1)
+                );
+
+                float3 invScale = 1.0 / scale;
+                float4 invRot = float4(-rot.xyz, rot.w);
+
+                float3 invRight = rotateByQuaternion(float3(1, 0, 0), invRot) * invScale.x;
+                float3 invUp = rotateByQuaternion(float3(0, 1, 0), invRot) * invScale.y;
+                float3 invForward = rotateByQuaternion(float3(0, 0, 1), invRot) * invScale.z;
+
+                unity_WorldToObject = float4x4(
+                    float4(invRight.x, invRight.y, invRight.z, -dot(invRight, pos)),
+                    float4(invUp.x, invUp.y, invUp.z, -dot(invUp, pos)),
+                    float4(invForward.x, invForward.y, invForward.z, -dot(invForward, pos)),
+                    float4(0, 0, 0, 1)
+                );
+                #endif
+            }
+
+            struct Attributes
+            {
+                float4 positionOS : POSITION;
+                float3 normalOS : NORMAL;
+                UNITY_VERTEX_INPUT_INSTANCE_ID
+            };
+
+            struct Varyings
+            {
+                float4 positionCS : SV_POSITION;
+                float3 normalWS : TEXCOORD0;
+            };
+
+            Varyings DepthNormalsVertex(Attributes input)
+            {
+                Varyings output;
+                UNITY_SETUP_INSTANCE_ID(input);
+
+                output.positionCS = TransformObjectToHClip(input.positionOS.xyz);
+                output.normalWS = TransformObjectToWorldNormal(input.normalOS);
+                return output;
+            }
+
+            half4 DepthNormalsFragment(Varyings input) : SV_TARGET
+            {
+                // Encode world-space normal for URP's _CameraNormalsTexture
+                float3 normalWS = normalize(input.normalWS);
+                // URP stores world-space normals packed as (n * 0.5 + 0.5)
+                return half4(normalWS * 0.5 + 0.5, 0);
+            }
+            ENDHLSL
+        }
     }
 
     FallBack "Hidden/Universal Render Pipeline/FallbackError"

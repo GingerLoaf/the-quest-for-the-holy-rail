@@ -14,6 +14,8 @@ namespace HolyRail.City
         public int RampCount;
         public int BillboardStartIndex;
         public int BillboardCount;
+        public int GraffitiStartIndex;
+        public int GraffitiCount;
         public List<Vector3> PathPoints = new List<Vector3>();
         public Vector3 CurrentOffset;
         public int HalfId;
@@ -62,6 +64,17 @@ namespace HolyRail.City
         [field: SerializeField] public float BillboardYOffsetMin { get; set; } = 3f;
         [field: SerializeField] public float BillboardYOffsetMax { get; set; } = 15f;
         [field: SerializeField] public float BillboardDepth { get; set; } = 0.3f;
+
+        [Header("Graffiti Settings")]
+        [field: SerializeField] public bool EnableGraffiti { get; set; } = true;
+        [field: SerializeField] public GameObject GraffitiSpotPrefab { get; set; }
+        [field: SerializeField] public int GraffitiCount { get; set; } = 30;
+        [field: SerializeField] public float GraffitiYOffsetMin { get; set; } = 0.5f;
+        [field: SerializeField] public float GraffitiYOffsetMax { get; set; } = 3f;
+        [field: SerializeField] public float GraffitiMinSpacing { get; set; } = 15f;
+        [field: SerializeField] public float GraffitiEdgeClearance { get; set; } = 3f;
+        [field: SerializeField, Range(0f, 1f)] public float GraffitiOnBillboardPercent { get; set; } = 0.3f;
+        [field: SerializeField] public float GraffitiBillboardAvoidDistance { get; set; } = 5f;
 
         [Header("Generation Parameters")]
         [field: SerializeField] public int Seed { get; set; } = 12345;
@@ -119,6 +132,10 @@ namespace HolyRail.City
 
         public LoopModeState LoopState => _loopState;
         public IReadOnlyList<Vector3> CorridorPathA => _corridorPathA;
+        public IReadOnlyList<Vector3> CorridorPathB => _corridorPathB;
+        public IReadOnlyList<Vector3> CorridorPathC => _corridorPathC;
+
+        public event System.Action OnCityRegenerated;
 
         // Serialized generated data (persists through play mode)
         [SerializeField, HideInInspector]
@@ -129,6 +146,9 @@ namespace HolyRail.City
 
         [SerializeField, HideInInspector]
         private List<BillboardData> _generatedBillboards = new List<BillboardData>();
+
+        [SerializeField, HideInInspector]
+        private List<GraffitiSpotData> _generatedGraffitiSpots = new List<GraffitiSpotData>();
 
         // Cached corridor paths for gizmo visualization
         [SerializeField, HideInInspector]
@@ -170,13 +190,16 @@ namespace HolyRail.City
         public int ActualBuildingCount => _generatedBuildings.Count;
         public int ActualRampCount => _generatedRamps.Count;
         public int ActualBillboardCount => _generatedBillboards.Count;
+        public int ActualGraffitiCount => _generatedGraffitiSpots.Count;
         public bool HasData => _generatedBuildings.Count > 0;
         public bool HasRampData => _generatedRamps.Count > 0;
         public bool HasBillboardData => _generatedBillboards.Count > 0;
+        public bool HasGraffitiData => _generatedGraffitiSpots.Count > 0;
         public bool IsGenerated => HasData;
         public IReadOnlyList<BuildingData> Buildings => _generatedBuildings;
         public IReadOnlyList<RampData> Ramps => _generatedRamps;
         public IReadOnlyList<BillboardData> Billboards => _generatedBillboards;
+        public IReadOnlyList<GraffitiSpotData> GraffitiSpots => _generatedGraffitiSpots;
 
         public bool HasValidCorridorSetup
         {
@@ -481,17 +504,52 @@ namespace HolyRail.City
                 textureSetup.AutoSetup();
             }
 
+            // Generate graffiti spots if enabled
+            if (EnableGraffiti)
+            {
+                if (GraffitiSpotPrefab == null)
+                {
+                    Debug.LogWarning("CityManager: Graffiti enabled but GraffitiSpotPrefab is not assigned!");
+                }
+
+                if (generateCorridorA && _corridorPathA.Count > 0)
+                {
+                    if (IsLoopMode)
+                    {
+                        _loopState.HalfA.GraffitiStartIndex = _generatedGraffitiSpots.Count;
+                        GenerateCorridorGraffitiSpotsForHalf(_corridorPathA, 0, pathMidpointIndex);
+                        _loopState.HalfA.GraffitiCount = _generatedGraffitiSpots.Count - _loopState.HalfA.GraffitiStartIndex;
+
+                        _loopState.HalfB.GraffitiStartIndex = _generatedGraffitiSpots.Count;
+                        GenerateCorridorGraffitiSpotsForHalf(_corridorPathA, pathMidpointIndex, _corridorPathA.Count);
+                        _loopState.HalfB.GraffitiCount = _generatedGraffitiSpots.Count - _loopState.HalfB.GraffitiStartIndex;
+                    }
+                    else
+                    {
+                        GenerateCorridorGraffitiSpots(_corridorPathA);
+                    }
+                }
+                if (generateCorridorB && _corridorPathB.Count > 0)
+                    GenerateCorridorGraffitiSpots(_corridorPathB);
+                if (generateCorridorC && _corridorPathC.Count > 0)
+                    GenerateCorridorGraffitiSpots(_corridorPathC);
+                Debug.Log($"CityManager: Graffiti generation complete. Total graffiti spots: {_generatedGraffitiSpots.Count}");
+            }
+
             var rampInfo = EnableRamps ? $", {_generatedRamps.Count} ramps" : "";
             var billboardInfo = EnableBillboards ? $", {_generatedBillboards.Count} billboards" : "";
+            var graffitiInfo = EnableGraffiti ? $", {_generatedGraffitiSpots.Count} graffiti spots" : "";
             var loopInfo = IsLoopMode ? " (Loop Mode)" : "";
             int corridorCount = IsLoopMode ? 1 : EnabledCorridorCount;
-            Debug.Log($"CityManager: Generated {_generatedBuildings.Count} buildings across {corridorCount} corridors{rampInfo}{billboardInfo}{loopInfo}");
+            Debug.Log($"CityManager: Generated {_generatedBuildings.Count} buildings across {corridorCount} corridors{rampInfo}{billboardInfo}{graffitiInfo}{loopInfo}");
 
             if (IsLoopMode)
             {
-                Debug.Log($"CityManager Loop Mode: HalfA has {_loopState.HalfA.BuildingCount} buildings, {_loopState.HalfA.RampCount} ramps, {_loopState.HalfA.BillboardCount} billboards");
-                Debug.Log($"CityManager Loop Mode: HalfB has {_loopState.HalfB.BuildingCount} buildings, {_loopState.HalfB.RampCount} ramps, {_loopState.HalfB.BillboardCount} billboards");
+                Debug.Log($"CityManager Loop Mode: HalfA has {_loopState.HalfA.BuildingCount} buildings, {_loopState.HalfA.RampCount} ramps, {_loopState.HalfA.BillboardCount} billboards, {_loopState.HalfA.GraffitiCount} graffiti");
+                Debug.Log($"CityManager Loop Mode: HalfB has {_loopState.HalfB.BuildingCount} buildings, {_loopState.HalfB.RampCount} ramps, {_loopState.HalfB.BillboardCount} billboards, {_loopState.HalfB.GraffitiCount} graffiti");
             }
+
+            OnCityRegenerated?.Invoke();
         }
 
         private List<Vector3> GenerateCurvedPath(Vector3 start, Vector3 waypoint, int corridorIndex)
@@ -1354,6 +1412,416 @@ namespace HolyRail.City
             return true;
         }
 
+        private void GenerateCorridorGraffitiSpots(List<Vector3> path)
+        {
+            if (path.Count < 2)
+                return;
+
+            var convergencePos = ConvergencePoint.position;
+
+            // Calculate total path length for graffiti distribution
+            float totalLength = 0f;
+            for (int i = 1; i < path.Count; i++)
+            {
+                totalLength += Vector3.Distance(path[i], path[i - 1]);
+            }
+
+            // Distribute graffiti evenly along this corridor (1/3 of total graffiti per corridor)
+            int graffitiPerCorridor = Mathf.Max(1, GraffitiCount / 3);
+
+            // Determine how many go on billboards vs walls
+            int graffitiOnBillboards = Mathf.RoundToInt(graffitiPerCorridor * GraffitiOnBillboardPercent);
+            int graffitiOnWalls = graffitiPerCorridor - graffitiOnBillboards;
+
+            // Place graffiti on billboards first
+            PlaceGraffitiOnBillboards(graffitiOnBillboards);
+
+            // Then place remaining on walls
+            float graffitiSpacing = totalLength / (graffitiOnWalls + 1);
+
+            float accumulatedDistance = graffitiSpacing;
+            int pathIndex = 0;
+            float segmentProgress = 0f;
+
+            for (int graffitiNum = 0; graffitiNum < graffitiOnWalls && pathIndex < path.Count - 1; graffitiNum++)
+            {
+                while (pathIndex < path.Count - 1)
+                {
+                    float segmentLength = Vector3.Distance(path[pathIndex], path[pathIndex + 1]);
+                    float remaining = segmentLength - segmentProgress;
+
+                    if (accumulatedDistance <= remaining)
+                    {
+                        float t = (segmentProgress + accumulatedDistance) / segmentLength;
+                        var graffitiPos = Vector3.Lerp(path[pathIndex], path[pathIndex + 1], t);
+
+                        // Skip if too close to start convergence plaza
+                        if (Vector3.Distance(graffitiPos, convergencePos) < ConvergenceRadius)
+                        {
+                            accumulatedDistance = graffitiSpacing;
+                            segmentProgress += accumulatedDistance;
+                            continue;
+                        }
+
+                        // Skip if too close to end convergence plaza
+                        if (ConvergenceEndPoint != null && EnableConvergenceEndPlaza)
+                        {
+                            if (Vector3.Distance(graffitiPos, ConvergenceEndPoint.position) < ConvergenceEndRadius)
+                            {
+                                accumulatedDistance = graffitiSpacing;
+                                segmentProgress += accumulatedDistance;
+                                continue;
+                            }
+                        }
+
+                        // Calculate tangent at this point
+                        var tangent = (path[pathIndex + 1] - path[pathIndex]).normalized;
+
+                        // Alternate left and right sides
+                        bool placeOnLeft = graffitiNum % 2 == 0;
+                        if (TryPlaceGraffitiSpotOnWall(graffitiPos, tangent, placeOnLeft))
+                        {
+                            accumulatedDistance = graffitiSpacing;
+                            segmentProgress += accumulatedDistance;
+                        }
+                        else
+                        {
+                            // Skip this position, try next
+                            accumulatedDistance = graffitiSpacing * 0.5f;
+                            segmentProgress += accumulatedDistance;
+                        }
+                        break;
+                    }
+                    else
+                    {
+                        // Move to next segment
+                        accumulatedDistance -= remaining;
+                        segmentProgress = 0f;
+                        pathIndex++;
+                    }
+                }
+            }
+        }
+
+        private void GenerateCorridorGraffitiSpotsForHalf(List<Vector3> path, int startIndex, int endIndex)
+        {
+            if (path.Count < 2)
+                return;
+
+            var convergencePos = ConvergencePoint.position;
+
+            // Calculate path length for this half
+            float halfLength = 0f;
+            for (int i = startIndex + 1; i < endIndex && i < path.Count; i++)
+            {
+                halfLength += Vector3.Distance(path[i], path[i - 1]);
+            }
+
+            // Distribute graffiti in this half
+            int graffitiPerHalf = Mathf.Max(1, GraffitiCount / 6);
+
+            // Determine how many go on billboards vs walls
+            int graffitiOnBillboards = Mathf.RoundToInt(graffitiPerHalf * GraffitiOnBillboardPercent);
+            int graffitiOnWalls = graffitiPerHalf - graffitiOnBillboards;
+
+            // Place graffiti on billboards first
+            PlaceGraffitiOnBillboards(graffitiOnBillboards);
+
+            // Then place remaining on walls
+            float graffitiSpacing = halfLength / (graffitiOnWalls + 1);
+
+            float accumulatedDistance = graffitiSpacing;
+            int pathIndex = startIndex;
+            float segmentProgress = 0f;
+            int graffitiNum = 0;
+
+            for (int num = 0; num < graffitiOnWalls && pathIndex < endIndex - 1 && pathIndex < path.Count - 1; num++)
+            {
+                while (pathIndex < endIndex - 1 && pathIndex < path.Count - 1)
+                {
+                    float segmentLength = Vector3.Distance(path[pathIndex], path[pathIndex + 1]);
+                    float remaining = segmentLength - segmentProgress;
+
+                    if (accumulatedDistance <= remaining)
+                    {
+                        float t = (segmentProgress + accumulatedDistance) / segmentLength;
+                        var graffitiPos = Vector3.Lerp(path[pathIndex], path[pathIndex + 1], t);
+
+                        if (Vector3.Distance(graffitiPos, convergencePos) < ConvergenceRadius)
+                        {
+                            accumulatedDistance = graffitiSpacing;
+                            segmentProgress += accumulatedDistance;
+                            continue;
+                        }
+
+                        var tangent = (path[pathIndex + 1] - path[pathIndex]).normalized;
+                        bool placeOnLeft = graffitiNum % 2 == 0;
+
+                        if (TryPlaceGraffitiSpotOnWall(graffitiPos, tangent, placeOnLeft))
+                        {
+                            accumulatedDistance = graffitiSpacing;
+                            segmentProgress += accumulatedDistance;
+                            graffitiNum++;
+                        }
+                        else
+                        {
+                            accumulatedDistance = graffitiSpacing * 0.5f;
+                            segmentProgress += accumulatedDistance;
+                        }
+                        break;
+                    }
+                    else
+                    {
+                        accumulatedDistance -= remaining;
+                        segmentProgress = 0f;
+                        pathIndex++;
+                    }
+                }
+            }
+        }
+
+        private void PlaceGraffitiOnBillboards(int count)
+        {
+            if (_generatedBillboards.Count == 0 || count <= 0)
+                return;
+
+            // Track which billboards already have graffiti
+            var usedBillboardIndices = new HashSet<int>();
+            foreach (var graffiti in _generatedGraffitiSpots)
+            {
+                if (graffiti.BillboardIndex >= 0)
+                    usedBillboardIndices.Add(graffiti.BillboardIndex);
+            }
+
+            // Try to place graffiti on random unused billboards
+            int placed = 0;
+            int maxAttempts = count * 3;
+            int attempts = 0;
+
+            while (placed < count && attempts < maxAttempts)
+            {
+                attempts++;
+
+                // Pick a random billboard
+                int billboardIndex = _random.Next(_generatedBillboards.Count);
+
+                if (usedBillboardIndices.Contains(billboardIndex))
+                    continue;
+
+                var billboard = _generatedBillboards[billboardIndex];
+
+                // Ensure graffiti stays fully within billboard bounds
+                float graffitiSize = 2f; // Approximate graffiti decal size
+                float margin = graffitiSize * 0.5f + 0.5f; // Half size plus extra margin
+
+                // Skip billboards that are too small for graffiti
+                if (billboard.Scale.y < graffitiSize + 1f || billboard.Scale.x < graffitiSize + 1f)
+                    continue;
+
+                // Y position: keep graffiti fully within billboard height
+                float billboardBottom = billboard.Position.y - billboard.Scale.y * 0.5f;
+                float billboardTop = billboard.Position.y + billboard.Scale.y * 0.5f;
+                float minY = billboardBottom + margin;
+                float maxY = billboardTop - margin;
+                float yPos = RandomRange(minY, maxY);
+
+                // X offset along billboard width (in billboard's local space)
+                float maxXOffset = billboard.Scale.x * 0.5f - margin;
+                float xOffset = RandomRange(-maxXOffset, maxXOffset);
+
+                // Calculate position: start at billboard center, offset in front, then adjust
+                var billboardRight = billboard.Rotation * Vector3.right;
+                var position = billboard.Position + billboard.Normal * 0.5f; // In front of billboard
+                position += billboardRight * xOffset; // Horizontal offset along billboard
+                position.y = yPos;
+
+                // DecalProjector projects along -Z
+                // billboard.Normal points toward corridor, so forward (+Z) = billboard.Normal
+                // This makes -Z point into the billboard surface
+                var graffitiRotation = Quaternion.LookRotation(billboard.Normal, Vector3.up);
+
+                var graffiti = new GraffitiSpotData
+                {
+                    Position = position,
+                    Rotation = graffitiRotation,
+                    Normal = -billboard.Normal, // Direction decal projects (into billboard)
+                    BillboardIndex = billboardIndex
+                };
+
+                _generatedGraffitiSpots.Add(graffiti);
+                usedBillboardIndices.Add(billboardIndex);
+                placed++;
+            }
+        }
+
+        private bool TryPlaceGraffitiSpotOnWall(Vector3 pathPosition, Vector3 tangent, bool placeOnLeft)
+        {
+            // Calculate perpendicular direction (right of path)
+            var right = Vector3.Cross(Vector3.up, tangent).normalized;
+
+            // Find the nearest building on the correct side
+            var searchDirection = placeOnLeft ? -right : right;
+            var building = FindNearestBuildingOnSide(pathPosition, searchDirection);
+
+            if (building == null)
+            {
+                return false; // No building found on this side
+            }
+
+            var buildingData = building.Value;
+
+            // Calculate position on the building's corridor-facing surface
+            // The corridor-facing surface is the side closest to the path
+            float halfWidth = buildingData.Scale.x * 0.5f;
+            float halfDepth = buildingData.Scale.z * 0.5f;
+
+            // Determine which face of the building faces the corridor
+            var toPath = pathPosition - buildingData.Position;
+            toPath.y = 0;
+
+            // Get building's local axes from rotation
+            var buildingForward = buildingData.Rotation * Vector3.forward;
+            var buildingRight = buildingData.Rotation * Vector3.right;
+
+            // Find which axis is most aligned with the direction to the path
+            float dotForward = Vector3.Dot(toPath.normalized, buildingForward);
+            float dotRight = Vector3.Dot(toPath.normalized, buildingRight);
+
+            Vector3 surfaceNormal;
+            Vector3 surfaceOffset;
+
+            if (Mathf.Abs(dotForward) > Mathf.Abs(dotRight))
+            {
+                // Front or back face
+                surfaceNormal = dotForward > 0 ? buildingForward : -buildingForward;
+                surfaceOffset = surfaceNormal * halfDepth;
+            }
+            else
+            {
+                // Left or right face
+                surfaceNormal = dotRight > 0 ? buildingRight : -buildingRight;
+                surfaceOffset = surfaceNormal * halfWidth;
+            }
+
+            // Position in front of the building surface (toward corridor)
+            // surfaceNormal points toward corridor, so add a small offset in that direction
+            float outwardOffset = 0.5f; // Position slightly in front of wall for decal projection
+            var position = buildingData.Position + surfaceOffset + surfaceNormal * outwardOffset;
+
+            // Add random horizontal offset along the wall surface
+            // Get a vector perpendicular to surfaceNormal (along the wall)
+            var alongWall = Vector3.Cross(Vector3.up, surfaceNormal).normalized;
+            float maxOffset = Mathf.Min(halfWidth, halfDepth) - GraffitiEdgeClearance;
+            float randomOffset = RandomRange(-maxOffset, maxOffset);
+            position += alongWall * randomOffset;
+
+            // Randomize Y offset within range (player-reachable height)
+            float yOffset = RandomRange(GraffitiYOffsetMin, GraffitiYOffsetMax);
+            position.y = pathPosition.y + yOffset;
+
+            // Verify Y is within building height
+            float buildingTop = buildingData.Position.y + buildingData.Scale.y * 0.5f;
+            float buildingBottom = buildingData.Position.y - buildingData.Scale.y * 0.5f;
+            if (position.y > buildingTop - 0.5f || position.y < buildingBottom + 0.5f)
+            {
+                return false;
+            }
+
+            // Check spacing from other graffiti spots
+            foreach (var existingGraffiti in _generatedGraffitiSpots)
+            {
+                float dx = position.x - existingGraffiti.Position.x;
+                float dz = position.z - existingGraffiti.Position.z;
+                float distSq = dx * dx + dz * dz;
+
+                if (distSq < GraffitiMinSpacing * GraffitiMinSpacing)
+                {
+                    return false;
+                }
+            }
+
+            // Check that graffiti doesn't overlap with any billboard
+            // Use proper bounds checking, not just distance
+            foreach (var billboard in _generatedBillboards)
+            {
+                // Check if graffiti Y is within billboard's Y range
+                float billboardBottom = billboard.Position.y - billboard.Scale.y * 0.5f;
+                float billboardTop = billboard.Position.y + billboard.Scale.y * 0.5f;
+                float graffitiMargin = 1.5f; // Margin to prevent partial overlap
+
+                bool yOverlaps = position.y >= (billboardBottom - graffitiMargin) &&
+                                 position.y <= (billboardTop + graffitiMargin);
+
+                if (!yOverlaps)
+                    continue; // No Y overlap, safe
+
+                // Check XZ overlap - transform to billboard's local space
+                var toGraffiti = position - billboard.Position;
+                var localPos = Quaternion.Inverse(billboard.Rotation) * toGraffiti;
+
+                float billboardHalfWidth = billboard.Scale.x * 0.5f + graffitiMargin;
+                float billboardHalfDepth = billboard.Scale.z * 0.5f + graffitiMargin;
+
+                bool xzOverlaps = Mathf.Abs(localPos.x) < billboardHalfWidth &&
+                                  Mathf.Abs(localPos.z) < billboardHalfDepth;
+
+                if (xzOverlaps)
+                {
+                    return false; // Would overlap with billboard
+                }
+            }
+
+            // Rotation: DecalProjector projects along -Z (backward)
+            // surfaceNormal points toward corridor (away from wall)
+            // We want -Z to point at wall, so forward (+Z) should point toward corridor = surfaceNormal
+            var rotation = Quaternion.LookRotation(surfaceNormal, Vector3.up);
+
+            var graffiti = new GraffitiSpotData
+            {
+                Position = position,
+                Rotation = rotation,
+                Normal = -surfaceNormal, // Normal points INTO wall
+                BillboardIndex = -1 // Not on a billboard
+            };
+
+            _generatedGraffitiSpots.Add(graffiti);
+            return true;
+        }
+
+        private BuildingData? FindNearestBuildingOnSide(Vector3 pathPosition, Vector3 searchDirection)
+        {
+            BuildingData? nearest = null;
+            float nearestDistSq = float.MaxValue;
+            float maxSearchDistance = CorridorWidth + BuildingWidthMax * 2;
+
+            foreach (var building in _generatedBuildings)
+            {
+                // Only consider innermost row buildings (those with colliders)
+                if (building.NeedsCollider == 0)
+                    continue;
+
+                var toBuilding = building.Position - pathPosition;
+                toBuilding.y = 0;
+
+                // Check if building is in the correct direction
+                float dot = Vector3.Dot(toBuilding.normalized, searchDirection);
+                if (dot < 0.5f) // Must be roughly in the search direction
+                    continue;
+
+                float distSq = toBuilding.sqrMagnitude;
+                if (distSq > maxSearchDistance * maxSearchDistance)
+                    continue;
+
+                if (distSq < nearestDistSq)
+                {
+                    nearestDistSq = distSq;
+                    nearest = building;
+                }
+            }
+
+            return nearest;
+        }
+
         private float RandomRange(float min, float max)
         {
             return min + (float)_random.NextDouble() * (max - min);
@@ -1628,6 +2096,7 @@ namespace HolyRail.City
             _generatedBuildings.Clear();
             _generatedRamps.Clear();
             _generatedBillboards.Clear();
+            _generatedGraffitiSpots.Clear();
             _corridorPathA.Clear();
             _corridorPathB.Clear();
             _corridorPathC.Clear();
@@ -1869,6 +2338,15 @@ namespace HolyRail.City
                     pool.ResyncAfterLeapfrog();
                 }
             }
+
+            var graffitiPools = FindObjectsByType<GraffitiSpotPool>(FindObjectsSortMode.None);
+            foreach (var pool in graffitiPools)
+            {
+                if (pool.CityManager == this)
+                {
+                    pool.ResyncAfterLeapfrog();
+                }
+            }
         }
 
         /// <summary>
@@ -1891,6 +2369,15 @@ namespace HolyRail.City
                 {
                     // Use async version to spread spatial grid rebuild over multiple frames
                     pool.ResyncAfterLeapfrogAsync();
+                }
+            }
+
+            var graffitiPools = FindObjectsByType<GraffitiSpotPool>(FindObjectsSortMode.None);
+            foreach (var pool in graffitiPools)
+            {
+                if (pool.CityManager == this)
+                {
+                    pool.ResyncAfterLeapfrog();
                 }
             }
         }

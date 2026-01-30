@@ -9,7 +9,8 @@ using System.Collections.Generic;
  using HolyRail.Scripts.Enemies;
  using HolyRail.Scripts.FX;
  using HolyRail.Graffiti;
- using Random = UnityEngine.Random;
+using HolyRail.UI;
+using Random = UnityEngine.Random;
 #if ENABLE_INPUT_SYSTEM 
 using UnityEngine.InputSystem;
 #endif
@@ -31,6 +32,8 @@ namespace StarterAssets
         public InputAction sprayInput;
         public InputAction jumpBackflipInput;
         public InputAction jumpSideflipInput;
+        public InputAction dashInput;
+        public InputAction boostInput;
         public bool lookBack;
         private SplineContainer[] _splineContainers;
         
@@ -89,7 +92,7 @@ namespace StarterAssets
 
         [Space(10)]
         [Tooltip("Time required to pass before being able to jump again. Set to 0f to instantly jump again")]
-        public float JumpTimeout = 0.50f;
+        public float JumpTimeout = 0f;
 
         [Tooltip("Time required to pass before entering the fall state. Useful for walking down stairs")]
         public float FallTimeout = 0.15f;
@@ -146,10 +149,33 @@ namespace StarterAssets
         [Tooltip("Cooldown before player can wall ride again after exiting")]
         public float WallRideExitCooldown = 0.3f;
         [Tooltip("Jump height when exiting wall ride with jump")]
-        public float WallRideJumpHeight = 1.0f;
+        public float WallRideJumpHeight = 1.2f;
+        [Tooltip("Grace period after leaving wall where player can still jump (Coyote Time)")]
+        public float WallRideCoyoteTime = 0.3f;
+        [Tooltip("Particle systems to enable emission while wall riding (one per foot)")]
+        public ParticleSystem[] WallRideParticleSystems;
 
         [Tooltip("How quickly the start boost decays toward base grind speed")]
         public float GrindBoostDecayRate = 8f;
+
+        [Tooltip("Multiplier for boost effectiveness while grinding (1.0 = full effect, 0.5 = half)")]
+        public float GrindBoostEffectiveness = 0.5f;
+
+        [Header("Dash Ability")]
+        [Tooltip("Speed during dash")]
+        public float DashSpeed = 20f;
+        [Tooltip("How long the dash lasts")]
+        public float DashDuration = 0.2f;
+        [Tooltip("Cooldown before dash can be used again")]
+        public float DashCooldown = 1.0f;
+
+        [Header("Boost Ability")]
+        [Tooltip("Speed increase during boost")]
+        public float BoostSpeedIncrease = 5f;
+        [Tooltip("How long the boost lasts")]
+        public float BoostAbilityDuration = 3f;
+        [Tooltip("Cooldown before boost can be used again")]
+        public float BoostAbilityCooldown = 5f;
 
         [Space(10)]
         [Tooltip("Sound effects played when landing on a rail (random selection)")]
@@ -196,6 +222,11 @@ namespace StarterAssets
         private float _wallPlaneDistance;        // Distance from origin to wall surface plane
         private float _wallRideExitCooldownTimer;
         private float _wallRideRotationVelocity;
+        private float _wallRideCoyoteTimer;
+        private float _jumpBufferTimer;
+        private const float JumpBufferTime = 0.2f;  // 200ms buffer window for more forgiving input
+        private float _wallRideJumpGraceTimer;      // Grace period after starting wall ride before jump is allowed
+        private const float WallRideJumpGraceTime = 0.15f;  // 150ms grace period
 
         // Preserved exit velocity for wall ride detection after grind exit
         private Vector3 _preservedExitVelocity;
@@ -207,6 +238,15 @@ namespace StarterAssets
         private GraffitiSpot _activeGraffiti;
         private Vector3 _sprayTargetPosition;
         private bool _isSpraying;
+
+        // Dash state
+        private bool _isDashing;
+        private float _dashDurationTimer;
+        private float _dashCooldownTimer;
+        private Vector3 _dashDirection;
+
+        // Boost ability state
+        private float _boostAbilityCooldownTimer;
 
         [Header("Grind Camera Effects")]
         [Tooltip("Reference to the Cinemachine Virtual Camera")]
@@ -321,6 +361,8 @@ namespace StarterAssets
             sprayInput.Enable();
             jumpBackflipInput.Enable();
             jumpSideflipInput.Enable();
+            dashInput.Enable();
+            boostInput.Enable();
         }
 
         private void OnDisable()
@@ -332,6 +374,8 @@ namespace StarterAssets
             sprayInput.Disable();
             jumpBackflipInput.Disable();
             jumpSideflipInput.Disable();
+            dashInput.Disable();
+            boostInput.Disable();
         }
 
         private void Start()
@@ -387,6 +431,40 @@ namespace StarterAssets
             _hasAnimator = TryGetComponent(out _animator);
             bool gamepadLookBack = Gamepad.current != null && Gamepad.current.leftShoulder.isPressed;
             lookBack = gamepadLookBack || Input.GetKey(KeyCode.Q);
+
+            // Buffer jump input for better responsiveness
+            // Check multiple input sources to ensure we don't miss the press
+            bool jumpPressed = _input.jump;
+            jumpPressed |= Input.GetKeyDown(KeyCode.Space);
+            jumpPressed |= Gamepad.current != null && Gamepad.current.buttonSouth.wasPressedThisFrame;
+
+            if (jumpPressed)
+            {
+                _jumpBufferTimer = JumpBufferTime;
+                Debug.Log($"Jump buffered! Timer set to {JumpBufferTime}");
+            }
+            if (_jumpBufferTimer > 0f)
+            {
+                _jumpBufferTimer -= Time.deltaTime;
+            }
+
+            // Dash input (allowed while grinding for speed boost)
+            if (dashInput != null && dashInput.triggered && _dashCooldownTimer <= 0f && !_isDashing && !_isWallRiding)
+            {
+                StartDash();
+            }
+
+            // Boost input
+            if (boostInput != null && boostInput.triggered && _boostAbilityCooldownTimer <= 0f && !_isGrinding && !_isWallRiding)
+            {
+                StartBoostAbility();
+            }
+
+            // Update dash/boost cooldown timers
+            if (_dashCooldownTimer > 0f)
+                _dashCooldownTimer -= Time.deltaTime;
+            if (_boostAbilityCooldownTimer > 0f)
+                _boostAbilityCooldownTimer -= Time.deltaTime;
 
             UpdateSpeedBoosts();
 
@@ -447,6 +525,39 @@ namespace StarterAssets
                     if (TryStartWallRide())
                     {
                         return; // Exit Update - controller is now disabled for wall riding
+                    }
+                }
+
+                // Wall ride coyote time - allow jump even after leaving wall
+                if (_wallRideCoyoteTimer > 0f)
+                {
+                    Debug.Log($"Coyote time active: {_wallRideCoyoteTimer:F3}s remaining, jumpBuffer={_jumpBufferTimer:F3}");
+                    _wallRideCoyoteTimer -= Time.deltaTime;
+
+                    if (_jumpBufferTimer > 0f)
+                    {
+                        // Grant a full wall ride jump
+                        _verticalVelocity = Mathf.Sqrt(WallRideJumpHeight * -2f * Gravity);
+                        _wallRideCoyoteTimer = 0f;
+                        _jumpBufferTimer = 0f;
+                        _input.jump = false;
+
+                        if (_hasAnimator)
+                        {
+                            _animator.SetBool(_animIDJump, true);
+                        }
+
+                        Debug.Log("Wall ride coyote jump GRANTED!");
+                    }
+                }
+
+                // Update dash duration
+                if (_isDashing)
+                {
+                    _dashDurationTimer -= Time.deltaTime;
+                    if (_dashDurationTimer <= 0f)
+                    {
+                        EndDash();
                     }
                 }
 
@@ -882,10 +993,32 @@ namespace StarterAssets
                 return;
             }
 
+            // Update dash duration while grinding
+            if (_isDashing)
+            {
+                _dashDurationTimer -= Time.deltaTime;
+                if (_dashDurationTimer <= 0f)
+                {
+                    EndDash();
+                }
+            }
+
             // Determine target speed (apply same sprint ratio as ground movement)
-            // Include temporary boost speed bonus
-            float boostedGrindSpeed = GrindSpeed + _totalBoostSpeed;
-            float targetSpeed = (_input.sprint ? boostedGrindSpeed * (SprintSpeed / MoveSpeed) : boostedGrindSpeed) * SpeedMultiplier;
+            // Boost is added separately with reduced effectiveness to prevent excessive speed
+            float baseGrindSpeed = _input.sprint ? GrindSpeed * (SprintSpeed / MoveSpeed) : GrindSpeed;
+            float effectiveBoost = _totalBoostSpeed * GrindBoostEffectiveness;
+            float targetSpeed;
+
+            if (_isDashing)
+            {
+                // Grind dash is fixed speed, like ground dash (DashSpeed/MoveSpeed = 10x)
+                float dashRatio = DashSpeed / MoveSpeed;
+                targetSpeed = GrindSpeed * dashRatio * SpeedMultiplier;
+            }
+            else
+            {
+                targetSpeed = (baseGrindSpeed + effectiveBoost) * SpeedMultiplier;
+            }
 
             // Use boost decay rate when above target speed (decaying boost), otherwise use normal acceleration
             float lerpRate = _grindSpeedCurrent > targetSpeed ? GrindBoostDecayRate : GrindAcceleration;
@@ -973,13 +1106,13 @@ namespace StarterAssets
             if (_isWallRiding || _isGrinding)
                 return false;
 
-            // Fallback: if WallRideLayers not configured, try to find Billboards layer
+            // Fallback: if WallRideLayers not configured, try to find WallRide layer
             LayerMask effectiveLayers = WallRideLayers;
             if (effectiveLayers.value == 0)
             {
-                int billboardLayer = LayerMask.NameToLayer("Billboards");
-                if (billboardLayer == -1) billboardLayer = 7; // hardcoded fallback
-                effectiveLayers = 1 << billboardLayer;
+                int wallRideLayer = LayerMask.NameToLayer("WallRide");
+                if (wallRideLayer == -1) wallRideLayer = 6; // hardcoded fallback
+                effectiveLayers = 1 << wallRideLayer;
             }
 
             // SphereCast to find nearby billboard colliders
@@ -1007,63 +1140,62 @@ namespace StarterAssets
 
             foreach (var hit in hits)
             {
-                // Get the billboard's world-space normal from its forward direction
-                // The billboard faces into the corridor, so its -Z (forward) is the normal
-                var billboardNormal = hit.transform.forward;
-
-                // Front-face check: player must be in front of the billboard
-                var toPlayer = transform.position - hit.transform.position;
-                float frontFaceDot = Vector3.Dot(toPlayer.normalized, billboardNormal);
-                if (frontFaceDot < 0.3f)
-                {
-                    Debug.Log($"WallRide: {hit.name} failed front-face check (dot={frontFaceDot:F2})");
-                    continue; // Player is behind or parallel to billboard
-                }
-
-                // Velocity check: player must be moving (have some horizontal velocity)
-                // Use preserved exit velocity if we just jumped off a rail (CharacterController velocity may not be updated yet)
-                Vector3 horizontalVelocity;
-                if (_momentumPreservationTimer > 0f && _preservedExitVelocity.sqrMagnitude > 1f)
-                {
-                    horizontalVelocity = new Vector3(_preservedExitVelocity.x, 0f, _preservedExitVelocity.z);
-                }
-                else
-                {
-                    horizontalVelocity = new Vector3(_controller.velocity.x, 0f, _controller.velocity.z);
-                }
-
-                if (horizontalVelocity.magnitude < 1f)
-                {
-                    Debug.Log($"WallRide: {hit.name} failed velocity check (vel={horizontalVelocity.magnitude:F2})");
-                    continue; // Not enough velocity to wall ride
-                }
-
-                // Check distance
+                // Calculate closest point first to determine the wall normal dynamically
                 var closestPoint = hit.ClosestPoint(transform.position);
                 float distance = Vector3.Distance(transform.position, closestPoint);
 
-                if (distance < closestDistance && distance <= WallRideMagnetThreshold)
+                // Skip if too far
+                if (distance > WallRideMagnetThreshold)
                 {
-                    closestDistance = distance;
-                    closestCollider = hit;
-                    closestNormal = billboardNormal;
-                    closestCenter = hit.transform.position;
+                    continue;
+                }
 
-                    // Get scale from box collider
-                    if (hit is BoxCollider box)
+                // Calculate wall normal from closest point to player (works for any wall orientation)
+                var wallNormal = (transform.position - closestPoint).normalized;
+                // Flatten to horizontal for consistent wall riding
+                wallNormal.y = 0f;
+                wallNormal.Normalize();
+
+                // Velocity check: very forgiving - if close to wall and jumping, allow it
+                // Skip velocity check entirely if very close to wall (player is touching it)
+                bool veryCloseToWall = distance < 0.6f;
+                bool justJumped = _verticalVelocity > 0f;
+
+                if (!veryCloseToWall && !justJumped)
+                {
+                    // Only check velocity if not touching wall and not jumping
+                    Vector3 horizontalVelocity;
+                    if (_momentumPreservationTimer > 0f && _preservedExitVelocity.sqrMagnitude > 1f)
                     {
-                        closestScale = box.size;
+                        horizontalVelocity = new Vector3(_preservedExitVelocity.x, 0f, _preservedExitVelocity.z);
                     }
                     else
                     {
-                        closestScale = hit.bounds.size;
+                        horizontalVelocity = new Vector3(_controller.velocity.x, 0f, _controller.velocity.z);
                     }
+
+                    if (horizontalVelocity.magnitude < 0.5f)
+                    {
+                        Debug.Log($"WallRide: {hit.name} failed velocity check (vel={horizontalVelocity.magnitude:F2})");
+                        continue;
+                    }
+                }
+
+                if (distance < closestDistance)
+                {
+                    closestDistance = distance;
+                    closestCollider = hit;
+                    closestNormal = wallNormal;
+                    closestCenter = hit.transform.position;
+
+                    // Get world-space bounds size (accounts for transform scale)
+                    closestScale = hit.bounds.size;
                 }
             }
 
             if (closestCollider == null)
             {
-                Debug.Log("WallRide: No valid collider found (all failed front-face or velocity checks)");
+                Debug.Log("WallRide: No valid collider found (all failed distance or velocity checks)");
                 return false;
             }
 
@@ -1114,6 +1246,11 @@ namespace StarterAssets
             _wallRideSpeedCurrent = WallRideSpeed + WallRideSpeedBoost;
             _verticalVelocity = 0f;
 
+            // Clear jump buffer and set grace period to prevent immediate exit from held jump key
+            _jumpBufferTimer = 0f;
+            _input.jump = false;
+            _wallRideJumpGraceTimer = WallRideJumpGraceTime;
+
             // Disable character controller - wall ride drives position
             _controller.enabled = false;
 
@@ -1127,16 +1264,41 @@ namespace StarterAssets
             // Enable grind particle emission for wall riding
             SetGrindParticleEmission(true);
 
-            Debug.Log("Wall ride started!");
+            // Enable wall ride particle emission
+            foreach (var ps in WallRideParticleSystems)
+            {
+                if (ps != null)
+                {
+                    var emission = ps.emission;
+                    emission.enabled = true;
+                }
+            }
+
+            Debug.Log($"Wall ride started! Scale={billboardScale}, Center={billboardCenter}, Normal={wallNormal}, Right={_wallRideRight}");
         }
 
         private void WallRide()
         {
-            // Check for jump input to exit
-            if (_input.jump)
+            // Grace period to prevent immediate exit from held jump key used to initiate wall ride
+            if (_wallRideJumpGraceTimer > 0f)
             {
-                ExitWallRideWithJump();
-                return;
+                _wallRideJumpGraceTimer -= Time.deltaTime;
+            }
+            else
+            {
+                // Check for jump input to exit - poll directly during wall ride for reliability
+                bool jumpThisFrame = _jumpBufferTimer > 0f;
+                jumpThisFrame |= Input.GetKey(KeyCode.Space);  // GetKey not GetKeyDown for reliability
+                jumpThisFrame |= Gamepad.current != null && Gamepad.current.buttonSouth.isPressed;
+
+                if (jumpThisFrame)
+                {
+                    Debug.Log("WallRide: Jump detected, exiting!");
+                    _jumpBufferTimer = 0f;
+                    _input.jump = false;
+                    ExitWallRideWithJump();
+                    return;
+                }
             }
 
             // Apply height gain - player rises while wall riding
@@ -1154,7 +1316,12 @@ namespace StarterAssets
             // Edge detection - check if still on billboard
             float localX = Vector3.Dot(currentPos - _currentBillboardCenter, _wallRideRight);
             float localY = currentPos.y - _currentBillboardCenter.y;
-            float halfWidth = _currentBillboardScale.x * 0.5f;
+
+            // Pick the correct width axis based on wall orientation
+            // _wallRideRight tells us which world axis the width is along
+            float halfWidth = (Mathf.Abs(_wallRideRight.x) > Mathf.Abs(_wallRideRight.z)
+                ? _currentBillboardScale.x
+                : _currentBillboardScale.z) * 0.5f;
             float halfHeight = _currentBillboardScale.y * 0.5f;
 
             bool onBillboard = Mathf.Abs(localX) <= halfWidth && Mathf.Abs(localY) <= halfHeight;
@@ -1192,6 +1359,9 @@ namespace StarterAssets
 
         private void ExitWallRideWithJump()
         {
+            // No coyote time needed - player intentionally jumped
+            _wallRideCoyoteTimer = 0f;
+
             // Re-enable controller
             _controller.enabled = true;
             _isWallRiding = false;
@@ -1202,6 +1372,7 @@ namespace StarterAssets
 
             // Apply jump velocity (vertical) - jump away from wall
             _verticalVelocity = Mathf.Sqrt(WallRideJumpHeight * -2f * Gravity);
+            Debug.Log($"Wall ride jump applied! verticalVelocity={_verticalVelocity:F2}, jumpHeight={WallRideJumpHeight}");
 
             // Preserve horizontal momentum in travel direction plus some push away from wall
             var exitDirection = _wallRideVelocity + _wallRideNormal * 0.3f;
@@ -1223,6 +1394,16 @@ namespace StarterAssets
             // Disable grind particle emission
             SetGrindParticleEmission(false);
 
+            // Disable wall ride particle emission
+            foreach (var ps in WallRideParticleSystems)
+            {
+                if (ps != null)
+                {
+                    var emission = ps.emission;
+                    emission.enabled = false;
+                }
+            }
+
             Debug.Log("Wall ride exit with jump!");
         }
 
@@ -1235,6 +1416,9 @@ namespace StarterAssets
             // Set cooldown
             _wallRideExitCooldownTimer = WallRideExitCooldown;
             _momentumPreservationTimer = MomentumPreservationTime;
+
+            // Start coyote time - player can still jump for a brief window
+            _wallRideCoyoteTimer = WallRideCoyoteTime;
 
             // Small hop when exiting at edge
             _verticalVelocity = Mathf.Sqrt(0.3f * -2f * Gravity);
@@ -1256,15 +1440,66 @@ namespace StarterAssets
             // Disable grind particle emission
             SetGrindParticleEmission(false);
 
+            // Disable wall ride particle emission
+            foreach (var ps in WallRideParticleSystems)
+            {
+                if (ps != null)
+                {
+                    var emission = ps.emission;
+                    emission.enabled = false;
+                }
+            }
+
             Debug.Log("Wall ride exit at edge!");
+        }
+
+        private void StartDash()
+        {
+            _isDashing = true;
+            _dashDurationTimer = DashDuration;
+            _dashCooldownTimer = DashCooldown;
+
+            // Dash in facing direction
+            _dashDirection = transform.forward;
+            _dashDirection.y = 0f;
+            _dashDirection.Normalize();
+
+            Debug.Log($"Dash started! Speed={DashSpeed}, Duration={DashDuration}");
+        }
+
+        private void EndDash()
+        {
+            _isDashing = false;
+            Debug.Log("Dash ended");
+        }
+
+        private void StartBoostAbility()
+        {
+            AddTemporarySpeedBoost(BoostSpeedIncrease, BoostAbilityDuration);
+            _boostAbilityCooldownTimer = BoostAbilityCooldown;
+
+            if (BoostMeterUI.Instance != null)
+            {
+                BoostMeterUI.Instance.StartBoost(BoostAbilityDuration, BoostAbilityCooldown);
+            }
+
+            Debug.Log($"Boost activated! +{BoostSpeedIncrease} speed for {BoostAbilityDuration}s");
         }
 
         private void Move()
         {
             // set target speed based on move speed, sprint speed and if sprint is pressed
             // Include temporary boost speed bonus
-            float baseSpeed = (_input.sprint ? SprintSpeed : MoveSpeed) + _totalBoostSpeed;
-            float targetSpeed = baseSpeed * SpeedMultiplier;
+            float targetSpeed;
+            if (_isDashing)
+            {
+                targetSpeed = DashSpeed * SpeedMultiplier;
+            }
+            else
+            {
+                float baseSpeed = (_input.sprint ? SprintSpeed : MoveSpeed) + _totalBoostSpeed;
+                targetSpeed = baseSpeed * SpeedMultiplier;
+            }
 
             // a simplistic acceleration and deceleration designed to be easy to remove, replace, or iterate upon
 
@@ -1329,7 +1564,15 @@ namespace StarterAssets
             }
 
 
-            Vector3 targetDirection = Quaternion.Euler(0.0f, _targetRotation, 0.0f) * Vector3.forward;
+            Vector3 targetDirection;
+            if (_isDashing)
+            {
+                targetDirection = _dashDirection;
+            }
+            else
+            {
+                targetDirection = Quaternion.Euler(0.0f, _targetRotation, 0.0f) * Vector3.forward;
+            }
 
             // move the player
             _controller.Move(targetDirection.normalized * (_speed * Time.deltaTime) +
@@ -1398,6 +1641,13 @@ namespace StarterAssets
                     if (_hasAnimator)
                     {
                         _animator.SetBool(_animIDJump, true);
+                    }
+
+                    // Check for wall ride immediately when jumping near a wall
+                    if (EnableWallRide && _wallRideExitCooldownTimer <= 0f)
+                    {
+                        Debug.Log("Jump triggered - checking for wall ride");
+                        TryStartWallRide();
                     }
                 }
 

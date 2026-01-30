@@ -53,6 +53,7 @@ namespace HolyRail.City
         private GameObject _billboardPoolContainer;
         private int _billboardsLayer;
         private bool _billboardInitialized;
+        private bool _subscribedToEvents;
 
         public int ActiveColliderCount { get; private set; }
         public int TotalPoolSize => _colliderPool.Count;
@@ -66,8 +67,65 @@ namespace HolyRail.City
         public int TotalBillboardPoolSize => _billboardColliderPool.Count;
         public bool BillboardInitialized => _billboardInitialized;
 
+        private void OnEnable()
+        {
+            SubscribeToEvents();
+        }
+
+        private void OnDisable()
+        {
+            UnsubscribeFromEvents();
+        }
+
+        private void SubscribeToEvents()
+        {
+            if (_subscribedToEvents)
+                return;
+
+            if (CityManager != null)
+            {
+                CityManager.OnCityRegenerated += HandleCityRegenerated;
+                _subscribedToEvents = true;
+                Debug.Log("BuildingColliderPool: Subscribed to CityManager.OnCityRegenerated");
+            }
+            else
+            {
+                Debug.LogWarning("BuildingColliderPool: CityManager is null, cannot subscribe to events");
+            }
+        }
+
+        private void UnsubscribeFromEvents()
+        {
+            if (CityManager != null && _subscribedToEvents)
+            {
+                CityManager.OnCityRegenerated -= HandleCityRegenerated;
+                _subscribedToEvents = false;
+            }
+        }
+
+        private void HandleCityRegenerated()
+        {
+            Debug.Log($"BuildingColliderPool: City regenerated - HasData:{CityManager?.HasData}, HasRampData:{CityManager?.HasRampData}, HasBillboardData:{CityManager?.HasBillboardData}");
+
+            // Clear and reinitialize all collider pools when city regenerates
+            Clear();
+
+            if (CityManager != null)
+            {
+                if (CityManager.HasData)
+                    Initialize();
+                if (CityManager.HasRampData)
+                    InitializeRamps();
+                if (CityManager.HasBillboardData)
+                    InitializeBillboards();
+            }
+        }
+
         private void Start()
         {
+            // Ensure we're subscribed (in case CityManager was assigned after OnEnable)
+            SubscribeToEvents();
+
             if (CityManager != null && CityManager.HasData)
             {
                 Initialize();
@@ -84,6 +142,12 @@ namespace HolyRail.City
 
         private void Update()
         {
+            // Ensure we're subscribed to events (handles case where CityManager was assigned after OnEnable)
+            if (!_subscribedToEvents && CityManager != null)
+            {
+                SubscribeToEvents();
+            }
+
             // Initialize buildings if needed
             if (!_initialized)
             {
@@ -175,10 +239,29 @@ namespace HolyRail.City
 
         public void InitializeRamps()
         {
-            if (CityManager == null || !CityManager.HasRampData)
+            if (CityManager == null)
             {
+                Debug.LogWarning("BuildingColliderPool.InitializeRamps: CityManager is null");
                 return;
             }
+            if (!CityManager.HasRampData)
+            {
+                Debug.Log($"BuildingColliderPool.InitializeRamps: No ramp data (Ramps count: {CityManager.Ramps?.Count ?? 0})");
+                return;
+            }
+
+            // Ensure buildings layer is set (ramps use same layer as buildings for physics)
+            if (_buildingsLayer == 0)
+            {
+                _buildingsLayer = LayerMask.NameToLayer("Buildings");
+                if (_buildingsLayer == -1)
+                {
+                    Debug.LogWarning("BuildingColliderPool: 'Buildings' layer not found for ramps. Using Default layer.");
+                    _buildingsLayer = 0;
+                }
+            }
+
+            Debug.Log($"BuildingColliderPool.InitializeRamps: Initializing with {CityManager.Ramps.Count} ramps, layer={_buildingsLayer}");
 
             _rampSpatialGrid = new RampSpatialGrid(DefaultCellSize, CityManager.transform.position);
             _rampSpatialGrid.Initialize(CityManager.Ramps);
@@ -190,6 +273,11 @@ namespace HolyRail.City
             if (TrackingTarget != null)
             {
                 UpdateActiveRampColliders(TrackingTarget.position);
+                Debug.Log($"BuildingColliderPool.InitializeRamps: Updated active colliders at {TrackingTarget.position}, ActiveRampColliderCount={ActiveRampColliderCount}");
+            }
+            else
+            {
+                Debug.LogWarning("BuildingColliderPool.InitializeRamps: No TrackingTarget assigned");
             }
 
             Debug.Log($"BuildingColliderPool: Initialized with {_rampColliderPool.Count} ramp colliders, spatial grid has {_rampSpatialGrid.CellCount} cells.");
@@ -197,8 +285,14 @@ namespace HolyRail.City
 
         public void InitializeBillboards()
         {
-            if (CityManager == null || !CityManager.HasBillboardData)
+            if (CityManager == null)
             {
+                Debug.LogWarning("BuildingColliderPool.InitializeBillboards: CityManager is null");
+                return;
+            }
+            if (!CityManager.HasBillboardData)
+            {
+                Debug.Log($"BuildingColliderPool.InitializeBillboards: No billboard data (Billboards count: {CityManager.Billboards?.Count ?? 0})");
                 return;
             }
 
@@ -208,6 +302,8 @@ namespace HolyRail.City
                 _billboardsLayer = BillboardLayerFallback;
                 Debug.Log($"BuildingColliderPool: Using fallback billboard layer {_billboardsLayer}");
             }
+
+            Debug.Log($"BuildingColliderPool.InitializeBillboards: Initializing with {CityManager.Billboards.Count} billboards, layer={_billboardsLayer}");
 
             _billboardSpatialGrid = new BillboardSpatialGrid(DefaultCellSize, CityManager.transform.position);
             _billboardSpatialGrid.Initialize(CityManager.Billboards);
@@ -219,6 +315,11 @@ namespace HolyRail.City
             if (TrackingTarget != null)
             {
                 UpdateActiveBillboardColliders(TrackingTarget.position);
+                Debug.Log($"BuildingColliderPool.InitializeBillboards: Updated active colliders at {TrackingTarget.position}, ActiveBillboardColliderCount={ActiveBillboardColliderCount}");
+            }
+            else
+            {
+                Debug.LogWarning("BuildingColliderPool.InitializeBillboards: No TrackingTarget assigned");
             }
 
             Debug.Log($"BuildingColliderPool: Initialized with {_billboardColliderPool.Count} billboard colliders, spatial grid has {_billboardSpatialGrid.CellCount} cells.");
