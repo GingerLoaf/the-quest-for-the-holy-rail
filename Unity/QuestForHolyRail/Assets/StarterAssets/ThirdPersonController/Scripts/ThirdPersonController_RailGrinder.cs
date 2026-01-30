@@ -1,16 +1,16 @@
-using System.Collections;
+
 using System.Collections.Generic;
- using UnityEngine;
- using UnityEngine.SceneManagement;
+using UnityEngine;
+using UnityEngine.SceneManagement;
  using UnityEngine.Splines;
- using Unity.Splines.Examples;
  using Unity.Mathematics;
  using HolyRail.Scripts;
  using HolyRail.Scripts.Enemies;
  using HolyRail.Scripts.FX;
  using HolyRail.Graffiti;
-using HolyRail.UI;
+using HolyRail.Scripts.UI;
 using Random = UnityEngine.Random;
+
 #if ENABLE_INPUT_SYSTEM 
 using UnityEngine.InputSystem;
 #endif
@@ -27,6 +27,74 @@ namespace StarterAssets
     [DefaultExecutionOrder(-1)]
     public class ThirdPersonController_RailGrinder : MonoBehaviour
     {
+        public enum SplineTravelDirection
+        {
+            Unknown,
+            StartToEnd,
+            EndToStart,
+            Stationary
+        }
+
+        private struct NearestPointResult
+        {
+            public float3 Position;
+            public float Distance;
+            public float SplineParameter;
+            public SplineContainer Container;
+            public SplineTravelDirection TravelDirection;
+
+            public NearestPointResult(float3 position, float distance, float splineParameter, SplineContainer container, SplineTravelDirection travelDirection = SplineTravelDirection.Unknown)
+            {
+                Position = position;
+                Distance = distance;
+                SplineParameter = splineParameter;
+                Container = container;
+                TravelDirection = travelDirection;
+            }
+        }
+
+        private NearestPointResult GetNearestPointOnSplines(float3 worldPosition, SplineContainer[] splineContainers = null)
+        {
+            if (splineContainers == null || splineContainers.Length == 0)
+            {
+                splineContainers = FindObjectsByType<SplineContainer>(FindObjectsSortMode.None);
+            }
+
+            var nearestPosition = float3.zero;
+            var nearestDistance = float.PositiveInfinity;
+            var nearestT = 0f;
+            SplineContainer nearestContainer = null;
+
+            foreach (var container in splineContainers)
+            {
+                if (container == null)
+                    continue;
+
+                var splines = container.Splines;
+                if (splines == null || splines.Count == 0)
+                    continue;
+
+                foreach (var spline in splines)
+                {
+                    if (spline == null || spline.Count < 2)
+                        continue;
+
+                    using var native = new NativeSpline(spline, container.transform.localToWorldMatrix);
+                    float distance = SplineUtility.GetNearestPoint(native, worldPosition, out float3 point, out float t);
+
+                    if (distance < nearestDistance)
+                    {
+                        nearestDistance = distance;
+                        nearestPosition = point;
+                        nearestT = t;
+                        nearestContainer = container;
+                    }
+                }
+            }
+
+            return new NearestPointResult(nearestPosition, nearestDistance, nearestT, nearestContainer);
+        }
+
         public InputAction grindInput;
         public InputAction lookBackInput;
         public InputAction sprayInput;
@@ -71,7 +139,7 @@ namespace StarterAssets
         public float Gravity = -15.0f;
 
         [Header("Status Effects")]
-        public float SpeedMultiplier = 1.0f;
+        // public float SpeedMultiplier = 1.0f; // SpeedMultiplier removed as part of health update
 
         [Header("Temporary Speed Boosts")]
         [Tooltip("Default duration for speed boosts from pickups")]
@@ -402,6 +470,11 @@ namespace StarterAssets
             jumpSideflipInput.Disable();
             dashInput.Disable();
             boostInput.Disable();
+
+            if (GameSessionManager.Instance != null)
+            {
+                GameSessionManager.Instance.OnPlayerDeath -= HandlePlayerDeath;
+            }
         }
 
         private void Start()
@@ -450,6 +523,12 @@ namespace StarterAssets
 
             // Cache orbital display reference
             _orbitalDisplay = GetComponent<OrbitalPickupDisplay>();
+
+            if (GameSessionManager.Instance != null)
+            {
+                GameSessionManager.Instance.ResetHealth();
+                GameSessionManager.Instance.OnPlayerDeath += HandlePlayerDeath;
+            }
         }
 
         private void Update()
@@ -498,13 +577,7 @@ namespace StarterAssets
             if (transform.position.y < -50f)
             {
                 Debug.Log("<color=red>Player fell off the map!</color>");
-
-                if (ScoreManager.Instance != null)
-                {
-                    ScoreManager.Instance.ResetScore();
-                }
-
-                SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+                GameSessionManager.Instance.TakeDamage(1000);
                 return;
             }
 
@@ -789,7 +862,7 @@ namespace StarterAssets
         {
             if (_isGrinding) return false;
 
-            var result = ShowNearestPoint.GetNearestPointOnSplines(
+            var result = GetNearestPointOnSplines(
                 transform.position,
                 _splineContainers);
 
@@ -1089,7 +1162,7 @@ namespace StarterAssets
             }
             else
             {
-                targetSpeed = (baseGrindSpeed + effectiveBoost) * SpeedMultiplier;
+                targetSpeed = (baseGrindSpeed + effectiveBoost);
             }
 
             // DEBUG: Log grind speed calculation
@@ -1591,7 +1664,7 @@ namespace StarterAssets
             else
             {
                 float baseSpeed = (_input.sprint ? SprintSpeed : MoveSpeed) + _totalBoostSpeed;
-                targetSpeed = baseSpeed * SpeedMultiplier;
+                targetSpeed = baseSpeed;
             }
 
             // a simplistic acceleration and deceleration designed to be easy to remove, replace, or iterate upon
@@ -1812,17 +1885,17 @@ namespace StarterAssets
                 GroundedRadius);
         }
 
-        public void ApplySpeedReduction(float multiplier, float duration)
+        private void HandlePlayerDeath()
         {
-            StopCoroutine("SpeedReductionCoroutine");
-            StartCoroutine(SpeedReductionCoroutine(multiplier, duration));
-        }
+            Debug.Log("<color=red>Player died!</color>");
 
-        private IEnumerator SpeedReductionCoroutine(float multiplier, float duration)
-        {
-            SpeedMultiplier = multiplier;
-            yield return new WaitForSeconds(duration);
-            SpeedMultiplier = 1.0f;
+            if (ScoreManager.Instance != null)
+            {
+                ScoreManager.Instance.ResetScore();
+            }
+
+            // Reload the current scene
+            SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
         }
 
         private void OnFootstep(AnimationEvent animationEvent)

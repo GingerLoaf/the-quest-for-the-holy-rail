@@ -15,6 +15,8 @@ namespace HolyRail.Scripts
         {
             get
             {
+                if (isQuitting) return null;
+
                 if (instance == null)
                 {
                     instance = FindFirstObjectByType<GameSessionManager>();
@@ -32,10 +34,19 @@ namespace HolyRail.Scripts
         }
 
         private static GameSessionManager instance;
+        private static bool isQuitting = false;
 
         public Action<PlayerUpgrade[]> OnUpgradeListChanged;
 
         public Action<int> OnMoneyChanged;
+
+        public Action<int> OnHealthChanged;
+        public Action OnPlayerDeath;
+
+        [Tooltip("Maximum health of the player")]
+        public int MaxHealth = 3;
+
+        public int CurrentHealth { get; private set; }
 
         public int Money
         {
@@ -61,6 +72,29 @@ namespace HolyRail.Scripts
 
         private Dictionary<PlayerUpgrade, int> m_upgradeTiers = new Dictionary<PlayerUpgrade, int>();
 
+        private void OnApplicationQuit()
+        {
+            isQuitting = true;
+        }
+
+        public void ResetHealth()
+        {
+            CurrentHealth = MaxHealth;
+            OnHealthChanged?.Invoke(CurrentHealth);
+        }
+
+        public void TakeDamage(int amount)
+        {
+            CurrentHealth -= amount;
+            Debug.Log($"[GameSessionManager] Player took {amount} damage. Current Health: {CurrentHealth}");
+            OnHealthChanged?.Invoke(CurrentHealth);
+
+            if (CurrentHealth <= 0)
+            {
+                OnPlayerDeath?.Invoke();
+            }
+        }
+
         private void Awake()
         {
             // If we already have one in static memory, kill this one
@@ -71,6 +105,7 @@ namespace HolyRail.Scripts
             }
 
             Instance = this;
+            isQuitting = false;
 
             // Keep this guy alive through scene loads since it holds all our session state
             DontDestroyOnLoad(this);

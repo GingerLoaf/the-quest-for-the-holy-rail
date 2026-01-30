@@ -129,9 +129,9 @@ namespace HolyRail.Scripts.Enemies
             }
         }
 
-        public void SetBrightness(float multiplier)
+        private void SetBrightness(float multiplier)
         {
-            if (_renderer == null || _propertyBlock == null) return;
+            if (!_renderer || _propertyBlock == null) return;
             _propertyBlock.SetColor(EmissionColorID, ParryFlashColor * multiplier);
             _renderer.SetPropertyBlock(_propertyBlock);
         }
@@ -145,10 +145,10 @@ namespace HolyRail.Scripts.Enemies
             // Knock player off rail if grinding and toggle is enabled
             if (_spawner.BulletsKnockOffRail)
             {
-                var grinder = _spawner.Player.GetComponentInParent<ThirdPersonController_RailGrinder>();
-                if (grinder != null)
+                var playerCharacter = _spawner.Player.GetComponentInParent<ThirdPersonController_RailGrinder>();
+                if (playerCharacter != null)
                 {
-                    grinder.StopGrind();
+                    playerCharacter.StopGrind();
                 }
             }
 
@@ -157,6 +157,9 @@ namespace HolyRail.Scripts.Enemies
             {
                 PlayerHitFlash.Instance.Flash();
             }
+
+            // Apply damage to player
+            GameSessionManager.Instance.TakeDamage(1);
 
             // Recycle this bullet
             _spawner.RecycleBullet(this);
@@ -360,7 +363,8 @@ namespace HolyRail.Scripts.Enemies
                     PlayerHitFlash.Instance.Flash();
                 }
 
-                // TODO: Apply damage to player
+                GameSessionManager.Instance.TakeDamage(1);
+
                 _spawner?.RecycleBullet(this);
                 return;
             }
