@@ -75,6 +75,9 @@ namespace HolyRail.City
         [field: SerializeField] public float GraffitiEdgeClearance { get; set; } = 3f;
         [field: SerializeField, Range(0f, 1f)] public float GraffitiOnBillboardPercent { get; set; } = 0.3f;
         [field: SerializeField] public float GraffitiBillboardAvoidDistance { get; set; } = 5f;
+        [field: SerializeField] public float GraffitiProjectionWidth { get; set; } = 8f;
+        [field: SerializeField] public float GraffitiProjectionHeight { get; set; } = 4f;
+        [field: SerializeField] public float GraffitiWallOffset { get; set; } = 2.0f;
 
         [Header("Generation Parameters")]
         [field: SerializeField] public int Seed { get; set; } = 12345;
@@ -1704,9 +1707,9 @@ namespace HolyRail.City
             }
 
             // Position in front of the building surface (toward corridor)
-            // surfaceNormal points toward corridor, so add a small offset in that direction
-            float outwardOffset = 0.5f; // Position slightly in front of wall for decal projection
-            var position = buildingData.Position + surfaceOffset + surfaceNormal * outwardOffset;
+            // surfaceNormal points toward corridor, so add offset in that direction
+            // DecalProjector projects 5.29 units backward, so we need enough offset to prevent clipping
+            var position = buildingData.Position + surfaceOffset + surfaceNormal * GraffitiWallOffset;
 
             // Add random horizontal offset along the wall surface
             // Get a vector perpendicular to surfaceNormal (along the wall)
@@ -1740,34 +1743,46 @@ namespace HolyRail.City
                 }
             }
 
-            // Check that graffiti doesn't overlap with any billboard
-            // Use proper bounds checking, not just distance
+            // Check that graffiti doesn't partially overlap with any billboard
+            // We check all 4 corners of the graffiti projection area to detect split images
+            float graffitiHalfWidth = GraffitiProjectionWidth * 0.5f;
+            float graffitiHalfHeight = GraffitiProjectionHeight * 0.5f;
+
+            // Get vectors along the wall surface for calculating corners
+            var graffitiRight = Vector3.Cross(Vector3.up, surfaceNormal).normalized;
+            var graffitiUp = Vector3.up;
+
+            // Calculate the 4 corners of where graffiti would project on the wall
+            var corners = new Vector3[4]
+            {
+                position + graffitiRight * graffitiHalfWidth + graffitiUp * graffitiHalfHeight,
+                position + graffitiRight * graffitiHalfWidth - graffitiUp * graffitiHalfHeight,
+                position - graffitiRight * graffitiHalfWidth + graffitiUp * graffitiHalfHeight,
+                position - graffitiRight * graffitiHalfWidth - graffitiUp * graffitiHalfHeight,
+            };
+
             foreach (var billboard in _generatedBillboards)
             {
-                // Check if graffiti Y is within billboard's Y range
-                float billboardBottom = billboard.Position.y - billboard.Scale.y * 0.5f;
-                float billboardTop = billboard.Position.y + billboard.Scale.y * 0.5f;
-                float graffitiMargin = 1.5f; // Margin to prevent partial overlap
+                int cornersInBillboard = 0;
 
-                bool yOverlaps = position.y >= (billboardBottom - graffitiMargin) &&
-                                 position.y <= (billboardTop + graffitiMargin);
-
-                if (!yOverlaps)
-                    continue; // No Y overlap, safe
-
-                // Check XZ overlap - transform to billboard's local space
-                var toGraffiti = position - billboard.Position;
-                var localPos = Quaternion.Inverse(billboard.Rotation) * toGraffiti;
-
-                float billboardHalfWidth = billboard.Scale.x * 0.5f + graffitiMargin;
-                float billboardHalfDepth = billboard.Scale.z * 0.5f + graffitiMargin;
-
-                bool xzOverlaps = Mathf.Abs(localPos.x) < billboardHalfWidth &&
-                                  Mathf.Abs(localPos.z) < billboardHalfDepth;
-
-                if (xzOverlaps)
+                foreach (var corner in corners)
                 {
-                    return false; // Would overlap with billboard
+                    if (IsPointInsideBillboard(corner, billboard))
+                    {
+                        cornersInBillboard++;
+                    }
+                }
+
+                // If some but not all corners are inside billboard = split image = reject
+                if (cornersInBillboard > 0 && cornersInBillboard < 4)
+                {
+                    return false; // Would split across billboard and wall
+                }
+
+                // If all 4 corners inside, also reject (graffiti fully on billboard - use billboard placement instead)
+                if (cornersInBillboard == 4)
+                {
+                    return false;
                 }
             }
 
@@ -1820,6 +1835,22 @@ namespace HolyRail.City
             }
 
             return nearest;
+        }
+
+        private bool IsPointInsideBillboard(Vector3 point, BillboardData billboard)
+        {
+            // Transform point to billboard's local space
+            var toPoint = point - billboard.Position;
+            var localPos = Quaternion.Inverse(billboard.Rotation) * toPoint;
+
+            // Check if point is within billboard bounds (with small margin)
+            float halfWidth = billboard.Scale.x * 0.5f;
+            float halfHeight = billboard.Scale.y * 0.5f;
+            float halfDepth = billboard.Scale.z * 0.5f + 0.5f; // Extra depth margin for projection
+
+            return Mathf.Abs(localPos.x) <= halfWidth &&
+                   Mathf.Abs(localPos.y) <= halfHeight &&
+                   Mathf.Abs(localPos.z) <= halfDepth;
         }
 
         private float RandomRange(float min, float max)
