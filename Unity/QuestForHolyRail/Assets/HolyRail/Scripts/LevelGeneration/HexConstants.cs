@@ -141,6 +141,59 @@ namespace HolyRail.Scripts.LevelGeneration
             return Vector3.Lerp(v0, v1, fraction);
         }
 
+        // --- Hex Grid Coordinate Helpers ---
+
+        // Axial neighbor offsets indexed by edge (matches GetEdgeMidpoint/GetEdgeNormal ordering)
+        // Edge 0: NE(1,0), Edge 1: N(0,1), Edge 2: NW(-1,1),
+        // Edge 3: SW(-1,0), Edge 4: S(0,-1), Edge 5: SE(1,-1)
+        public static readonly Vector2Int[] AxialNeighborOffsets =
+        {
+            new(1, 0), new(0, 1), new(-1, 1),
+            new(-1, 0), new(0, -1), new(1, -1)
+        };
+
+        public static Vector3 AxialToWorld(Vector2Int axial, float circumradius)
+        {
+            float x = circumradius * 1.5f * axial.x;
+            float z = circumradius * Mathf.Sqrt(3f) * (axial.y + axial.x * 0.5f);
+            return new Vector3(x, 0f, z);
+        }
+
+        public static Vector2Int WorldToAxial(Vector3 worldPos, float circumradius)
+        {
+            // Convert to fractional axial coordinates
+            float q = worldPos.x * 2f / (3f * circumradius);
+            float r = (-worldPos.x / 3f + worldPos.z * Mathf.Sqrt(3f) / 3f) / circumradius;
+
+            // Round using cube coordinate algorithm
+            float s = -q - r;
+            int rq = Mathf.RoundToInt(q);
+            int rr = Mathf.RoundToInt(r);
+            int rs = Mathf.RoundToInt(s);
+
+            float dq = Mathf.Abs(rq - q);
+            float dr = Mathf.Abs(rr - r);
+            float ds = Mathf.Abs(rs - s);
+
+            if (dq > dr && dq > ds)
+                rq = -rr - rs;
+            else if (dr > ds)
+                rr = -rq - rs;
+
+            return new Vector2Int(rq, rr);
+        }
+
+        public static int GetEdgeFromDirection(Vector2Int from, Vector2Int to)
+        {
+            var delta = to - from;
+            for (int i = 0; i < AxialNeighborOffsets.Length; i++)
+            {
+                if (AxialNeighborOffsets[i] == delta)
+                    return i;
+            }
+            return -1;
+        }
+
         private static Vector2 ClosestPointOnSegment(Vector2 point, Vector2 a, Vector2 b)
         {
             var ab = b - a;

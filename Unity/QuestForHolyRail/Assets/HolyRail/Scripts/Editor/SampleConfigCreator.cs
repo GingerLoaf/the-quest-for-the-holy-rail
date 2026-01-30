@@ -46,10 +46,6 @@ namespace HolyRail.Editor
             // Wall Rides
             config.MinGrafittiWallCount = 2;
             config.MaxGrafittiWallCount = 4;
-            config.GrafittiWallWidthMin = 10f;
-            config.GrafittiWallWidthMax = 20f;
-            config.GrafittiWallHeightMin = 8f;
-            config.GrafittiWallHeightMax = 15f;
             config.GrafittiWallDepth = 1f;
 
             // Walls
