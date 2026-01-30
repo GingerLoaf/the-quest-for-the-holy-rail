@@ -1771,7 +1771,7 @@ namespace HolyRail.City
             }
 
             // Check that no other buildings intersect the graffiti projection
-            if (DoesGraffitiIntersectOtherBuildings(corners, buildingData, -surfaceNormal))
+            if (DoesGraffitiIntersectOtherBuildings(corners, buildingData, surfaceNormal))
             {
                 return false; // Another building would catch part of the projection
             }
@@ -1896,76 +1896,7 @@ namespace HolyRail.City
             }
         }
 
-        private bool DoesRayIntersectBuilding(Vector3 origin, Vector3 direction, float maxDistance, BuildingData building)
-        {
-            // Simple AABB ray intersection in building's local space
-            var toOrigin = origin - building.Position;
-            var localOrigin = Quaternion.Inverse(building.Rotation) * toOrigin;
-            var localDir = Quaternion.Inverse(building.Rotation) * direction;
-
-            float halfWidth = building.Scale.x * 0.5f;
-            float halfHeight = building.Scale.y * 0.5f;
-            float halfDepth = building.Scale.z * 0.5f;
-
-            // Ray-AABB intersection using slab method
-            float tMin = 0f;
-            float tMax = maxDistance;
-
-            // X axis
-            if (Mathf.Abs(localDir.x) < 0.0001f)
-            {
-                if (localOrigin.x < -halfWidth || localOrigin.x > halfWidth)
-                    return false;
-            }
-            else
-            {
-                float invD = 1f / localDir.x;
-                float t0 = (-halfWidth - localOrigin.x) * invD;
-                float t1 = (halfWidth - localOrigin.x) * invD;
-                if (invD < 0f) (t0, t1) = (t1, t0);
-                tMin = Mathf.Max(tMin, t0);
-                tMax = Mathf.Min(tMax, t1);
-                if (tMax < tMin) return false;
-            }
-
-            // Y axis
-            if (Mathf.Abs(localDir.y) < 0.0001f)
-            {
-                if (localOrigin.y < -halfHeight || localOrigin.y > halfHeight)
-                    return false;
-            }
-            else
-            {
-                float invD = 1f / localDir.y;
-                float t0 = (-halfHeight - localOrigin.y) * invD;
-                float t1 = (halfHeight - localOrigin.y) * invD;
-                if (invD < 0f) (t0, t1) = (t1, t0);
-                tMin = Mathf.Max(tMin, t0);
-                tMax = Mathf.Min(tMax, t1);
-                if (tMax < tMin) return false;
-            }
-
-            // Z axis
-            if (Mathf.Abs(localDir.z) < 0.0001f)
-            {
-                if (localOrigin.z < -halfDepth || localOrigin.z > halfDepth)
-                    return false;
-            }
-            else
-            {
-                float invD = 1f / localDir.z;
-                float t0 = (-halfDepth - localOrigin.z) * invD;
-                float t1 = (halfDepth - localOrigin.z) * invD;
-                if (invD < 0f) (t0, t1) = (t1, t0);
-                tMin = Mathf.Max(tMin, t0);
-                tMax = Mathf.Min(tMax, t1);
-                if (tMax < tMin) return false;
-            }
-
-            return true;
-        }
-
-        private bool DoesGraffitiIntersectOtherBuildings(Vector3[] corners, BuildingData targetBuilding, Vector3 projectionDirection)
+        private bool DoesGraffitiIntersectOtherBuildings(Vector3[] corners, BuildingData targetBuilding, Vector3 surfaceNormal)
         {
             float projectionDepth = 6f; // Slightly more than DecalProjector depth (5.29)
 
@@ -1979,13 +1910,60 @@ namespace HolyRail.City
                 if (building.NeedsCollider == 0)
                     continue;
 
-                // Check if any corner's projection ray intersects this building
+                // Check if any corner falls within this building's corridor-facing surface projection area
                 foreach (var corner in corners)
                 {
-                    if (DoesRayIntersectBuilding(corner, projectionDirection, projectionDepth, building))
+                    if (IsPointInBuildingProjectionVolume(corner, building, surfaceNormal, projectionDepth))
                         return true;
                 }
             }
+            return false;
+        }
+
+        private bool IsPointInBuildingProjectionVolume(Vector3 point, BuildingData building, Vector3 corridorNormal, float projectionDepth)
+        {
+            // Transform point to building's local space
+            var toPoint = point - building.Position;
+            var localPos = Quaternion.Inverse(building.Rotation) * toPoint;
+            var localNormal = Quaternion.Inverse(building.Rotation) * corridorNormal;
+
+            float halfWidth = building.Scale.x * 0.5f;
+            float halfHeight = building.Scale.y * 0.5f;
+            float halfDepth = building.Scale.z * 0.5f;
+
+            // Determine which face of this building faces the corridor based on the corridor normal
+            // The corridor-facing surface is the one whose outward normal aligns with corridorNormal
+            if (Mathf.Abs(localNormal.z) > Mathf.Abs(localNormal.x))
+            {
+                // Front/back face (Z face)
+                float surfaceZ = localNormal.z > 0 ? halfDepth : -halfDepth;
+
+                // Check if point is within X,Y bounds and within projection depth of the surface
+                if (Mathf.Abs(localPos.x) <= halfWidth &&
+                    Mathf.Abs(localPos.y) <= halfHeight)
+                {
+                    // Point is in front of surface (toward corridor) and within projection depth
+                    float distFromSurface = localNormal.z > 0 ? (localPos.z - surfaceZ) : (surfaceZ - localPos.z);
+                    if (distFromSurface >= 0 && distFromSurface <= projectionDepth)
+                        return true;
+                }
+            }
+            else
+            {
+                // Left/right face (X face)
+                float surfaceX = localNormal.x > 0 ? halfWidth : -halfWidth;
+
+                // Check if point is within Z,Y bounds and within projection depth of the surface
+                if (Mathf.Abs(localPos.z) <= halfDepth &&
+                    Mathf.Abs(localPos.y) <= halfHeight)
+                {
+                    // Point is in front of surface (toward corridor) and within projection depth
+                    float distFromSurface = localNormal.x > 0 ? (localPos.x - surfaceX) : (surfaceX - localPos.x);
+                    if (distFromSurface >= 0 && distFromSurface <= projectionDepth)
+                        return true;
+                }
+            }
+
             return false;
         }
 

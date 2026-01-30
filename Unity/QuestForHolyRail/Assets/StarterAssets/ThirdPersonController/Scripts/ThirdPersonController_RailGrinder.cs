@@ -213,8 +213,6 @@ namespace StarterAssets
         public float DashDuration = 0.3f;
         [Tooltip("Cooldown before dash can be used again")]
         public float DashCooldown = 1.0f;
-        [Tooltip("How quickly the dash boost decays toward normal speed")]
-        public float DashDecayRate = 10f;
         [Tooltip("Sound effect played when dashing")]
         public AudioClip DashAudioClip;
 
@@ -287,7 +285,6 @@ namespace StarterAssets
         private bool _isDashing;
         private float _dashTimer;
         private float _dashCooldownTimer;
-        private float _dashBoostRemaining;
         private Vector3 _dashDirection;
 
         [Header("Grind Camera Effects")]
@@ -1604,8 +1601,8 @@ namespace StarterAssets
             _dashCooldownTimer = DashCooldown;
             _dashDirection = direction;
 
-            // Set boost remaining (applied to targetSpeed in Move())
-            _dashBoostRemaining = DashSpeedBoost;
+            // Clear momentum preservation - dash takes over speed control
+            _momentumPreservationTimer = 0f;
 
             // Rotate player to face dash direction
             if (direction.sqrMagnitude > 0.0001f)
@@ -1625,25 +1622,12 @@ namespace StarterAssets
 
         private void UpdateDash()
         {
-            if (!_isDashing && _dashBoostRemaining <= 0f)
-            {
-                return;
-            }
+            if (!_isDashing) return;
 
-            // During active dash, maintain boosted speed
-            if (_isDashing)
+            _dashTimer -= Time.deltaTime;
+            if (_dashTimer <= 0f)
             {
-                _dashTimer -= Time.deltaTime;
-                if (_dashTimer <= 0f)
-                {
-                    _isDashing = false;
-                }
-            }
-
-            // Decay dash boost toward zero
-            if (_dashBoostRemaining > 0f)
-            {
-                _dashBoostRemaining = Mathf.Max(0f, _dashBoostRemaining - DashDecayRate * Time.deltaTime);
+                _isDashing = false;
             }
         }
 
@@ -1652,10 +1636,10 @@ namespace StarterAssets
             // Set target speed based on move speed
             float targetSpeed = _input.move == Vector2.zero ? 0f : MoveSpeed;
 
-            // During active dash or while boost decays, add remaining boost to target speed
-            if (_isDashing || _dashBoostRemaining > 0f)
+            // During active dash, add full boost to target speed
+            if (_isDashing)
             {
-                targetSpeed += _dashBoostRemaining;
+                targetSpeed += DashSpeedBoost;
             }
 
             // a reference to the players current horizontal velocity
