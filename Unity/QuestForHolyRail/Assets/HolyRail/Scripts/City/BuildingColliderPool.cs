@@ -217,7 +217,9 @@ namespace HolyRail.City
                     UpdateActiveBillboardColliders(currentPosition);
                 _lastUpdatePosition = currentPosition;
 
+#if UNITY_EDITOR
                 Debug.Log($"BuildingColliderPool: Updated colliders at {currentPosition} - Buildings:{ActiveColliderCount}, Ramps:{ActiveRampColliderCount}, Billboards:{ActiveBillboardColliderCount}");
+#endif
             }
         }
 

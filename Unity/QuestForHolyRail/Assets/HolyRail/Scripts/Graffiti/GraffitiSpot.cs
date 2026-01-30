@@ -24,6 +24,7 @@ namespace HolyRail.Graffiti
         private bool _isCompleted;
         private Transform _playerTransform;
         private ThirdPersonController_RailGrinder _playerController;
+        private ScoreManager _scoreManager;
 
         private void Awake()
         {
@@ -42,6 +43,9 @@ namespace HolyRail.Graffiti
 
         private void Start()
         {
+            // Cache ScoreManager reference to avoid FindFirstObjectByType allocation in Complete()
+            _scoreManager = FindFirstObjectByType<ScoreManager>();
+
             if (GameSessionManager.Instance != null)
             {
                 float radiusBonus = GameSessionManager.Instance.GetUpgradeValue(UpgradeType.SprayPaintRadius);
@@ -194,10 +198,9 @@ namespace HolyRail.Graffiti
                 _playerController.SetSprayTarget(Vector3.zero, false);
             }
 
-            var scoreManager = FindFirstObjectByType<ScoreManager>();
-            if (scoreManager != null)
+            if (_scoreManager != null)
             {
-                scoreManager.AddGraffitiScore();
+                _scoreManager.AddGraffitiScore();
             }
         }
 

@@ -2678,6 +2678,14 @@ namespace HolyRail.Vines
             ReleaseBuffers();
         }
 
+        private void OnDestroy()
+        {
+            // Ensure compute buffers are released even if destroyed without being disabled first
+            // (e.g., scene unload, direct Destroy() call)
+            Clear();
+            ReleaseBuffers();
+        }
+
         private void HandleCityRegenerated()
         {
             if (AttractorGenerationMode == AttractorMode.Path ||

@@ -27,6 +27,12 @@ namespace HolyRail.City
         private readonly List<int> _activeIndices = new();
         private readonly List<int> _queryResults = new();
         private readonly HashSet<int> _assignedSpotIndices = new();
+
+        // Tracks which graffiti spots have been completed by the player.
+        // DESIGN NOTE: This set is intentionally never cleared across Clear() calls or leapfrogs
+        // to preserve player completion state during gameplay. In extended sessions with loop mode,
+        // this may grow unboundedly (~12 bytes per entry). For typical gameplay this is negligible,
+        // but consider implementing a size cap with LRU eviction if extended sessions cause issues.
         private readonly HashSet<int> _completedSpotIndices = new();
         private GameObject _poolContainer;
         private Vector3 _lastUpdatePosition;
