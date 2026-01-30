@@ -156,7 +156,6 @@ namespace HolyRail.Scripts.Editor
                 "WASD          Move\n" +
                 "Mouse         Look\n" +
                 "Space         Jump\n" +
-                "L-Shift       Sprint\n" +
                 "L-Click       Spray Paint\n" +
                 "R-Click       Parry\n" +
                 "Escape        Pause";
@@ -206,7 +205,6 @@ namespace HolyRail.Scripts.Editor
                 "L-Stick       Move\n" +
                 "R-Stick       Look\n" +
                 "South (A)     Jump\n" +
-                "L-Trigger     Sprint\n" +
                 "R-Trigger     Spray Paint\n" +
                 "North (Y)     Parry\n" +
                 "Start         Pause";

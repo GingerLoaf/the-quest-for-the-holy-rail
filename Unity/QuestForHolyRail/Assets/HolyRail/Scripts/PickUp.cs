@@ -9,11 +9,12 @@ namespace HolyRail.Scripts
         [Tooltip("Distance within which the player can collect this pickup")]
         public float CollectionRadius = 0.25f;
 
-        [Tooltip("How much to increase the player's speed")]
-        public float SpeedIncrease = 0.20f;
+        // Speed boost fields commented out for future repurposing
+        // [Tooltip("How much to increase the player's speed")]
+        // public float SpeedIncrease = 0.20f;
 
-        [Tooltip("Duration of the speed boost (-1 uses the player's default)")]
-        public float BoostDuration = -1f;
+        // [Tooltip("Duration of the speed boost (-1 uses the player's default)")]
+        // public float BoostDuration = -1f;
 
         [Tooltip("Visual effect or object to disable on collection")]
         public Renderer VisualObject;
@@ -46,11 +47,11 @@ namespace HolyRail.Scripts
         {
             _collected = true;
 
-            // Add temporary speed boost
-            if (ThirdPersonController_RailGrinder.Instance != null)
-            {
-                ThirdPersonController_RailGrinder.Instance.AddTemporarySpeedBoost(SpeedIncrease, BoostDuration);
-            }
+            // Speed boost call commented out for future repurposing
+            // if (ThirdPersonController_RailGrinder.Instance != null)
+            // {
+            //     ThirdPersonController_RailGrinder.Instance.AddTemporarySpeedBoost(SpeedIncrease, BoostDuration);
+            // }
 
             // Hide or destroy the pickup
             if (VisualObject != null)

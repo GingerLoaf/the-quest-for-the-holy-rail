@@ -161,6 +161,12 @@ namespace HolyRail.Graffiti
                 }
 
                 _playerTransform = null;
+
+                // Reset progress if player left without completing
+                if (!_isCompleted)
+                {
+                    ResetProgress();
+                }
             }
         }
 
@@ -193,6 +199,40 @@ namespace HolyRail.Graffiti
             {
                 scoreManager.AddGraffitiScore();
             }
+        }
+
+        private void ResetProgress()
+        {
+            _currentProgress = 0f;
+            if (_decalMaterial != null)
+            {
+                _decalMaterial.SetFloat(BlendAmountProperty, 0f);
+            }
+        }
+
+        public void ResetForPoolReuse()
+        {
+            _isCompleted = false;
+            _currentProgress = 0f;
+
+            if (_decalMaterial != null)
+            {
+                _decalMaterial.SetFloat(BlendAmountProperty, 0f);
+            }
+
+            if (ProgressUI != null)
+            {
+                ProgressUI.Hide();
+            }
+
+            if (Reticle != null)
+            {
+                Reticle.SetActive(false);
+            }
+
+            _isPlayerInRange = false;
+            _playerTransform = null;
+            _playerController = null;
         }
 
         public bool IsCompleted => _isCompleted;

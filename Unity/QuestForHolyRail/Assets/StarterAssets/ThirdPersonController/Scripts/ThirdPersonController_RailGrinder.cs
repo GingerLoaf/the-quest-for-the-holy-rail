@@ -1,5 +1,3 @@
-
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.Splines;
@@ -99,8 +97,6 @@ namespace StarterAssets
         public InputAction sprayInput;
         public InputAction jumpBackflipInput;
         public InputAction jumpSideflipInput;
-        public InputAction dashInput;
-        public InputAction boostInput;
         public bool lookBack;
         private SplineContainer[] _splineContainers;
         
@@ -113,9 +109,6 @@ namespace StarterAssets
 
         [Tooltip("Duration to preserve momentum after exiting a grind (prevents deceleration)")]
         public float MomentumPreservationTime = 0.5f;
-
-        [Tooltip("Sprint speed of the character in m/s")]
-        public float SprintSpeed = 5.335f;
 
         [Tooltip("How fast the character turns to face movement direction")]
         [Range(0.0f, 0.3f)]
@@ -136,26 +129,6 @@ namespace StarterAssets
 
         [Tooltip("The character uses its own gravity value. The engine default is -9.81f")]
         public float Gravity = -15.0f;
-
-        [Header("Status Effects")]
-        // public float SpeedMultiplier = 1.0f; // SpeedMultiplier removed as part of health update
-
-        [Header("Temporary Speed Boosts")]
-        [Tooltip("Default duration for speed boosts from pickups")]
-        public float DefaultBoostDuration = 8f;
-
-        private class SpeedBoost
-        {
-            public int Id;
-            public float SpeedIncrease;
-            public float Duration;
-            public float TimeRemaining;
-        }
-
-        private readonly List<SpeedBoost> _activeBoosts = new();
-        private int _nextBoostId = 0;
-        private float _totalBoostSpeed = 0f;
-        private OrbitalPickupDisplay _orbitalDisplay;
 
         [Space(10)]
         [Tooltip("Time required to pass before being able to jump again. Set to 0f to instantly jump again")]
@@ -225,9 +198,6 @@ namespace StarterAssets
         [Tooltip("How quickly the start boost decays toward base grind speed")]
         public float GrindBoostDecayRate = 8f;
 
-        [Tooltip("Multiplier for boost effectiveness while grinding (1.0 = full effect, 0.5 = half)")]
-        public float GrindBoostEffectiveness = 0.5f;
-
         [Header("Ramp Boost")]
         [Tooltip("Layer mask for ramp colliders")]
         public LayerMask RampLayers;
@@ -236,26 +206,17 @@ namespace StarterAssets
         [Tooltip("Cooldown before ramp boost can trigger again")]
         public float RampBoostCooldown = 0.5f;
 
-        [Header("Dash Ability")]
-        [Tooltip("Speed during dash")]
-        public float DashSpeed = 20f;
-        [Tooltip("How long the dash lasts")]
-        public float DashDuration = 0.2f;
+        [Header("Dash")]
+        [Tooltip("Speed boost applied when dashing")]
+        public float DashSpeedBoost = 8f;
+        [Tooltip("How long the dash boost is sustained before decaying")]
+        public float DashDuration = 0.3f;
         [Tooltip("Cooldown before dash can be used again")]
         public float DashCooldown = 1.0f;
-        [Tooltip("How much dash speed carries over after dash ends (0-1)")]
-        public float DashMomentumCarry = 0.5f;
-        [Tooltip("DEPRECATED - No longer used. Grind dash now matches ground dash speed.")]
-        [System.Obsolete("GrindDashBoost is no longer used")]
-        public float GrindDashBoost = 0f;
-
-        [Header("Boost Ability")]
-        [Tooltip("Speed increase during boost")]
-        public float BoostSpeedIncrease = 5f;
-        [Tooltip("How long the boost lasts")]
-        public float BoostAbilityDuration = 3f;
-        [Tooltip("Cooldown before boost can be used again")]
-        public float BoostAbilityCooldown = 5f;
+        [Tooltip("How quickly the dash boost decays toward normal speed")]
+        public float DashDecayRate = 10f;
+        [Tooltip("Sound effect played when dashing")]
+        public AudioClip DashAudioClip;
 
         [Space(10)]
         [Tooltip("Sound effects played when landing on a rail (random selection)")]
@@ -319,17 +280,15 @@ namespace StarterAssets
         private Vector3 _sprayTargetPosition;
         private bool _isSpraying;
 
-        // Dash state
-        private bool _isDashing;
-        private float _dashDurationTimer;
-        private float _dashCooldownTimer;
-        private Vector3 _dashDirection;
-
         // Ramp boost state
         private float _rampBoostCooldownTimer;
 
-        // Boost ability state
-        private float _boostAbilityCooldownTimer;
+        // Dash state
+        private bool _isDashing;
+        private float _dashTimer;
+        private float _dashCooldownTimer;
+        private float _dashBoostRemaining;
+        private Vector3 _dashDirection;
 
         [Header("Grind Camera Effects")]
         [Tooltip("Reference to the Cinemachine Virtual Camera")]
@@ -447,28 +406,26 @@ namespace StarterAssets
 
         private void OnEnable()
         {
-            grindInput.Enable();
-            grindInput.performed += OnGrindRequested;
+            // grindInput disabled - auto-grind only
+            // grindInput.Enable();
+            // grindInput.performed += OnGrindRequested;
 
             lookBackInput.Enable();
             sprayInput.Enable();
             jumpBackflipInput.Enable();
             jumpSideflipInput.Enable();
-            dashInput.Enable();
-            boostInput.Enable();
         }
 
         private void OnDisable()
         {
-            grindInput.performed -= OnGrindRequested;
-            grindInput.Disable();
+            // grindInput disabled - auto-grind only
+            // grindInput.performed -= OnGrindRequested;
+            // grindInput.Disable();
 
             lookBackInput.Disable();
             sprayInput.Disable();
             jumpBackflipInput.Disable();
             jumpSideflipInput.Disable();
-            dashInput.Disable();
-            boostInput.Disable();
 
             if (GameSessionManager.Instance != null)
             {
@@ -520,9 +477,6 @@ namespace StarterAssets
                 if (trail != null) trail.emitting = false;
             }
 
-            // Cache orbital display reference
-            _orbitalDisplay = GetComponent<OrbitalPickupDisplay>();
-
             if (GameSessionManager.Instance != null)
             {
                 GameSessionManager.Instance.ResetHealth();
@@ -553,32 +507,28 @@ namespace StarterAssets
                 _jumpBufferTimer -= Time.deltaTime;
             }
 
-            // Dash input (allowed while grinding for speed boost)
-            if (dashInput != null && dashInput.triggered && _dashCooldownTimer <= 0f && !_isDashing && !_isWallRiding)
-            {
-                StartDash();
-            }
-
-            // Boost input (allowed while grinding)
-            if (boostInput != null && boostInput.triggered && _boostAbilityCooldownTimer <= 0f && !_isWallRiding)
-            {
-                StartBoostAbility();
-            }
-
-            // Update dash/boost cooldown timers
-            if (_dashCooldownTimer > 0f)
-                _dashCooldownTimer -= Time.deltaTime;
-            if (_boostAbilityCooldownTimer > 0f)
-                _boostAbilityCooldownTimer -= Time.deltaTime;
-
-            UpdateSpeedBoosts();
-
             // Fall death check - kill player if they fall below -50
             if (transform.position.y < -50f)
             {
                 Debug.Log("<color=red>Player fell off the map!</color>");
                 GameSessionManager.Instance.TakeDamage(1000);
                 return;
+            }
+
+            // Update dash cooldown
+            if (_dashCooldownTimer > 0f)
+            {
+                _dashCooldownTimer -= Time.deltaTime;
+            }
+
+            // Update dash state (must run every frame regardless of player state)
+            UpdateDash();
+
+            // Check for dash input
+            if (_isDashing)
+            {
+                _input.dash = false;
+                TryStartDash();
             }
 
             if (_isGrinding)
@@ -647,16 +597,6 @@ namespace StarterAssets
                         }
 
                         Debug.Log("Wall ride coyote jump GRANTED!");
-                    }
-                }
-
-                // Update dash duration
-                if (_isDashing)
-                {
-                    _dashDurationTimer -= Time.deltaTime;
-                    if (_dashDurationTimer <= 0f)
-                    {
-                        EndDash();
                     }
                 }
 
@@ -875,14 +815,14 @@ namespace StarterAssets
 
             if (result.Distance <= GrindDistanceThreshold)
             {
-                var direction = GetZForwardGrindDirection(result.Container, result.SplineParameter);
+                var direction = GetVelocityBasedGrindDirection(result.Container, result.SplineParameter);
                 StartGrind(result.Container, result.SplineParameter, direction);
                 return true;
             }
             return false;
         }
 
-        private SplineTravelDirection GetZForwardGrindDirection(SplineContainer container, float t)
+        private SplineTravelDirection GetVelocityBasedGrindDirection(SplineContainer container, float t)
         {
             if (container == null || container.Spline == null)
                 return SplineTravelDirection.StartToEnd;
@@ -896,24 +836,31 @@ namespace StarterAssets
             tangent.y = 0f;
             tangent.Normalize();
 
-            // Check if tangent points in positive Z direction (world forward)
-            // If tangent.z > 0, StartToEnd travels in +Z direction
-            // If tangent.z < 0, EndToStart travels in +Z direction
-            return tangent.z >= 0 ? SplineTravelDirection.StartToEnd : SplineTravelDirection.EndToStart;
+            // Use player's velocity to determine grind direction
+            // If no velocity, use player's facing direction
+            Vector3 playerDirection = _controller.velocity;
+            playerDirection.y = 0f;
+            if (playerDirection.sqrMagnitude < 0.1f)
+            {
+                playerDirection = transform.forward;
+            }
+            playerDirection.Normalize();
+
+            // Dot product: positive means same direction as tangent (StartToEnd)
+            // negative means opposite direction (EndToStart)
+            float dot = Vector3.Dot(playerDirection, tangent);
+            return dot >= 0 ? SplineTravelDirection.StartToEnd : SplineTravelDirection.EndToStart;
         }
 
         void OnGrindRequested(InputAction.CallbackContext context)
         {
+            // Only start grind if not already grinding - jump (A) is the only way to exit
             if (!_isGrinding)
             {
                 if (!TryStartGrind())
                 {
                     Debug.LogWarning("No spline within grind distance threshold.");
                 }
-            }
-            else
-            {
-                ExitGrindWithJump();
             }
         }
 
@@ -1139,37 +1086,10 @@ namespace StarterAssets
                 return;
             }
 
-            // Update dash duration while grinding
-            if (_isDashing)
-            {
-                _dashDurationTimer -= Time.deltaTime;
-                if (_dashDurationTimer <= 0f)
-                {
-                    EndDash();
-                }
-            }
+            // Target speed is just GrindSpeed
+            float targetSpeed = GrindSpeed;
 
-            // Determine target speed (apply same sprint ratio as ground movement)
-            // Boost is added separately with reduced effectiveness to prevent excessive speed
-            float baseGrindSpeed = _input.sprint ? GrindSpeed * (SprintSpeed / MoveSpeed) : GrindSpeed;
-            float effectiveBoost = _totalBoostSpeed * GrindBoostEffectiveness;
-            float targetSpeed;
-
-            if (_isDashing)
-            {
-                // Grind dash uses identical formula to ground dash
-                targetSpeed = DashSpeed;
-            }
-            else
-            {
-                targetSpeed = (baseGrindSpeed + effectiveBoost);
-            }
-
-            // DEBUG: Log grind speed calculation
-            Debug.Log($"[GRIND] isDashing={_isDashing}, targetSpeed={targetSpeed:F1}, currentSpeed={_grindSpeedCurrent:F1}, " +
-                      $"DashSpeed={DashSpeed}, baseGrindSpeed={baseGrindSpeed:F1}");
-
-            // Use boost decay rate when above target speed (decaying boost), otherwise use normal acceleration
+            // Use boost decay rate when above target speed (decaying start boost), otherwise use normal acceleration
             float lerpRate = _grindSpeedCurrent > targetSpeed ? GrindBoostDecayRate : GrindAcceleration;
 
             // Accelerate / decelerate toward target
@@ -1227,6 +1147,15 @@ namespace StarterAssets
 
             // Move directly (CharacterController disabled)
             transform.position = position;
+
+            // Check for ramp collision while grinding - derail if we hit one
+            Collider[] rampHits = Physics.OverlapSphere(transform.position, _controller.radius, RampLayers);
+            if (rampHits.Length > 0)
+            {
+                // Derail - exit grind with a small hop
+                ExitGrindWithJump(JumpHeight * 0.5f);
+                return;
+            }
 
             // Rotate toward spline direction
             if (tangent.sqrMagnitude > 0.0001f)
@@ -1379,12 +1308,6 @@ namespace StarterAssets
         private void StartWallRide(Vector3 wallNormal, Vector3 billboardCenter, Vector3 billboardScale, Vector3 travelDirection, Vector3 surfacePoint)
         {
             _isWallRiding = true;
-
-            // End any active dash immediately when starting wall ride
-            if (_isDashing)
-            {
-                EndDash();
-            }
 
             _wallRideNormal = wallNormal;
             _currentBillboardCenter = billboardCenter;
@@ -1609,64 +1532,131 @@ namespace StarterAssets
             Debug.Log("Wall ride exit at edge!");
         }
 
-        private void StartDash()
+        private void TryStartDash()
         {
-            _isDashing = true;
-            _dashDurationTimer = DashDuration;
-            _dashCooldownTimer = DashCooldown;
-
-            // Dash in facing direction
-            _dashDirection = transform.forward;
-            _dashDirection.y = 0f;
-            _dashDirection.Normalize();
-
-            Debug.Log($"[DASH START] IsGrinding={_isGrinding}, DashSpeed={DashSpeed}, " +
-                      $"Current grind speed={_grindSpeedCurrent:F1}, Ground speed={_speed:F1}");
-        }
-
-        private void EndDash()
-        {
-            _isDashing = false;
-
-            // Carry forward momentum from dash
-            if (DashMomentumCarry > 0f)
+            // Check cooldown
+            if (_dashCooldownTimer > 0f)
             {
-                _speed = Mathf.Max(_speed, DashSpeed * DashMomentumCarry);
+                return;
             }
 
-            Debug.Log($"Dash ended, momentum carry speed: {_speed}");
+            // If grinding, detach from rail first
+            if (_isGrinding)
+            {
+                // Get the grind direction before stopping
+                Vector3 grindTravelDirection = Vector3.forward;
+                if (GrindSpline != null && GrindSpline.Spline != null)
+                {
+                    grindTravelDirection = GrindSpline.transform.TransformDirection(
+                        (Vector3)GrindSpline.Spline.EvaluateTangent(_grindT)
+                    ).normalized;
+
+                    if (_grindDirection == SplineTravelDirection.EndToStart)
+                    {
+                        grindTravelDirection = -grindTravelDirection;
+                    }
+
+                    grindTravelDirection.y = 0f;
+                    grindTravelDirection.Normalize();
+                }
+
+                StopGrind();
+                StartDash(grindTravelDirection);
+                return;
+            }
+
+            // If wall riding, detach from wall first
+            if (_isWallRiding)
+            {
+                Vector3 wallTravelDirection = _wallRideVelocity;
+                wallTravelDirection.y = 0f;
+                wallTravelDirection.Normalize();
+
+                ExitWallRideAtEdge();
+                StartDash(wallTravelDirection);
+                return;
+            }
+
+            // Ground or air dash: calculate direction from input or facing
+            Vector3 dashDirection;
+            if (_input.move != Vector2.zero)
+            {
+                // Use input direction relative to camera
+                Vector3 inputDirection = new Vector3(_input.move.x, 0f, _input.move.y).normalized;
+                dashDirection = Quaternion.Euler(0f, _smoothYaw, 0f) * inputDirection;
+            }
+            else
+            {
+                // No input - dash in facing direction
+                dashDirection = transform.forward;
+            }
+
+            dashDirection.y = 0f;
+            dashDirection.Normalize();
+
+            StartDash(dashDirection);
         }
 
-        private void StartBoostAbility()
+        private void StartDash(Vector3 direction)
         {
-            AddTemporarySpeedBoost(BoostSpeedIncrease, BoostAbilityDuration);
-            _boostAbilityCooldownTimer = BoostAbilityCooldown;
+            _isDashing = true;
+            _dashTimer = DashDuration;
+            _dashCooldownTimer = DashCooldown;
+            _dashDirection = direction;
 
-            Debug.Log($"Boost activated! +{BoostSpeedIncrease} speed for {BoostAbilityDuration}s");
+            // Set boost remaining (applied to targetSpeed in Move())
+            _dashBoostRemaining = DashSpeedBoost;
+
+            // Rotate player to face dash direction
+            if (direction.sqrMagnitude > 0.0001f)
+            {
+                _targetRotation = Mathf.Atan2(direction.x, direction.z) * Mathf.Rad2Deg;
+                transform.rotation = Quaternion.Euler(0f, _targetRotation, 0f);
+            }
+
+            // Play dash sound
+            if (DashAudioClip != null)
+            {
+                AudioSource.PlayClipAtPoint(DashAudioClip, transform.position, 1f);
+            }
+
+            Debug.Log($"Dash started! Direction: {direction}, Speed: {_speed}");
+        }
+
+        private void UpdateDash()
+        {
+            if (!_isDashing && _dashBoostRemaining <= 0f)
+            {
+                return;
+            }
+
+            // During active dash, maintain boosted speed
+            if (_isDashing)
+            {
+                _dashTimer -= Time.deltaTime;
+                if (_dashTimer <= 0f)
+                {
+                    _isDashing = false;
+                }
+            }
+
+            // Decay dash boost toward zero
+            if (_dashBoostRemaining > 0f)
+            {
+                _dashBoostRemaining = Mathf.Max(0f, _dashBoostRemaining - DashDecayRate * Time.deltaTime);
+            }
         }
 
         private void Move()
         {
-            // set target speed based on move speed, sprint speed and if sprint is pressed
-            // Include temporary boost speed bonus
-            float targetSpeed;
-            if (_isDashing)
-            {
-                targetSpeed = DashSpeed;
-                float currentHorizontalSpeedForLog = new Vector3(_controller.velocity.x, 0.0f, _controller.velocity.z).magnitude;
-                Debug.Log($"[GROUND DASH] targetSpeed={targetSpeed:F1}, currentSpeed={currentHorizontalSpeedForLog:F1}");
-            }
-            else
-            {
-                float baseSpeed = (_input.sprint ? SprintSpeed : MoveSpeed) + _totalBoostSpeed;
-                targetSpeed = baseSpeed;
-            }
+            // Set target speed based on move speed
+            float targetSpeed = _input.move == Vector2.zero ? 0f : MoveSpeed;
 
-            // a simplistic acceleration and deceleration designed to be easy to remove, replace, or iterate upon
-
-            // note: Vector2's == operator uses approximation so is not floating point error prone, and is cheaper than magnitude
-            // if there is no input, set the target speed to 0 (but not during dash)
-            if (_input.move == Vector2.zero && !_isDashing) targetSpeed = 0.0f;
+            // During active dash or while boost decays, add remaining boost to target speed
+            if (_isDashing || _dashBoostRemaining > 0f)
+            {
+                targetSpeed += _dashBoostRemaining;
+            }
 
             // a reference to the players current horizontal velocity
             float currentHorizontalSpeed = new Vector3(_controller.velocity.x, 0.0f, _controller.velocity.z).magnitude;
@@ -1675,19 +1665,10 @@ namespace StarterAssets
             float inputMagnitude = _input.analogMovement ? _input.move.magnitude : 1f;
 
             // When airborne, preserve momentum better by reducing speed change rate
-            // Exception: dash should feel instant regardless of grounded state
-            float effectiveSpeedChangeRate;
-            if (_isDashing)
-            {
-                effectiveSpeedChangeRate = SpeedChangeRate * 3f; // Dash accelerates faster
-            }
-            else
-            {
-                effectiveSpeedChangeRate = Grounded ? SpeedChangeRate : SpeedChangeRate * _airControlMultiplier;
-            }
+            float effectiveSpeedChangeRate = Grounded ? SpeedChangeRate : SpeedChangeRate * _airControlMultiplier;
 
-            // Preserve momentum after exiting grind - only allow acceleration, not deceleration
-            bool preservingMomentum = _momentumPreservationTimer > 0f;
+            // Preserve momentum after exiting grind or during active dash - only allow acceleration, not deceleration
+            bool preservingMomentum = _momentumPreservationTimer > 0f || _isDashing;
 
             // accelerate or decelerate to target speed
             if (currentHorizontalSpeed < targetSpeed - speedOffset ||
@@ -1702,8 +1683,7 @@ namespace StarterAssets
                 {
                     // creates curved result rather than a linear one giving a more organic speed change
                     // note T in Lerp is clamped, so we don't need to clamp our speed
-                    // During dash, use full targetSpeed; otherwise scale by input magnitude
-                    float effectiveTargetSpeed = _isDashing ? targetSpeed : targetSpeed * inputMagnitude;
+                    float effectiveTargetSpeed = targetSpeed * inputMagnitude;
                     _speed = Mathf.Lerp(currentHorizontalSpeed, effectiveTargetSpeed,
                         Time.deltaTime * effectiveSpeedChangeRate);
 
@@ -1735,16 +1715,7 @@ namespace StarterAssets
                 transform.rotation = Quaternion.Euler(0.0f, rotation, 0.0f);
             }
 
-
-            Vector3 targetDirection;
-            if (_isDashing)
-            {
-                targetDirection = _dashDirection;
-            }
-            else
-            {
-                targetDirection = Quaternion.Euler(0.0f, _targetRotation, 0.0f) * Vector3.forward;
-            }
+            Vector3 targetDirection = Quaternion.Euler(0.0f, _targetRotation, 0.0f) * Vector3.forward;
 
             // move the player
             _controller.Move(targetDirection.normalized * (_speed * Time.deltaTime) +
@@ -1917,99 +1888,9 @@ namespace StarterAssets
         public void IncreaseMaxSpeed(float amount)
         {
             MoveSpeed += amount;
-            SprintSpeed += amount;
             GrindSpeed += amount;
 
-            Debug.Log($"Speed increased! New speeds - Move: {MoveSpeed}, Sprint: {SprintSpeed}, Grind: {GrindSpeed}");
-        }
-
-        /// <summary>
-        /// Adds a temporary speed boost that decays over time.
-        /// </summary>
-        /// <param name="speedIncrease">Amount to increase speed by</param>
-        /// <param name="duration">How long the boost lasts (uses DefaultBoostDuration if not specified)</param>
-        /// <returns>The boost ID for tracking</returns>
-        public int AddTemporarySpeedBoost(float speedIncrease, float duration = -1f)
-        {
-            if (duration < 0f)
-            {
-                duration = DefaultBoostDuration;
-            }
-
-            var boost = new SpeedBoost
-            {
-                Id = _nextBoostId++,
-                SpeedIncrease = speedIncrease,
-                Duration = duration,
-                TimeRemaining = duration
-            };
-
-            _activeBoosts.Add(boost);
-            RecalculateTotalBoostSpeed();
-
-            if (_orbitalDisplay != null)
-            {
-                _orbitalDisplay.AddOrb(boost.Id, duration);
-            }
-
-            Debug.Log($"Temporary speed boost added! +{speedIncrease} for {duration}s (ID: {boost.Id}). Total boost: {_totalBoostSpeed}");
-            return boost.Id;
-        }
-
-        /// <summary>
-        /// Gets the current total speed bonus from all active boosts.
-        /// </summary>
-        public float TotalBoostSpeed => _totalBoostSpeed;
-
-        /// <summary>
-        /// Gets the number of active speed boosts.
-        /// </summary>
-        public int ActiveBoostCount => _activeBoosts.Count;
-
-        private void UpdateSpeedBoosts()
-        {
-            if (_activeBoosts.Count == 0)
-                return;
-
-            bool boostsChanged = false;
-
-            for (int i = _activeBoosts.Count - 1; i >= 0; i--)
-            {
-                var boost = _activeBoosts[i];
-                boost.TimeRemaining -= Time.deltaTime;
-
-                if (_orbitalDisplay != null)
-                {
-                    _orbitalDisplay.UpdateBoostTime(boost.Id, boost.TimeRemaining);
-                }
-
-                if (boost.TimeRemaining <= 0f)
-                {
-                    Debug.Log($"Speed boost expired (ID: {boost.Id})");
-
-                    if (_orbitalDisplay != null)
-                    {
-                        _orbitalDisplay.RemoveOrb(boost.Id);
-                    }
-
-                    _activeBoosts.RemoveAt(i);
-                    boostsChanged = true;
-                }
-            }
-
-            if (boostsChanged)
-            {
-                RecalculateTotalBoostSpeed();
-            }
-        }
-
-        private void RecalculateTotalBoostSpeed()
-        {
-            _totalBoostSpeed = 0f;
-            foreach (var boost in _activeBoosts)
-            {
-                _totalBoostSpeed += boost.SpeedIncrease;
-            }
+            Debug.Log($"Speed increased! New speeds - Move: {MoveSpeed}, Grind: {GrindSpeed}");
         }
 
         private void TryDeflectBullet()
