@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Splines;
 
 namespace HolyRail.Scripts.LevelGeneration
 {
@@ -7,23 +8,22 @@ namespace HolyRail.Scripts.LevelGeneration
     {
         [Header("Generation Settings")]
         [Tooltip("Prefabs to use for generation. Must have HexSection component.")]
-        [SerializeField] private HexSection[] sectionPrefabs;
+        [SerializeField] private HexSection[] _sectionPrefabs;
 
-        [Tooltip("Number of sections to generate.")]
-        [SerializeField] private int sectionCount = 5;
-
-        [Tooltip("Where the first section connects. If null, uses World Origin.")]
-        [SerializeField] private Transform startPoint;
+        [Tooltip("Spline paths that define the level layout. Sections are placed along these splines on a hex grid.")]
+        [SerializeField] private SplineContainer[] _guideSplines;
 
         [Tooltip("If true, generates on Start.")]
-        [SerializeField] private bool generateOnStart = true;
+        [SerializeField] private bool _generateOnStart = true;
 
         [Header("Runtime Data")]
-        [SerializeField] private List<HexSection> spawnedSections = new List<HexSection>();
+        [SerializeField] private List<HexSection> _spawnedSections = new();
+
+        private float _circumradius = HexConstants.DefaultCircumradius;
 
         private void Start()
         {
-            if (generateOnStart)
+            if (_generateOnStart)
             {
                 GenerateLevel();
             }
@@ -34,66 +34,39 @@ namespace HolyRail.Scripts.LevelGeneration
         {
             ClearLevel();
 
-            if (sectionPrefabs == null || sectionPrefabs.Length == 0)
+            if (_sectionPrefabs == null || _sectionPrefabs.Length == 0)
             {
-                Debug.LogWarning("[LevelGenerationManager] No section prefabs assigned!");
+                Debug.LogWarning("[LevelGenerationManager] No section prefabs assigned.");
                 return;
             }
 
-            Vector3 nextPosition;
-            Quaternion nextRotation;
-            
-            // Determine start point
-            if (startPoint != null)
+            if (_guideSplines == null || _guideSplines.Length == 0)
             {
-                nextPosition = startPoint.position;
-                nextRotation = startPoint.rotation;
+                Debug.LogWarning("[LevelGenerationManager] No guide splines assigned.");
+                return;
             }
-            else
+
+            // Use circumradius from the first prefab
+            _circumradius = _sectionPrefabs[0].Circumradius;
+
+            var occupiedCells = new HashSet<Vector2Int>();
+            int sectionIndex = 0;
+
+            foreach (var splineContainer in _guideSplines)
             {
-                nextPosition = Vector3.zero;
-                nextRotation = Quaternion.identity;
-            }
-            
-            // Keep track of the 'previous' exit data to snap to
-            // For the VERY first section, we might want to align its Entry to 'startPoint'
-            // or just place it at 'startPoint'.
-            // The request says: "based on either world origin, or the pivot of the previous section's pivot of the exit edge"
-            // And "always spawning a new section from the pivot of the entry edge"
-            
-            HexSection previousSection = null;
+                if (splineContainer == null) continue;
 
-            for (int i = 0; i < sectionCount; i++)
-            {
-                // Pick a random prefab
-                var prefab = sectionPrefabs[Random.Range(0, sectionPrefabs.Length)];
-                if (prefab == null) continue;
+                var hexCells = PlotHexCellsAlongSpline(splineContainer);
+                if (hexCells.Count < 2) continue;
 
-                var newSection = Instantiate(prefab, transform);
-                newSection.gameObject.name = $"Section_{i}_{prefab.name}";
-                
-                // Align Entry Edge
-                if (previousSection == null)
-                {
-                    // First section: Align Entry Edge Pivot to Start Point
-                    AlignToPoint(newSection, nextPosition, nextRotation);
-                }
-                else
-                {
-                    // Snap to previous exit
-                    SnapToPrevious(newSection, previousSection);
-                }
-
-                newSection.SectionIndex = i;
-                spawnedSections.Add(newSection);
-                previousSection = newSection;
+                sectionIndex = PlaceSectionsForPath(hexCells, occupiedCells, sectionIndex);
             }
         }
 
         [ContextMenu("Clear Level")]
         public void ClearLevel()
         {
-            foreach (var section in spawnedSections)
+            foreach (var section in _spawnedSections)
             {
                 if (section != null)
                 {
@@ -105,9 +78,8 @@ namespace HolyRail.Scripts.LevelGeneration
 #endif
                 }
             }
-            spawnedSections.Clear();
-            
-            // Also clean up any children that might have been left if list was lost
+            _spawnedSections.Clear();
+
             for (int i = transform.childCount - 1; i >= 0; i--)
             {
                 var child = transform.GetChild(i).gameObject;
@@ -120,72 +92,112 @@ namespace HolyRail.Scripts.LevelGeneration
             }
         }
 
-        private void AlignToPoint(HexSection section, Vector3 point, Quaternion rotation)
+        private List<Vector2Int> PlotHexCellsAlongSpline(SplineContainer splineContainer)
         {
-            // Enforce strict Hex Grid tessellation by only rotating around Y axis and aligning to grid vectors.
+            var cells = new List<Vector2Int>();
+            float stepDist = _circumradius * Mathf.Sqrt(3f);
 
-            // 1. Get Entry Info (Local) - Projected to 2D
-            var entryEdge = section.EntryEdge;
-            var circumradius = section.Circumradius;
-            
-            var entryLocalPos = HexConstants.GetEdgeMidpoint(entryEdge, circumradius);
-            var entryLocalNormal = HexConstants.GetEdgeNormal(entryEdge, circumradius);
+            for (int s = 0; s < splineContainer.Splines.Count; s++)
+            {
+                float splineLength = splineContainer.CalculateLength(s);
+                if (splineLength < stepDist) continue;
 
-            // 2. Calculate Target Rotation (strictly Y-axis)
-            // We want the Entry Normal to align with "Backwards" relative to the target rotation
-            // (i.e., we enter FROM the direction the previous piece was pointing)
-            Vector3 targetDirection = rotation * Vector3.back;
+                int sampleCount = Mathf.Max(2, Mathf.CeilToInt(splineLength / stepDist) + 1);
 
-            float targetAngle = Mathf.Atan2(targetDirection.x, targetDirection.z) * Mathf.Rad2Deg;
-            float entryAngle = Mathf.Atan2(entryLocalNormal.x, entryLocalNormal.z) * Mathf.Rad2Deg;
-            
-            float deltaAngle = targetAngle - entryAngle;
-            
-            // Apply strict Y rotation
-            section.transform.rotation = Quaternion.Euler(0f, deltaAngle, 0f);
-            
-            // 3. Move Section
-            // Now that rotation is locked, position the Entry Point at the target point
-            var currentEntryWorld = section.transform.TransformPoint(entryLocalPos);
-            var displacement = point - currentEntryWorld;
-            section.transform.position += displacement;
+                for (int i = 0; i < sampleCount; i++)
+                {
+                    float t = (float)i / (sampleCount - 1);
+                    splineContainer.Evaluate(s, t, out var pos, out _, out _);
+                    var worldPos = splineContainer.transform.TransformPoint(pos);
+                    var axial = HexConstants.WorldToAxial(worldPos, _circumradius);
+
+                    if (cells.Count == 0 || cells[cells.Count - 1] != axial)
+                    {
+                        cells.Add(axial);
+                    }
+                }
+            }
+
+            return cells;
         }
 
-        private void SnapToPrevious(HexSection current, HexSection previous)
+        private int PlaceSectionsForPath(
+            List<Vector2Int> hexCells, HashSet<Vector2Int> occupiedCells, int startIndex)
         {
-            // Previous Exit Info (World Space)
-            var prevExitEdge = previous.ExitEdge;
-            var prevRad = previous.Circumradius;
-            
-            var prevExitLocalMid = HexConstants.GetEdgeMidpoint(prevExitEdge, prevRad);
-            var prevExitLocalNormal = HexConstants.GetEdgeNormal(prevExitEdge, prevRad);
-            
-            var prevExitWorldPos = previous.transform.TransformPoint(prevExitLocalMid);
-            var prevExitWorldNormal = previous.transform.TransformDirection(prevExitLocalNormal);
-            
-            // Current Entry Info (Local Space)
-            var currEntryEdge = current.EntryEdge;
-            var currRad = current.Circumradius;
-            
-            var currEntryLocalMid = HexConstants.GetEdgeMidpoint(currEntryEdge, currRad);
-            var currEntryLocalNormal = HexConstants.GetEdgeNormal(currEntryEdge, currRad);
-            
-            // 1. Align Rotation (Strict Y-Axis)
-            // Target direction is OPPOSITE to Previous Exit Normal
-            Vector3 targetDirection = -prevExitWorldNormal;
+            int sectionIndex = startIndex;
 
-            float targetAngle = Mathf.Atan2(targetDirection.x, targetDirection.z) * Mathf.Rad2Deg;
-            float entryAngle = Mathf.Atan2(currEntryLocalNormal.x, currEntryLocalNormal.z) * Mathf.Rad2Deg;
+            for (int i = 0; i < hexCells.Count; i++)
+            {
+                var cell = hexCells[i];
+                if (occupiedCells.Contains(cell)) continue;
 
-            float deltaAngle = targetAngle - entryAngle;
-            
-            // Apply strict Y rotation
-            current.transform.rotation = Quaternion.Euler(0f, deltaAngle, 0f);
-            
-            // 2. Align Position
-            var newEntryWorldPos = current.transform.TransformPoint(currEntryLocalMid);
-            var displacement = prevExitWorldPos - newEntryWorldPos;
-            current.transform.position += displacement;
+                // Determine entry/exit edges from neighbor direction
+                int entryEdge = 3; // default
+                int exitEdge = 0;  // default
+
+                if (i > 0)
+                {
+                    int edge = HexConstants.GetEdgeFromDirection(hexCells[i - 1], cell);
+                    if (edge >= 0)
+                        entryEdge = HexConstants.GetOppositeEdge(edge);
+                }
+
+                if (i < hexCells.Count - 1)
+                {
+                    int edge = HexConstants.GetEdgeFromDirection(cell, hexCells[i + 1]);
+                    if (edge >= 0)
+                        exitEdge = edge;
+                }
+
+                // Skip if entry and exit are the same or adjacent (invalid hex section)
+                if (entryEdge == exitEdge) continue;
+                if (HexConstants.AreEdgesAdjacent(entryEdge, exitEdge)) continue;
+
+                var prefab = _sectionPrefabs[Random.Range(0, _sectionPrefabs.Length)];
+                if (prefab == null) continue;
+
+                var section = Instantiate(prefab, transform);
+                section.gameObject.name = $"Section_{sectionIndex}_{prefab.name}";
+                section.EntryEdge = entryEdge;
+                section.ExitEdge = exitEdge;
+
+                var worldPos = HexConstants.AxialToWorld(cell, _circumradius);
+                AlignSectionToGrid(section, worldPos, entryEdge);
+
+                section.SectionIndex = sectionIndex;
+                _spawnedSections.Add(section);
+                occupiedCells.Add(cell);
+                sectionIndex++;
+            }
+
+            return sectionIndex;
+        }
+
+        private void AlignSectionToGrid(HexSection section, Vector3 gridWorldPos, int entryEdge)
+        {
+            // The entry edge normal in local space points outward from the hex center.
+            // On the hex grid, the entry edge normal must point toward the previous cell.
+            // Since the hex grid is axis-aligned (no global rotation), we rotate the section
+            // so its entry edge normal matches the expected grid direction.
+            var entryLocalNormal = HexConstants.GetEdgeNormal(entryEdge, section.Circumradius);
+            var entryLocalMid = HexConstants.GetEdgeMidpoint(entryEdge, section.Circumradius);
+
+            // The grid direction for this entry edge
+            var gridEntryNormal = HexConstants.GetEdgeNormal(entryEdge, _circumradius).normalized;
+
+            // Rotate section so its local entry normal aligns with the grid entry normal
+            float gridAngle = Mathf.Atan2(gridEntryNormal.x, gridEntryNormal.z) * Mathf.Rad2Deg;
+            float localAngle = Mathf.Atan2(entryLocalNormal.x, entryLocalNormal.z) * Mathf.Rad2Deg;
+            float deltaAngle = gridAngle - localAngle;
+
+            section.transform.rotation = Quaternion.Euler(0f, deltaAngle, 0f);
+
+            // Position so the hex center lands on the grid position
+            var currentEntryWorld = section.transform.TransformPoint(entryLocalMid);
+            var targetEntryWorld = gridWorldPos + Quaternion.Euler(0f, deltaAngle, 0f) * entryLocalMid;
+
+            // Simpler: just place the section center at the grid position
+            section.transform.position = gridWorldPos;
         }
     }
 }

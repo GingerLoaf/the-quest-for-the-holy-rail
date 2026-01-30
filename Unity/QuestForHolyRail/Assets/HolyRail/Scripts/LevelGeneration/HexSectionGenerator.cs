@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using HolyRail.Graffiti;
 using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Splines;
@@ -73,7 +74,7 @@ namespace HolyRail.Scripts.LevelGeneration
             GenerateCubeObstacles(target, config, random, obstacles, rampClearanceZones);
             
             var railEndpoints = GenerateRails(target, config, random, obstacles);
-            GenerateGrafittiSurfaces(target, config, random, obstacles);
+            GenerateGrafittiSurfaces(target, config, random, obstacles, railEndpoints);
             
             TryGenerateShop(target, config, random);
 
@@ -287,20 +288,21 @@ namespace HolyRail.Scripts.LevelGeneration
                     (float)random.NextDouble());
                 float rampAngle = Lerp(config.RampAngleMin, config.RampAngleMax,
                     (float)random.NextDouble());
-                float rampHeight = rampLength * Mathf.Sin(rampAngle * Mathf.Deg2Rad);
+                float halfLength = rampLength * 0.5f;
+                float angleRad = rampAngle * Mathf.Deg2Rad;
+                float peakHeight = halfLength * Mathf.Sin(angleRad);
+                float cosHalf = halfLength * Mathf.Cos(angleRad) * 0.5f;
 
-                // Find valid position inside hex
                 var position = Vector3.zero;
                 bool valid = false;
 
                 for (int attempt = 0; attempt < 50; attempt++)
                 {
-                    // Increased spacing check
                     position = RandomPointInHex(random, config.Circumradius * 0.7f);
 
-                    var testBounds = new Bounds(position,
-                        new Vector3(rampWidth + 4f, rampHeight, rampLength + 4f)); // Padded bounds
-                    
+                    var testBounds = new Bounds(position + Vector3.up * peakHeight * 0.5f,
+                        new Vector3(rampWidth + 4f, peakHeight + 1f, rampLength + 4f));
+
                     if (IsPositionClear(testBounds, obstacles, 0f))
                     {
                         valid = true;
@@ -311,55 +313,67 @@ namespace HolyRail.Scripts.LevelGeneration
                 if (!valid)
                     continue;
 
-                // Orient generally toward exit with random variation
                 float yawVariation = (float)(random.NextDouble() * 60.0 - 30.0);
                 float yaw = Mathf.Atan2(generalDir.x, generalDir.z) * Mathf.Rad2Deg + yawVariation;
-                var rotation = Quaternion.Euler(-rampAngle, yaw, 0f);
+                var parentRotation = Quaternion.Euler(0f, yaw, 0f);
 
                 GameObject rampGO;
                 if (config.RampPrefab != null)
                 {
                     rampGO = Object.Instantiate(config.RampPrefab, rampParent.transform);
                     rampGO.name = $"Ramp_{i}";
-                    rampGO.transform.localPosition = position + Vector3.up * (rampHeight * 0.5f); // Adjust if prefab Pivot is bottom
-                    rampGO.transform.localRotation = rotation;
-                    
-                    // We assume prefab is roughly unit sized or we scale it to match logic??
-                    // User request "expose a prefab that users can specify to use as ramps"
-                    // Usually prefabs have their own art. We might NOT want to stretch them blindly?
-                    // BUT, the generator logic fundamentally relies on variable length/width/angle.
-                    // For now, let's scale it.
-                    rampGO.transform.localScale = new Vector3(rampWidth, 0.3f, rampLength); 
-                    // Note: Ramps usually need Y scale? 0.3f is thin thickness.
+                    rampGO.transform.localPosition = position;
+                    rampGO.transform.localRotation = parentRotation;
                 }
                 else
                 {
-                    rampGO = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                    rampGO.name = $"Ramp_{i}";
+                    rampGO = new GameObject($"Ramp_{i}");
                     rampGO.transform.SetParent(rampParent.transform, false);
-                    rampGO.transform.localScale = new Vector3(rampWidth, 0.3f, rampLength);
-                    rampGO.transform.localPosition = position + Vector3.up * (rampHeight * 0.5f);
-                    rampGO.transform.localRotation = rotation;
+                    rampGO.transform.localPosition = position;
+                    rampGO.transform.localRotation = parentRotation;
+
+                    // Side A: ramps up from -Z toward peak at center
+                    var sideA = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                    sideA.name = $"Ramp_{i}_SideA";
+                    sideA.transform.SetParent(rampGO.transform, false);
+                    sideA.transform.localScale = new Vector3(rampWidth, 0.3f, halfLength);
+                    sideA.transform.localPosition = new Vector3(0f, peakHeight * 0.5f, -cosHalf);
+                    sideA.transform.localRotation = Quaternion.Euler(-rampAngle, 0f, 0f);
 
                     if (config.RampMaterial != null)
-                        rampGO.GetComponent<MeshRenderer>().sharedMaterial = config.RampMaterial;
+                        sideA.GetComponent<MeshRenderer>().sharedMaterial = config.RampMaterial;
+
+                    // Side B: ramps up from +Z toward peak at center
+                    var sideB = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                    sideB.name = $"Ramp_{i}_SideB";
+                    sideB.transform.SetParent(rampGO.transform, false);
+                    sideB.transform.localScale = new Vector3(rampWidth, 0.3f, halfLength);
+                    sideB.transform.localPosition = new Vector3(0f, peakHeight * 0.5f, cosHalf);
+                    sideB.transform.localRotation = Quaternion.Euler(rampAngle, 0f, 0f);
+
+                    if (config.RampMaterial != null)
+                        sideB.GetComponent<MeshRenderer>().sharedMaterial = config.RampMaterial;
+
+                    // Add a box collider encompassing both sides
+                    var col = rampGO.AddComponent<BoxCollider>();
+                    col.center = Vector3.up * peakHeight * 0.5f;
+                    col.size = new Vector3(rampWidth, peakHeight + 0.3f, rampLength);
                 }
-                
-                // For obstacles, we use the collider bounds.
-                var col = rampGO.GetComponent<Collider>();
-                if (col == null) col = rampGO.AddComponent<BoxCollider>(); // Ensure collider
-                
-                var rampBounds = col.bounds;
+
+                var rampBounds = new Bounds(
+                    rampGO.transform.TransformPoint(Vector3.up * peakHeight * 0.5f),
+                    new Vector3(rampWidth, peakHeight + 0.3f, rampLength)
+                );
                 obstacles.Add(new PlacedObstacle { Bounds = rampBounds });
 
-                // Calculate clearance zones (entry/exit of ramp)
-                // Bottom of ramp - prevent obstacles here
-                Vector3 bottomPos = position - rotation * Vector3.forward * (rampLength * 0.5f);
-                clearanceZones.Add(new Bounds(bottomPos, new Vector3(rampWidth + 4f, 4f, 6f)));
-                
-                // Top flight path - prevent obstacles here
-                Vector3 topPos = position + rotation * Vector3.forward * (rampLength * 0.5f);
-                clearanceZones.Add(new Bounds(topPos + Vector3.up * 2f, new Vector3(rampWidth + 4f, 10f, 8f)));
+                // Clearance zones on both approach sides
+                var fwd = parentRotation * Vector3.forward;
+                clearanceZones.Add(new Bounds(
+                    position - fwd * (halfLength + 2f),
+                    new Vector3(rampWidth + 4f, 4f, 6f)));
+                clearanceZones.Add(new Bounds(
+                    position + fwd * (halfLength + 2f),
+                    new Vector3(rampWidth + 4f, 4f, 6f)));
             }
         }
 
@@ -373,6 +387,12 @@ namespace HolyRail.Scripts.LevelGeneration
             var obstacleParent = new GameObject("Obstacles");
             obstacleParent.transform.SetParent(target.transform, false);
 
+            var entryMid = HexConstants.GetEdgeMidpoint(target.EntryEdge, config.Circumradius);
+            var exitMid = HexConstants.GetEdgeMidpoint(target.ExitEdge, config.Circumradius);
+            var travelDir = (exitMid - entryMid).normalized;
+            float baseYaw = Mathf.Atan2(travelDir.x, travelDir.z) * Mathf.Rad2Deg;
+            float[] yawOptions = { baseYaw, baseYaw + 90f, baseYaw + 180f, baseYaw + 270f };
+
             for (int i = 0; i < count; i++)
             {
                 var size = new Vector3(
@@ -384,19 +404,37 @@ namespace HolyRail.Scripts.LevelGeneration
                         (float)random.NextDouble())
                 );
 
+                float yaw = yawOptions[random.Next(yawOptions.Length)];
+
+                // Compute world-space AABB after rotation
+                float yawRad = yaw * Mathf.Deg2Rad;
+                float absC = Mathf.Abs(Mathf.Cos(yawRad));
+                float absS = Mathf.Abs(Mathf.Sin(yawRad));
+                var rotatedSize = new Vector3(
+                    size.x * absC + size.z * absS,
+                    size.y,
+                    size.x * absS + size.z * absC
+                );
+
+                float diagonal = Mathf.Sqrt(rotatedSize.x * rotatedSize.x + rotatedSize.z * rotatedSize.z);
+                float minSeparation = diagonal * 0.5f;
+
                 var position = Vector3.zero;
                 bool valid = false;
 
-                for (int attempt = 0; attempt < 20; attempt++)
+                for (int attempt = 0; attempt < 50; attempt++)
                 {
                     position = RandomPointInHex(random, config.Circumradius * 0.7f);
-                    
-                    // Increased clearance for sparsity (was 2f, now 5f)
-                    var testBounds = new Bounds(position + Vector3.up * size.y * 0.5f, size);
-                    if (!IsPositionClear(testBounds, obstacles, 5f)) 
+
+                    var testBounds = new Bounds(
+                        position + Vector3.up * rotatedSize.y * 0.5f,
+                        rotatedSize
+                    );
+
+                    float clearance = Mathf.Max(5f, minSeparation);
+                    if (!IsPositionClear(testBounds, obstacles, clearance))
                         continue;
 
-                    // Check ramp clearance zones
                     bool rampClear = true;
                     foreach (var zone in clearanceZones)
                     {
@@ -420,8 +458,6 @@ namespace HolyRail.Scripts.LevelGeneration
                 cubeGO.transform.SetParent(obstacleParent.transform, false);
                 cubeGO.transform.localScale = size;
                 cubeGO.transform.localPosition = position + Vector3.up * (size.y * 0.5f);
-
-                float yaw = (float)(random.NextDouble() * 360.0);
                 cubeGO.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
 
                 if (config.ObstacleMaterial != null)
@@ -493,21 +529,37 @@ namespace HolyRail.Scripts.LevelGeneration
                     usedLateralOffsets.Add(lateralOffset);
                 }
 
+                // Determine rail start/end points
+                var railStart = entryMid;
+                var railEnd = exitMid;
+
+                if (!isPrimary)
+                {
+                    bool truncateStart = (float)random.NextDouble() < 0.3f;
+                    bool truncateEnd = (float)random.NextDouble() < 0.3f;
+
+                    if (truncateStart)
+                    {
+                        var interiorPoint = RandomPointInHex(random, config.Circumradius * 0.6f);
+                        railStart = new Vector3(interiorPoint.x, heightBase, interiorPoint.z);
+                    }
+
+                    if (truncateEnd)
+                    {
+                        var interiorPoint = RandomPointInHex(random, config.Circumradius * 0.6f);
+                        railEnd = new Vector3(interiorPoint.x, heightBase, interiorPoint.z);
+                    }
+                }
+
                 // Force Curve / Winding Logic
-                // Instead of straight line from entry to exit, we add a major control point in the middle
-                // that pulls the rail strongly to one side or the other.
-                // For primary rail, we might keep it straighter, but user wants winding rails.
-                // So we always add some "Major Offset".
-                
                 float windingIntensity = Lerp(10f, config.Circumradius * 0.8f, (float)random.NextDouble());
                 if (random.NextDouble() > 0.5) windingIntensity = -windingIntensity;
-                
-                // If lateral offset already provides spacing, add winding on top
+
                 float majorOffset = lateralOffset + windingIntensity;
                 majorOffset = Mathf.Clamp(majorOffset, -maxLateral, maxLateral);
 
                 var controlPoints = GenerateRailPath(
-                    entryMid, exitMid, config, random, r, lateralOffset, majorOffset, heightBase, obstacles
+                    railStart, railEnd, config, random, r, lateralOffset, majorOffset, heightBase, obstacles
                 );
 
                 CreateRailSpline(
@@ -564,38 +616,32 @@ namespace HolyRail.Scripts.LevelGeneration
 
                 var point = basePos + right * totalLateral + Vector3.up * height;
 
-                // React to obstacles (Wind around or go over)
-                foreach (var obs in obstacles)
+                // React to obstacles using AABB checks
+                point = PushPointFromObstacles(point, obstacles, 3f);
+
+                point = HexConstants.ClampToHex(point, config.Circumradius, 1f);
+                points[i] = point;
+            }
+
+            // Multi-pass smoothing to reduce kinks from obstacle avoidance
+            for (int pass = 0; pass < 3; pass++)
+            {
+                for (int i = 1; i < pointCount - 1; i++)
                 {
-                    // Simple distance check to obstacle center bounds
-                    var obsCenter = obs.Bounds.center;
-                    var obsSize = obs.Bounds.size;
-                    float checkRadius = Mathf.Max(obsSize.x, obsSize.z) * 0.7f; 
-
-                    Vector2 pt2D = new Vector2(point.x, point.z);
-                    Vector2 obs2D = new Vector2(obsCenter.x, obsCenter.z);
-                    float dist = Vector2.Distance(pt2D, obs2D);
-
-                    if (dist < checkRadius + 2f) 
-                    {
-                        if (point.y > obs.Bounds.max.y - 1f || height > obs.Bounds.max.y + 1f)
-                        {
-                            point.y = Mathf.Max(point.y, obs.Bounds.max.y + 1.5f);
-                        }
-                        else
-                        {
-                            Vector2 pushDir = (pt2D - obs2D).normalized;
-                            if (pushDir == Vector2.zero) pushDir = Vector2.right; 
-                            
-                            float pushDist = (checkRadius + 2f) - dist;
-                            Vector2 newPos2D = pt2D + pushDir * pushDist;
-                            point.x = newPos2D.x;
-                            point.z = newPos2D.y;
-                        }
-                    }
+                    var prev = points[i - 1];
+                    var next = points[i + 1];
+                    points[i] = new Vector3(
+                        (prev.x + points[i].x + next.x) / 3f,
+                        (prev.y + points[i].y + next.y) / 3f,
+                        (prev.z + points[i].z + next.z) / 3f
+                    );
                 }
+            }
 
-                // Clamp to hex bounds (looser clamping to allow winding)
+            // Final obstacle check: ensure smoothing did not push points back into obstacles
+            for (int i = 1; i < pointCount - 1; i++)
+            {
+                var point = PushPointFromObstacles(points[i], obstacles, 3f);
                 point = HexConstants.ClampToHex(point, config.Circumradius, 1f);
                 points[i] = point;
             }
@@ -662,80 +708,87 @@ namespace HolyRail.Scripts.LevelGeneration
 
         private static void GenerateGrafittiSurfaces(
             HexSection target, HexSectionConfig config, System.Random random,
-            List<PlacedObstacle> obstacles)
+            List<PlacedObstacle> obstacles, List<Vector3[]> allRailPaths)
         {
-            if (obstacles.Count == 0) return;
-            Debug.Log("Obstacles Count= " + obstacles.Count);
+            var cubeObstacles = new List<PlacedObstacle>();
+            foreach (var obs in obstacles)
+            {
+                if (obs.transform != null)
+                    cubeObstacles.Add(obs);
+            }
+
+            if (cubeObstacles.Count == 0) return;
 
             int wallCount = RandomRange(random, config.MinGrafittiWallCount, config.MaxGrafittiWallCount + 1);
             var wallParent = new GameObject("GraffitiWalls");
             wallParent.transform.SetParent(target.transform, false);
 
             int placedCount = 0;
-            // Shuffle obstacles to pick random ones
-            var shuffledObstacles = new List<PlacedObstacle>(obstacles);
+
             // Fisher-Yates shuffle
-            for(int i = shuffledObstacles.Count - 1; i > 0; i--) {
+            for (int i = cubeObstacles.Count - 1; i > 0; i--)
+            {
                 int k = random.Next(i + 1);
-                var temp = shuffledObstacles[k];
-                shuffledObstacles[k] = shuffledObstacles[i];
-                shuffledObstacles[i] = temp;
+                var temp = cubeObstacles[k];
+                cubeObstacles[k] = cubeObstacles[i];
+                cubeObstacles[i] = temp;
             }
 
-            foreach (var obs in shuffledObstacles)
+            Vector3[] localNormals = { Vector3.forward, Vector3.back, Vector3.left, Vector3.right };
+
+            foreach (var obs in cubeObstacles)
             {
                 if (placedCount >= wallCount) break;
 
-                // Ensure obstacle is big enough for a wall
-                //if (obs.Bounds.size.y < 3f || obs.Bounds.size.x < 3f) continue;
+                var scale = obs.transform.localScale;
+                float[] faceWidths = { scale.x, scale.x, scale.z, scale.z };
+                float[] faceHeights = { scale.y, scale.y, scale.y, scale.y };
 
-                // Pick a side (faces of cube)
-                // 0: Forward, 1: Back, 2: Left, 3: Right
-                int side = random.Next(4);
-                Vector3 normal = Vector3.forward;
-                Vector3 offset = Vector3.zero;
+                // Pick the face whose surface is most parallel to the nearest rail
+                var railTangent = GetNearestRailTangent(obs.transform.position, allRailPaths);
+                int bestSide = 0;
+                float bestDot = float.MaxValue;
 
-                switch(side)
+                for (int s = 0; s < 4; s++)
                 {
-                    case 0: normal = Vector3.forward; offset = Vector3.forward * obs.Bounds.extents.z; break;
-                    case 1: normal = Vector3.back; offset = Vector3.back * obs.Bounds.extents.z; break;
-                    case 2: normal = Vector3.left; offset = Vector3.left * obs.Bounds.extents.x; break;
-                    case 3: normal = Vector3.right; offset = Vector3.right * obs.Bounds.extents.x; break;
+                    var worldNormalCandidate = obs.transform.rotation * localNormals[s];
+                    float dot = Mathf.Abs(Vector3.Dot(worldNormalCandidate, railTangent));
+                    if (dot < bestDot)
+                    {
+                        bestDot = dot;
+                        bestSide = s;
+                    }
                 }
-                Debug.Log("Creating a grafitti wall");
 
-                // Create wall panel
+                var localNormal = localNormals[bestSide];
+                float faceWidth = faceWidths[bestSide];
+                float faceHeight = faceHeights[bestSide];
+
+                var localFaceCenter = Vector3.Scale(localNormal * 0.5f, scale);
+                var worldNormal = obs.transform.rotation * localNormal;
+                var worldFaceCenter = obs.transform.position + obs.transform.rotation * localFaceCenter;
+
+                var wallPos = worldFaceCenter + worldNormal * (config.GrafittiWallDepth * 0.5f);
+
                 var wallGO = GameObject.CreatePrimitive(PrimitiveType.Cube);
                 wallGO.name = $"Graffiti_Attached_{placedCount}";
                 wallGO.layer = HexConstants.BillboardLayer;
                 wallGO.transform.SetParent(wallParent.transform, false);
-                
-                // Size: slightly smaller than the obstacle face
-                float w = (side < 2) ? obs.Bounds.size.x : obs.Bounds.size.z;
-                float h = obs.Bounds.size.y;
-                
-                wallGO.transform.localScale = new Vector3(w * 0.8f, h * 0.8f, config.GrafittiWallDepth);
-                
-                // Position: On the face surface
-                //Vector3 wallOrientation = obs. + offset + normal * (config.GrafittiWallDepth * 0.5f);
-                //wallGO.transform.position = wallPos; // World position, but parent is section... wait, bounds are world space usually? 
-                // Wait, Primitive Bounds are world space. But we need local space relative to section. Since section might be at 0,0,0 during gen, it's fine.
-                // However, PlacedObstacle.Bounds comes from collider.bounds which IS world space.
-                // If section is not at 0,0,0, this breaks.
-                // Since this is Editor tool, section is usually at some place.
-                // We should convert world bounds center to local space.
-                wallGO.transform.position = obs.transform. position + offset * (config.GrafittiWallDepth * 0.5f);
-                //Vector3 localPos = target.transform.InverseTransformPoint(wallPos);
-                //wallGO.transform.localPosition = localPos;
 
-                wallGO.transform.rotation = obs.transform.rotation;
+                wallGO.transform.localScale = new Vector3(faceWidth, faceHeight, config.GrafittiWallDepth);
+                wallGO.transform.position = wallPos;
+                wallGO.transform.rotation = Quaternion.LookRotation(worldNormal, Vector3.up);
 
                 if (config.WallMaterial != null)
                     wallGO.GetComponent<MeshRenderer>().sharedMaterial = config.WallMaterial;
-                
+
+                wallGO.AddComponent<GraffitiSpot>();
+                var trigger = wallGO.AddComponent<SphereCollider>();
+                trigger.isTrigger = true;
+                trigger.radius = Mathf.Max(faceWidth, faceHeight) * 0.5f;
+
                 placedCount++;
             }
-            Debug.Log("Placed Grafitti walls: " + placedCount);
         }
 
         // --- Shop ---
@@ -860,6 +913,75 @@ namespace HolyRail.Scripts.LevelGeneration
             }
 
             return false;
+        }
+
+        private static Vector3 PushPointFromObstacles(
+            Vector3 point, List<PlacedObstacle> obstacles, float margin)
+        {
+            foreach (var obs in obstacles)
+            {
+                var expanded = obs.Bounds;
+                expanded.Expand(margin * 2f);
+
+                if (!expanded.Contains(point))
+                    continue;
+
+                // Point is inside the expanded bounds - push it out
+                if (point.y > obs.Bounds.max.y - 1f)
+                {
+                    // Above or near the top: go over
+                    point.y = Mathf.Max(point.y, obs.Bounds.max.y + 1.5f);
+                }
+                else
+                {
+                    // Push horizontally to the nearest edge of the expanded bounds
+                    float distToMinX = Mathf.Abs(point.x - expanded.min.x);
+                    float distToMaxX = Mathf.Abs(point.x - expanded.max.x);
+                    float distToMinZ = Mathf.Abs(point.z - expanded.min.z);
+                    float distToMaxZ = Mathf.Abs(point.z - expanded.max.z);
+
+                    float minDist = Mathf.Min(distToMinX, Mathf.Min(distToMaxX, Mathf.Min(distToMinZ, distToMaxZ)));
+
+                    if (minDist == distToMinX)
+                        point.x = expanded.min.x;
+                    else if (minDist == distToMaxX)
+                        point.x = expanded.max.x;
+                    else if (minDist == distToMinZ)
+                        point.z = expanded.min.z;
+                    else
+                        point.z = expanded.max.z;
+                }
+            }
+
+            return point;
+        }
+
+        private static Vector3 GetNearestRailTangent(Vector3 position, List<Vector3[]> allRailPaths)
+        {
+            float bestDist = float.MaxValue;
+            var bestTangent = Vector3.forward;
+
+            foreach (var path in allRailPaths)
+            {
+                for (int i = 0; i < path.Length - 1; i++)
+                {
+                    var segDir = path[i + 1] - path[i];
+                    float segLenSq = segDir.sqrMagnitude;
+                    if (segLenSq < 0.001f) continue;
+
+                    float t = Mathf.Clamp01(Vector3.Dot(position - path[i], segDir) / segLenSq);
+                    var closest = path[i] + segDir * t;
+
+                    float dist = Vector3.Distance(position, closest);
+                    if (dist < bestDist)
+                    {
+                        bestDist = dist;
+                        bestTangent = segDir.normalized;
+                    }
+                }
+            }
+
+            return bestTangent;
         }
 
         private static int RandomRange(System.Random random, int min, int maxExclusive)

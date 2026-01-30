@@ -43,12 +43,6 @@ namespace HolyRail.Scripts.LevelGeneration
         [Header("Grafitti Surfaces")]
         [field: SerializeField] public int MinGrafittiWallCount { get; set; } = 1;
         [field: SerializeField] public int MaxGrafittiWallCount { get; set; } = 3;
-        [field: SerializeField] public float GrafittiWallWidthMin { get; set; } = 8f;
-        [field: SerializeField] public float GrafittiWallWidthMax { get; set; } = 15f;
-        [field: SerializeField] public float GrafittiWallHeightMin { get; set; } = 4f;
-        [field: SerializeField] public float GrafittiWallHeightMax { get; set; } = 8f;
-        [field: SerializeField] public float GrafittiWallYOffsetMin { get; set; } = 3f;
-        [field: SerializeField] public float GrafittiWallYOffsetMax { get; set; } = 10f;
         [field: SerializeField] public float GrafittiWallDepth { get; set; } = 0.3f;
 
         [Header("Boundary Walls")]
