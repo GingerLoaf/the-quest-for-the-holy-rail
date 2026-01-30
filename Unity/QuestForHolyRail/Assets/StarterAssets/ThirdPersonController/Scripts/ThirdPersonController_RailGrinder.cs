@@ -546,18 +546,24 @@ namespace StarterAssets
             // Update boost state (must run every frame regardless of player state)
             UpdateBoost();
 
-            // Check for dash input
+            // Check for dash input (requires ability unlock)
             if (_input.dash)
             {
                 _input.dash = false;
-                TryStartDash();
+                if (AbilityPickUp.IsAbilityUnlocked(AbilityType.Dash))
+                {
+                    TryStartDash();
+                }
             }
 
-            // Check for boost input
+            // Check for boost input (requires ability unlock)
             if (_input.boost)
             {
                 _input.boost = false;
-                TryStartBoost();
+                if (AbilityPickUp.IsAbilityUnlocked(AbilityType.Boost))
+                {
+                    TryStartBoost();
+                }
             }
 
             if (_isGrinding)
@@ -633,21 +639,24 @@ namespace StarterAssets
                 Move();
             }
 
-            // Handle parry input - start parry window
-            if (_input.parry && _hasAnimator)
+            // Handle parry input - start parry window (requires ability unlock)
+            if (_input.parry)
             {
-                _animator.SetTrigger(_animIDParry);
                 _input.parry = false;
-                _parryWindowActive = true;
-
-                // Apply parry window multiplier
-                var parryWindowMultiplier = GameSessionManager.Instance.GetUpgradeValue(UpgradeType.ParryTimeWindow);
-                _parryWindowTimer = (EnemySpawner.Instance != null ? EnemySpawner.Instance.ParryWindowDuration : 0.3f) + parryWindowMultiplier;
-
-                // Enable parry trail effect
-                foreach (var trail in _parryTrailRenderers)
+                if (_hasAnimator && AbilityPickUp.IsAbilityUnlocked(AbilityType.Parry))
                 {
-                    if (trail != null) trail.emitting = true;
+                    _animator.SetTrigger(_animIDParry);
+                    _parryWindowActive = true;
+
+                    // Apply parry window multiplier
+                    var parryWindowMultiplier = GameSessionManager.Instance.GetUpgradeValue(UpgradeType.ParryTimeWindow);
+                    _parryWindowTimer = (EnemySpawner.Instance != null ? EnemySpawner.Instance.ParryWindowDuration : 0.3f) + parryWindowMultiplier;
+
+                    // Enable parry trail effect
+                    foreach (var trail in _parryTrailRenderers)
+                    {
+                        if (trail != null) trail.emitting = true;
+                    }
                 }
             }
 
