@@ -1601,6 +1601,9 @@ namespace StarterAssets
             _dashCooldownTimer = DashCooldown;
             _dashDirection = direction;
 
+            // Clear momentum preservation - dash takes over speed control
+            _momentumPreservationTimer = 0f;
+
             // Rotate player to face dash direction
             if (direction.sqrMagnitude > 0.0001f)
             {
