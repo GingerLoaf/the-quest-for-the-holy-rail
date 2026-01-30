@@ -13,6 +13,7 @@ namespace StarterAssets
 		public bool jump;
 		public bool parry;
 		public bool dash;
+		public bool boost;
 
 		[Header("Movement Settings")]
 		public bool analogMovement;
@@ -49,6 +50,11 @@ namespace StarterAssets
 		{
 			DashInput(value.isPressed);
 		}
+
+		public void OnBoost(InputValue value)
+		{
+			BoostInput(value.isPressed);
+		}
 #endif
 
 
@@ -70,6 +76,11 @@ namespace StarterAssets
 		public void DashInput(bool newDashState)
 		{
 			dash = newDashState;
+		}
+
+		public void BoostInput(bool newBoostState)
+		{
+			boost = newBoostState;
 		}
 
 		private void OnApplicationFocus(bool hasFocus)

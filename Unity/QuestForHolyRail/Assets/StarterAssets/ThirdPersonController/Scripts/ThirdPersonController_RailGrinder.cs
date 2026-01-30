@@ -216,6 +216,16 @@ namespace StarterAssets
         [Tooltip("Sound effect played when dashing")]
         public AudioClip DashAudioClip;
 
+        [Header("Boost")]
+        [Tooltip("Speed boost applied when boosting")]
+        public float BoostSpeedBoost = 10f;
+        [Tooltip("How long the boost lasts")]
+        public float BoostDuration = 0.5f;
+        [Tooltip("Cooldown before boost can be used again")]
+        public float BoostCooldown = 2.0f;
+        [Tooltip("Sound effect played when boosting")]
+        public AudioClip BoostAudioClip;
+
         [Space(10)]
         [Tooltip("Sound effects played when landing on a rail (random selection)")]
         public AudioClip[] GrindStartAudioClips;
@@ -286,6 +296,12 @@ namespace StarterAssets
         private float _dashTimer;
         private float _dashCooldownTimer;
         private Vector3 _dashDirection;
+
+        // Boost state
+        private bool _isBoosting;
+        private float _boostTimer;
+        private float _boostCooldownTimer;
+        private Vector3 _boostDirection;
 
         [Header("Grind Camera Effects")]
         [Tooltip("Reference to the Cinemachine Virtual Camera")]
@@ -518,14 +534,30 @@ namespace StarterAssets
                 _dashCooldownTimer -= Time.deltaTime;
             }
 
+            // Update boost cooldown
+            if (_boostCooldownTimer > 0f)
+            {
+                _boostCooldownTimer -= Time.deltaTime;
+            }
+
             // Update dash state (must run every frame regardless of player state)
             UpdateDash();
+
+            // Update boost state (must run every frame regardless of player state)
+            UpdateBoost();
 
             // Check for dash input
             if (_input.dash)
             {
                 _input.dash = false;
                 TryStartDash();
+            }
+
+            // Check for boost input
+            if (_input.boost)
+            {
+                _input.boost = false;
+                TryStartBoost();
             }
 
             if (_isGrinding)
@@ -1631,6 +1663,108 @@ namespace StarterAssets
             }
         }
 
+        private void TryStartBoost()
+        {
+            // Check cooldown
+            if (_boostCooldownTimer > 0f)
+            {
+                return;
+            }
+
+            // If grinding, detach from rail first
+            if (_isGrinding)
+            {
+                // Get the grind direction before stopping
+                Vector3 grindTravelDirection = Vector3.forward;
+                if (GrindSpline != null && GrindSpline.Spline != null)
+                {
+                    grindTravelDirection = GrindSpline.transform.TransformDirection(
+                        (Vector3)GrindSpline.Spline.EvaluateTangent(_grindT)
+                    ).normalized;
+
+                    if (_grindDirection == SplineTravelDirection.EndToStart)
+                    {
+                        grindTravelDirection = -grindTravelDirection;
+                    }
+
+                    grindTravelDirection.y = 0f;
+                    grindTravelDirection.Normalize();
+                }
+
+                StopGrind();
+                StartBoost(grindTravelDirection);
+                return;
+            }
+
+            // If wall riding, detach from wall first
+            if (_isWallRiding)
+            {
+                Vector3 wallTravelDirection = _wallRideVelocity;
+                wallTravelDirection.y = 0f;
+                wallTravelDirection.Normalize();
+
+                ExitWallRideAtEdge();
+                StartBoost(wallTravelDirection);
+                return;
+            }
+
+            // Ground or air boost: calculate direction from input or facing
+            Vector3 boostDirection;
+            if (_input.move != Vector2.zero)
+            {
+                // Use input direction relative to camera
+                Vector3 inputDirection = new Vector3(_input.move.x, 0f, _input.move.y).normalized;
+                boostDirection = Quaternion.Euler(0f, _smoothYaw, 0f) * inputDirection;
+            }
+            else
+            {
+                // No input - boost in facing direction
+                boostDirection = transform.forward;
+            }
+
+            boostDirection.y = 0f;
+            boostDirection.Normalize();
+
+            StartBoost(boostDirection);
+        }
+
+        private void StartBoost(Vector3 direction)
+        {
+            _isBoosting = true;
+            _boostTimer = BoostDuration;
+            _boostCooldownTimer = BoostCooldown;
+            _boostDirection = direction;
+
+            // Clear momentum preservation - boost takes over speed control
+            _momentumPreservationTimer = 0f;
+
+            // Rotate player to face boost direction
+            if (direction.sqrMagnitude > 0.0001f)
+            {
+                _targetRotation = Mathf.Atan2(direction.x, direction.z) * Mathf.Rad2Deg;
+                transform.rotation = Quaternion.Euler(0f, _targetRotation, 0f);
+            }
+
+            // Play boost sound
+            if (BoostAudioClip != null)
+            {
+                AudioSource.PlayClipAtPoint(BoostAudioClip, transform.position, 1f);
+            }
+
+            Debug.Log($"Boost started! Direction: {direction}, Speed: {_speed}");
+        }
+
+        private void UpdateBoost()
+        {
+            if (!_isBoosting) return;
+
+            _boostTimer -= Time.deltaTime;
+            if (_boostTimer <= 0f)
+            {
+                _isBoosting = false;
+            }
+        }
+
         private void Move()
         {
             // Set target speed based on move speed
@@ -1642,6 +1776,12 @@ namespace StarterAssets
                 targetSpeed += DashSpeedBoost;
             }
 
+            // During active boost, add boost to target speed
+            if (_isBoosting)
+            {
+                targetSpeed += BoostSpeedBoost;
+            }
+
             // a reference to the players current horizontal velocity
             float currentHorizontalSpeed = new Vector3(_controller.velocity.x, 0.0f, _controller.velocity.z).magnitude;
 
@@ -1651,8 +1791,8 @@ namespace StarterAssets
             // When airborne, preserve momentum better by reducing speed change rate
             float effectiveSpeedChangeRate = Grounded ? SpeedChangeRate : SpeedChangeRate * _airControlMultiplier;
 
-            // Preserve momentum after exiting grind or during active dash - only allow acceleration, not deceleration
-            bool preservingMomentum = _momentumPreservationTimer > 0f || _isDashing;
+            // Preserve momentum after exiting grind or during active dash/boost - only allow acceleration, not deceleration
+            bool preservingMomentum = _momentumPreservationTimer > 0f || _isDashing || _isBoosting;
 
             // accelerate or decelerate to target speed
             if (currentHorizontalSpeed < targetSpeed - speedOffset ||
