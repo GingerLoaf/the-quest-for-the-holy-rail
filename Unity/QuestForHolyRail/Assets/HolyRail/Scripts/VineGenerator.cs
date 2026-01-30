@@ -17,7 +17,8 @@ namespace HolyRail.Vines
         Volume,
         Mixed,
         Free,  // Independent flowing splines without branching
-        Path   // Follows CityManager corridors
+        Path,  // Follows CityManager corridors
+        Billboard  // Cable splines connecting billboards
     }
 
     // Level chunk spline characteristics as RANGES (extracted from LevelChunk prefabs)
@@ -121,6 +122,11 @@ namespace HolyRail.Vines
         [field: SerializeField] public float PathStartOffset { get; set; } = 10f;
         [field: SerializeField] public bool StartBelowGround { get; set; } = true;
         [field: SerializeField] public float GroundStartDepth { get; set; } = 5f;
+
+        [Header("Billboard Mode Settings")]
+        [field: SerializeField] public float BillboardMaxConnectionDistance { get; set; } = 100f;
+        [field: SerializeField] public float BillboardSagAmount { get; set; } = 5f;
+        [field: SerializeField] public int BillboardPointsPerSpline { get; set; } = 15;
 
         [Header("Level Chunk Influence")]
         [field: SerializeField, Range(0f, 1f)]
@@ -283,6 +289,13 @@ namespace HolyRail.Vines
             if (AttractorGenerationMode == AttractorMode.Path)
             {
                 GeneratePathSplines();
+                return;
+            }
+
+            // Billboard mode connects billboards with sagging cables
+            if (AttractorGenerationMode == AttractorMode.Billboard)
+            {
+                GenerateBillboardSplines();
                 return;
             }
 
@@ -687,6 +700,128 @@ namespace HolyRail.Vines
                 Debug.Log($"VineGenerator (Path): Skipped {skippedDueToSpacing} vines due to MinVineSpacing ({MinVineSpacing}m)");
             }
             Debug.Log($"VineGenerator (Path): Generated {_generatedNodes.Count} nodes across {totalVines} vines (volume-based)");
+        }
+
+        private void GenerateBillboardSplines()
+        {
+            if (CityManager == null)
+            {
+                Debug.LogError("VineGenerator: CityManager not assigned for Billboard mode!");
+                return;
+            }
+
+            if (!CityManager.HasBillboardData)
+            {
+                Debug.LogError("VineGenerator: CityManager has no billboard data! Generate city first.");
+                return;
+            }
+
+            var billboards = CityManager.Billboards;
+            if (billboards.Count < 2)
+            {
+                Debug.LogWarning("VineGenerator: Need at least 2 billboards for Billboard mode.");
+                return;
+            }
+
+            var random = new System.Random(Seed);
+            _generatedNodes.Clear();
+            _generatedAttractors.Clear();
+
+            // Track processed pairs to avoid duplicate connections (A-B and B-A)
+            var processedPairs = new HashSet<(int, int)>();
+            int totalCables = 0;
+
+            // For each billboard, find the nearest other billboard within max distance
+            for (int i = 0; i < billboards.Count; i++)
+            {
+                var billboardA = billboards[i];
+                float nearestDist = float.MaxValue;
+                int nearestIdx = -1;
+
+                // Find nearest billboard
+                for (int j = 0; j < billboards.Count; j++)
+                {
+                    if (i == j) continue;
+
+                    // Skip if already processed this pair
+                    var pairKey = i < j ? (i, j) : (j, i);
+                    if (processedPairs.Contains(pairKey)) continue;
+
+                    var billboardB = billboards[j];
+                    float dist = Vector3.Distance(billboardA.Position, billboardB.Position);
+
+                    if (dist <= BillboardMaxConnectionDistance && dist < nearestDist)
+                    {
+                        nearestDist = dist;
+                        nearestIdx = j;
+                    }
+                }
+
+                // Create cable spline if we found a valid connection
+                if (nearestIdx >= 0)
+                {
+                    var pairKey = i < nearestIdx ? (i, nearestIdx) : (nearestIdx, i);
+                    processedPairs.Add(pairKey);
+
+                    var billboardB = billboards[nearestIdx];
+                    GenerateBillboardCableSpline(billboardA.Position, billboardB.Position, random, totalCables);
+                    totalCables++;
+                }
+            }
+
+            Debug.Log($"VineGenerator (Billboard): Generated {_generatedNodes.Count} nodes across {totalCables} cable splines");
+        }
+
+        private void GenerateBillboardCableSpline(Vector3 startPos, Vector3 endPos, System.Random random, int noiseOffset)
+        {
+            int pointCount = BillboardPointsPerSpline;
+
+            for (int i = 0; i < pointCount; i++)
+            {
+                float t = (float)i / (pointCount - 1);
+
+                // Linear interpolation between billboard positions
+                var position = Vector3.Lerp(startPos, endPos, t);
+
+                // Apply parabolic sag: sagY = -4 * sagAmount * t * (1 - t)
+                // This gives 0 at t=0, -sagAmount at t=0.5, and 0 at t=1
+                float sagY = -4f * BillboardSagAmount * t * (1f - t);
+                position.y += sagY;
+
+                // Apply lateral noise using existing Free mode noise settings
+                var direction = (endPos - startPos).normalized;
+                var right = Vector3.Cross(Vector3.up, direction).normalized;
+                if (right.sqrMagnitude < 0.01f)
+                {
+                    right = Vector3.Cross(Vector3.forward, direction).normalized;
+                }
+
+                float noiseRight = (Mathf.PerlinNoise(t * FreeNoiseFrequency.x + noiseOffset, 0f) * 2f - 1f) * FreeNoiseAmplitude.x * 0.3f;
+                float noiseUp = (Mathf.PerlinNoise(t * FreeNoiseFrequency.y + noiseOffset + 33f, 100f) * 2f - 1f) * FreeNoiseAmplitude.y * 0.3f;
+
+                position += right * noiseRight + Vector3.up * noiseUp;
+
+                // Apply obstacle avoidance if enabled
+                if (EnableObstacleAvoidance && i > 0 && Physics.CheckSphere(position, ObstacleAvoidanceDistance))
+                {
+                    var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
+                    var dir = (position - prevPos).normalized;
+                    float dist = Vector3.Distance(prevPos, position);
+
+                    if (Physics.SphereCast(prevPos, ObstacleAvoidanceDistance * 0.5f, dir, out var hit, dist + ObstacleAvoidanceDistance))
+                    {
+                        position = hit.point - dir * ObstacleAvoidanceDistance + hit.normal * ObstacleAvoidanceDistance;
+                    }
+                }
+
+                _generatedNodes.Add(new VineNode
+                {
+                    Position = position,
+                    ParentIndex = (i == 0) ? -1 : _generatedNodes.Count - 1,
+                    IsTip = (i == pointCount - 1) ? 1 : 0,
+                    LastGrowIteration = 0
+                });
+            }
         }
 
         private void GeneratePathForTwoSegmentCorridor(
@@ -1541,8 +1676,9 @@ namespace HolyRail.Vines
             // Spawn pickups on generated splines
             SpawnPickUpsOnSplines();
 
-            // In Path mode with loop mode enabled, assign vines to halves
-            if (AttractorGenerationMode == AttractorMode.Path && CityManager != null && CityManager.IsLoopMode)
+            // In Path or Billboard mode with loop mode enabled, assign vines to halves
+            if ((AttractorGenerationMode == AttractorMode.Path || AttractorGenerationMode == AttractorMode.Billboard)
+                && CityManager != null && CityManager.IsLoopMode)
             {
                 AssignVinesToHalves(CityManager.LoopState);
             }
