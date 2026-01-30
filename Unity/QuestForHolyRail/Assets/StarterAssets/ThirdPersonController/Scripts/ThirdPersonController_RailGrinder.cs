@@ -527,6 +527,7 @@ namespace StarterAssets
             if (GameSessionManager.Instance != null)
             {
                 GameSessionManager.Instance.ResetHealth();
+                GameSessionManager.Instance.ClearPickups();
                 GameSessionManager.Instance.OnPlayerDeath += HandlePlayerDeath;
             }
         }

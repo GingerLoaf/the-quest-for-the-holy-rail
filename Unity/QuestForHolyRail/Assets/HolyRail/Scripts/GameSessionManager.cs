@@ -63,6 +63,8 @@ namespace HolyRail.Scripts
 
         private Dictionary<PlayerUpgrade, int> m_upgradeTiers = new Dictionary<PlayerUpgrade, int>();
 
+        private List<ItemPickup> m_activePickups = new List<ItemPickup>();
+
 
 
         public void ResetHealth()
@@ -170,6 +172,14 @@ namespace HolyRail.Scripts
                 
                 amount += kvp.Key.GetValueForTier(kvp.Value);
             }
+
+            foreach (var pickup in m_activePickups)
+            {
+                if (pickup.Type == upgrade)
+                {
+                    amount += pickup.Value;
+                }
+            }
             
             return amount;
         }
@@ -233,6 +243,19 @@ namespace HolyRail.Scripts
             }
 
             return true;
+        }
+
+        public void AddPickup(ItemPickup pickup)
+        {
+            if (pickup == null) return;
+            m_activePickups.Add(pickup);
+            Debug.Log($"[GameSessionManager] Collected pickup: {pickup.DisplayName}");
+        }
+
+        public void ClearPickups()
+        {
+            m_activePickups.Clear();
+            Debug.Log("[GameSessionManager] Cleared all temporary pickups.");
         }
     }
 }
