@@ -33171,7 +33171,7 @@ CharacterController:
   serializedVersion: 3
   m_Height: 1.8
   m_Radius: 0.28
-  m_SlopeLimit: 45
+  m_SlopeLimit: 65.1
   m_StepOffset: 0.25
   m_SkinWidth: 0.02
   m_MinMoveDistance: 0
@@ -33493,6 +33493,12 @@ MonoBehaviour:
   - {fileID: 1309650900629220813}
   - {fileID: 6256176712753622677}
   GrindBoostDecayRate: 1
+  GrindBoostEffectiveness: 0.5
+  RampLayers:
+    serializedVersion: 2
+    m_Bits: 128
+  RampBoostAmount: 5
+  RampBoostCooldown: 0.5
   DashSpeed: 88
   DashDuration: 0.1
   DashCooldown: 1
