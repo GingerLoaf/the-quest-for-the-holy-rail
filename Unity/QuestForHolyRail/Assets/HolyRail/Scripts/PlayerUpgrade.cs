@@ -9,7 +9,8 @@ namespace HolyRail.Scripts
         ParryTimeWindow,
         SprayPaintRadius,
         SprayPaintCapacity,
-        SpeedBoost
+        SpeedBoost,
+        PlayerHealth
     }
 
     [Serializable]
