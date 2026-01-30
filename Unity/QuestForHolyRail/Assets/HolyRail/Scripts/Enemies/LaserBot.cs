@@ -134,11 +134,7 @@ namespace HolyRail.Scripts.Enemies
             // TODO: Apply actual damage when health system is implemented
             Debug.Log($"LaserBot [{name}]: Would deal {_damageAmount} damage to player");
 
-            var playerController = playerCollider.GetComponent<ThirdPersonController_RailGrinder>();
-            if (playerController != null)
-            {
-                playerController.ApplySpeedReduction(0.5f, 0.5f);
-            }
+            GameSessionManager.Instance.TakeDamage(_damageAmount);
         }
 
         private void FindReferences()

@@ -12,11 +12,8 @@ namespace HolyRail.Scripts.Enemies
         [Tooltip("The distance at which the bot explodes.")]
         public float ExplosionRadius = 3f;
 
-        [Tooltip("The multiplier to apply to the player's speed (e.g., 0.2f for an 80% slowdown).")]
-        public float SlowdownMultiplier = 0.2f;
-
-        [Tooltip("How long the slowdown effect lasts.")]
-        public float SlowdownDuration = 3f;
+        [Tooltip("The amount of damage dealt to the player.")]
+        public int DamageAmount = 1;
 
         [Tooltip("A GameObject for the explosion particle effect.")]
         public GameObject ExplosionEffect;
@@ -80,11 +77,7 @@ namespace HolyRail.Scripts.Enemies
 
             if (Spawner && Spawner.Player)
             {
-                ThirdPersonController_RailGrinder playerController = Spawner.Player.GetComponent<ThirdPersonController_RailGrinder>();
-                if (playerController)
-                {
-                    playerController.ApplySpeedReduction(SlowdownMultiplier, SlowdownDuration);
-                }
+                GameSessionManager.Instance.TakeDamage(DamageAmount);
             }
 
             if(Spawner) Spawner.RecycleBot(this, true);
@@ -95,7 +88,7 @@ namespace HolyRail.Scripts.Enemies
             base.OnValidate();
             if (Application.isPlaying)
             {
-                Debug.Log($"KamikazeBot [{name}]: Parameters updated - ChaseSpeed={ChaseSpeed}, ExplosionRadius={ExplosionRadius}, SlowdownMultiplier={SlowdownMultiplier}");
+                Debug.Log($"KamikazeBot [{name}]: Parameters updated - ChaseSpeed={ChaseSpeed}, ExplosionRadius={ExplosionRadius}, DamageAmount={DamageAmount}");
             }
         }
     }

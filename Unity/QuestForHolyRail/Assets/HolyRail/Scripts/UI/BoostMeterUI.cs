@@ -1,7 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace HolyRail.UI
+namespace HolyRail.Scripts.UI
 {
     public class BoostMeterUI : MonoBehaviour
     {
