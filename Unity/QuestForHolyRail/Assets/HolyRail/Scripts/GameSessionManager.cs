@@ -1,7 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.Assertions;
 
@@ -11,30 +9,17 @@ namespace HolyRail.Scripts
 {
     public class GameSessionManager : MonoBehaviour
     {
-        public static GameSessionManager Instance
+        public static GameSessionManager Instance { get; private set; }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        private static void InitializeSubsystem()
         {
-            get
-            {
-                if (isQuitting) return null;
+            if (Instance != null) return;
 
-                if (instance == null)
-                {
-                    instance = FindFirstObjectByType<GameSessionManager>();
-                    if (instance == null)
-                    {
-                        var obj = new GameObject("GameSessionManager");
-                        instance = obj.AddComponent<GameSessionManager>();
-                        Debug.Log("Auto-created GameSessionManager");
-                    }
-                }
-
-                return instance;
-            }
-            private set => instance = value;
+            var obj = new GameObject("GameSessionManager");
+            obj.AddComponent<GameSessionManager>();
+            Debug.Log("[System] GameSessionManager subsystem initialized.");
         }
-
-        private static GameSessionManager instance;
-        private static bool isQuitting = false;
 
         public Action<PlayerUpgrade[]> OnUpgradeListChanged;
 
@@ -43,8 +28,14 @@ namespace HolyRail.Scripts
         public Action<int> OnHealthChanged;
         public Action OnPlayerDeath;
 
-        [Tooltip("Maximum health of the player")]
-        public int MaxHealth = 3;
+        public int MaxHealth
+        {
+            get
+            {
+                var val = GetUpgradeValue(UpgradeType.PlayerHealth);
+                return val > 0 ? Mathf.RoundToInt(val) : 3;
+            }
+        }
 
         public int CurrentHealth { get; private set; }
 
@@ -72,10 +63,7 @@ namespace HolyRail.Scripts
 
         private Dictionary<PlayerUpgrade, int> m_upgradeTiers = new Dictionary<PlayerUpgrade, int>();
 
-        private void OnApplicationQuit()
-        {
-            isQuitting = true;
-        }
+
 
         public void ResetHealth()
         {
@@ -105,7 +93,6 @@ namespace HolyRail.Scripts
             }
 
             Instance = this;
-            isQuitting = false;
 
             // Keep this guy alive through scene loads since it holds all our session state
             DontDestroyOnLoad(this);
@@ -113,7 +100,9 @@ namespace HolyRail.Scripts
             // Default all upgrades to tier 0
             foreach (var upgrade in Resources.LoadAll<PlayerUpgrade>(string.Empty))
             {
-                m_upgradeTiers.Add(upgrade, 0);
+                // Health starts at Tier 1 (Base Health)
+                int initialTier = upgrade.Type == UpgradeType.PlayerHealth ? 1 : 0;
+                m_upgradeTiers.Add(upgrade, initialTier);
             }
         }
 
@@ -149,8 +138,8 @@ namespace HolyRail.Scripts
                 shuffled[randomIndex] = temp;
             }
 
-            // Take up to 3
-            int count = Mathf.Min(shuffled.Count, 3);
+            // Take all available
+            int count = shuffled.Count;
             for (int i = 0; i < count; i++)
             {
                 _currentShopInventory.Add(shuffled[i]);

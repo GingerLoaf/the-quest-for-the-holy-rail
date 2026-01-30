@@ -164,7 +164,7 @@ namespace HolyRail.Scripts.Editor
             kbControlsText.alignment = TextAlignmentOptions.TopLeft;
             kbControlsText.lineSpacing = 12f;
             kbControlsText.color = new Color(0.85f, 0.85f, 0.85f, 1f);
-            kbControlsText.enableWordWrapping = false;
+            kbControlsText.textWrappingMode = TextWrappingModes.Normal;
 
             // --- Gamepad Controls (top-right) ---
             var gamepadPanel = new GameObject("GamepadControls");
@@ -214,7 +214,7 @@ namespace HolyRail.Scripts.Editor
             gpControlsText.alignment = TextAlignmentOptions.TopLeft;
             gpControlsText.lineSpacing = 12f;
             gpControlsText.color = new Color(0.85f, 0.85f, 0.85f, 1f);
-            gpControlsText.enableWordWrapping = false;
+            gpControlsText.textWrappingMode = TextWrappingModes.NoWrap;
 
             // Wire up references
             var serializedObject = new SerializedObject(pauseManager);

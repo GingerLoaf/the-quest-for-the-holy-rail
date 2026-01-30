@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 35944ef7fd554f8dab86f075e4a6b546, type: 3}
+  m_Name: Upgrade_Health
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerUpgrade
+  Icon: {fileID: 10911, guid: 0000000000000000f000000000000000, type: 0}
+  DisplayName: Health Upgrade
+  Type: 5
+  AllowInShop: 1
+  TierData:
+  - Tier: 1
+    Value: 3
+    Cost: 100
+  - Tier: 2
+    Value: 5
+    Cost: 10000
+  - Tier: 3
+    Value: 8
+    Cost: 1000000
+  - Tier: 4
+    Value: 10
+    Cost: 1000000
