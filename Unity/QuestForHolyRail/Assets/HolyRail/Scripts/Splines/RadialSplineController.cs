@@ -131,11 +131,17 @@ namespace HolyRail.Splines
         private void Update()
         {
             // Check if transform has changed
-            if (transform.position != _lastPosition || transform.rotation != _lastRotation)
+            bool transformChanged = transform.position != _lastPosition || transform.rotation != _lastRotation;
+            if (transformChanged)
             {
-                _needsRegeneration = true;
                 _lastPosition = transform.position;
                 _lastRotation = transform.rotation;
+                
+                // If only transform changed, we just need to update positions, not regenerate splines
+                if (!_needsRegeneration)
+                {
+                    UpdateTransforms();
+                }
             }
 
             if (_needsRegeneration)
@@ -164,6 +170,34 @@ namespace HolyRail.Splines
             {
                 RenderClones();
             }
+        }
+
+        /// <summary>
+        /// Lightweight update for when only the controller transform has moved.
+        /// Updates clone data and container transforms without touching spline geometry.
+        /// </summary>
+        private void UpdateTransforms()
+        {
+            if (MasterSpline == null) return;
+
+            CalculateCloneTransforms();
+            PositionMasterSpline();
+
+            // Update container transforms
+            int containerIdx = 0;
+            foreach (var clone in _cloneData)
+            {
+                if (clone.CloneIndex == 0) continue;
+                if (containerIdx >= _grindableContainers.Count) break;
+
+                var container = _grindableContainers[containerIdx];
+                container.transform.position = clone.Position;
+                container.transform.rotation = new Quaternion(clone.Rotation.x, clone.Rotation.y, clone.Rotation.z, clone.Rotation.w);
+                container.transform.localScale = clone.Scale;
+                containerIdx++;
+            }
+
+            InitializeBuffers();
         }
 
 #if UNITY_EDITOR
@@ -420,32 +454,71 @@ namespace HolyRail.Splines
         }
 
         /// <summary>
-        /// Create child GameObjects with SplineContainer for grinding detection.
+        /// Create or update child GameObjects with SplineContainer for grinding detection.
         /// Skip index 0 since the master spline serves as the grindable spline at that position.
         /// </summary>
         private void CreateGrindableContainers()
         {
-            ClearGrindableContainers();
+            // Prune nulls from the list
+            _grindableContainers.RemoveAll(c => c == null);
 
             if (MasterSpline == null || MasterSpline.Splines == null || MasterSpline.Splines.Count == 0)
+            {
+                ClearGrindableContainers();
                 return;
+            }
 
+            // Calculate needed containers
+            // We skip CloneIndex 0
+            int neededCount = _cloneData.Count > 0 ? _cloneData.Count - 1 : 0;
+            if (neededCount < 0) neededCount = 0;
+
+            // Ensure pool size matches needed count
+            // 1. Create missing
+            while (_grindableContainers.Count < neededCount)
+            {
+                var go = new GameObject("GrindSpline_Temp");
+                go.transform.SetParent(transform);
+                var container = go.AddComponent<SplineContainer>();
+                _grindableContainers.Add(container);
+            }
+
+            // 2. Destroy excess
+            while (_grindableContainers.Count > neededCount)
+            {
+                var lastIdx = _grindableContainers.Count - 1;
+                var container = _grindableContainers[lastIdx];
+                if (container != null && container.gameObject != null)
+                {
+#if UNITY_EDITOR
+                    if (!Application.isPlaying)
+                        DestroyImmediate(container.gameObject);
+                    else
+#endif
+                        Destroy(container.gameObject);
+                }
+                _grindableContainers.RemoveAt(lastIdx);
+            }
+
+            // 3. Update all containers
+            int containerIdx = 0;
             foreach (var clone in _cloneData)
             {
-                // Skip index 0 - master spline is already at this position
                 if (clone.CloneIndex == 0)
                     continue;
 
-                var go = new GameObject($"GrindSpline_{clone.CloneIndex}");
-                go.transform.SetParent(transform);
-                go.transform.position = clone.Position;
-                go.transform.rotation = new Quaternion(clone.Rotation.x, clone.Rotation.y, clone.Rotation.z, clone.Rotation.w);
-                go.transform.localScale = clone.Scale;
+                // Safety check in case of unexpected list state
+                if (containerIdx >= _grindableContainers.Count) break;
 
-                var container = go.AddComponent<SplineContainer>();
+                var container = _grindableContainers[containerIdx];
+                container.gameObject.name = $"GrindSpline_{clone.CloneIndex}";
+                container.transform.position = clone.Position;
+                container.transform.rotation = new Quaternion(clone.Rotation.x, clone.Rotation.y, clone.Rotation.z, clone.Rotation.w);
+                container.transform.localScale = clone.Scale;
+
                 CopySplineKnots(MasterSpline, container, clone.Scale);
-
-                _grindableContainers.Add(container);
+                
+                containerIdx++;
             }
 
             // Notify grinding system to refresh its cache (runtime only)
@@ -458,17 +531,15 @@ namespace HolyRail.Splines
 
         /// <summary>
         /// Copy spline knots from master to clone container.
+        /// Uses a replace-all approach to minimize native buffer regeneration events.
         /// </summary>
         private void CopySplineKnots(SplineContainer source, SplineContainer target, Vector3 mirrorScale)
         {
-            // Clear existing splines (Splines is IReadOnlyList, so use RemoveSplineAt)
-            while (target.Splines.Count > 0)
-            {
-                target.RemoveSplineAt(0);
-            }
+            var newSplines = new List<Spline>(source.Splines.Count);
 
             foreach (var sourceSpline in source.Splines)
             {
+                // Construct the spline with all knots at once
                 var newSpline = new Spline();
                 newSpline.Closed = sourceSpline.Closed;
 
@@ -495,9 +566,11 @@ namespace HolyRail.Splines
 
                     newSpline.Add(newKnot);
                 }
-
-                target.AddSpline(newSpline);
+                newSplines.Add(newSpline);
             }
+
+            // Assigning the list to the container triggers the native representation update once
+            target.Splines = newSplines;
         }
 
         /// <summary>

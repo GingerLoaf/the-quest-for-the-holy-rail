@@ -120,6 +120,13 @@ namespace HolyRail.Scripts
             Destroy(tempGO, duration);
         }
 
+        public void Heal(int amount)
+        {
+            CurrentHealth = Mathf.Min(CurrentHealth + amount, MaxHealth);
+            Debug.Log($"[GameSessionManager] Player healed {amount}. Current Health: {CurrentHealth}");
+            OnHealthChanged?.Invoke(CurrentHealth);
+        }
+
         private void Awake()
         {
             // If we already have one in static memory, kill this one

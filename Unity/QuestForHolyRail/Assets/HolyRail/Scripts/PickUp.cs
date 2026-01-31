@@ -1,23 +1,35 @@
 using UnityEngine;
 using StarterAssets;
+using UnityEngine.Serialization;
 
 namespace HolyRail.Scripts
 {
+    public enum PickupPersistence
+    {
+        Permanent,
+        Temporary
+    }
+
     public class PickUp : MonoBehaviour
     {
+        [FormerlySerializedAs("Persistence")] [Header("Classification")]
+        public PickupPersistence persistence = PickupPersistence.Temporary;
+
+        [FormerlySerializedAs("PermanentUpgrade")]
+        [Header("Data Assets")]
+        [Tooltip("Assign for Permanent upgrades (persists between levels)")]
+        public PlayerUpgrade permanentUpgrade;
+        
+        [FormerlySerializedAs("TemporaryPickup")] [Tooltip("Assign for Temporary upgrades (reset per run). Health drops should be Temporary.")]
+        public ItemPickup temporaryPickup;
+
+        [FormerlySerializedAs("CollectionRadius")]
         [Header("Pickup Settings")]
         [Tooltip("Distance within which the player can collect this pickup")]
-        public float CollectionRadius = 0.25f;
+        public float collectionRadius = 0.5f;
 
-        // Speed boost fields commented out for future repurposing
-        // [Tooltip("How much to increase the player's speed")]
-        // public float SpeedIncrease = 0.20f;
-
-        // [Tooltip("Duration of the speed boost (-1 uses the player's default)")]
-        // public float BoostDuration = -1f;
-
-        [Tooltip("Visual effect or object to disable on collection")]
-        public Renderer VisualObject;
+        [FormerlySerializedAs("VisualObject")] [Tooltip("Visual object to disable on collection")]
+        public Renderer visualObject;
 
         private bool _collected = false;
         private Transform _playerTransform;
@@ -32,12 +44,12 @@ namespace HolyRail.Scripts
 
         private void Update()
         {
-            if (_collected || _playerTransform == null)
+            if (_collected || !_playerTransform)
                 return;
 
             float distance = Vector3.Distance(transform.position, _playerTransform.position);
 
-            if (distance <= CollectionRadius)
+            if (distance <= collectionRadius)
             {
                 Collect();
             }
@@ -46,12 +58,26 @@ namespace HolyRail.Scripts
         private void Collect()
         {
             _collected = true;
+            var session = GameSessionManager.Instance;
 
-            // Speed boost call commented out for future repurposing
-            // if (ThirdPersonController_RailGrinder.Instance != null)
-            // {
-            //     ThirdPersonController_RailGrinder.Instance.AddTemporarySpeedBoost(SpeedIncrease, BoostDuration);
-            // }
+            if (session)
+            {
+                if (persistence == PickupPersistence.Permanent && permanentUpgrade)
+                {
+                    session.AddUpgrade(permanentUpgrade);
+                }
+                else if (persistence == PickupPersistence.Temporary && temporaryPickup)
+                {
+                    // Add to temporary stats
+                    session.AddPickup(temporaryPickup);
+
+                    // Special Case: Health Pickup restores current health immediately
+                    if (temporaryPickup.type == PickupType.HealthPickup)
+                    {
+                        session.Heal(Mathf.RoundToInt(temporaryPickup.value));
+                    }
+                }
+            }
 
             // Trigger haptic feedback
             if (GamepadHaptics.Instance != null)
@@ -60,9 +86,9 @@ namespace HolyRail.Scripts
             }
 
             // Hide or destroy the pickup
-            if (VisualObject != null)
+            if (visualObject)
             {
-                VisualObject.enabled = false;
+                visualObject.enabled = false;
             }
 
             // Destroy the pickup after a short delay to allow any effects to play
@@ -71,8 +97,8 @@ namespace HolyRail.Scripts
 
         private void OnDrawGizmosSelected()
         {
-            Gizmos.color = Color.yellow;
-            Gizmos.DrawWireSphere(transform.position, CollectionRadius);
+            Gizmos.color = persistence == PickupPersistence.Permanent ? Color.magenta : Color.yellow;
+            Gizmos.DrawWireSphere(transform.position, collectionRadius);
         }
     }
 }
