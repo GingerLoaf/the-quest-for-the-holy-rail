@@ -1,10 +1,12 @@
+using System;
 using UnityEngine;
+using Random = UnityEngine.Random;
 
 namespace HolyRail.Scripts.Enemies
 {
     public class ShooterBot : BaseEnemyBot
     {
-        private float _fireTimer;
+        private float? _fireTimer = null;
 
         [Header("Shooter Settings")]
         [field: Tooltip("Seconds between each shot fired by a bot (can be overridden by EnemySpawner)")]
@@ -53,8 +55,6 @@ namespace HolyRail.Scripts.Enemies
         [field: SerializeField]
         public Vector2 OffsetRangeZ { get; private set; } = new(10f, 20f);
 
-        private Vector3 _randomizedOffset;
-
         [Header("Movement")]
         [field: Tooltip("How quickly bots catch up to target position (higher = snappier)")]
         [field: SerializeField]
@@ -97,12 +97,11 @@ namespace HolyRail.Scripts.Enemies
         public override void OnSpawn()
         {
             base.OnSpawn();
-            _fireTimer = Random.Range(0f, EffectiveFireRate);
 
-            Debug.Log($"ShooterBot [{name}]: Spawned with FireRate={EffectiveFireRate}s, FiringRange={EffectiveFiringRange}m, first shot in {_fireTimer:F1}s");
+            Debug.Log($"ShooterBot [{name}]: Spawned with FireRate={EffectiveFireRate}s, FiringRange={EffectiveFiringRange}m");
 
             // Randomize position offset within configured ranges
-            _randomizedOffset = new Vector3(
+            _targetOffset = new Vector3(
                 Random.Range(OffsetRangeX.x, OffsetRangeX.y),
                 Random.Range(OffsetRangeY.x, OffsetRangeY.y),
                 Random.Range(OffsetRangeZ.x, OffsetRangeZ.y)
@@ -122,13 +121,15 @@ namespace HolyRail.Scripts.Enemies
 
             var playerTransform = Spawner.Player;
 
-            // Calculate target position: player + offset in world space
-            Vector3 targetPosition = playerTransform.position + _randomizedOffset;
+            // Calculate target position: camera + offset in world space
+            Vector3 targetPosition = Camera.main.transform.TransformPoint(_targetOffset);
 
             // Smoothly interpolate toward target (keeps up with any player speed)
             Vector3 currentPos = transform.position;
-            float t = 1f - Mathf.Exp(-FollowSpeed * Time.deltaTime);
-            Vector3 newPosition = Vector3.Lerp(currentPos, targetPosition, t);
+            
+            var distanceMultiplier = Mathf.Min(Mathf.Max(Vector3.Distance(targetPosition, currentPos), 1f), 3f);
+            var adjustedFollowSpeed = FollowSpeed * distanceMultiplier;
+            Vector3 newPosition = Vector3.MoveTowards(currentPos, targetPosition, Time.deltaTime * adjustedFollowSpeed);
 
             // Check for wall collision and resolve
             newPosition = ResolveWallCollision(currentPos, newPosition);
@@ -202,6 +203,7 @@ namespace HolyRail.Scripts.Enemies
         protected override void Update()
         {
             base.Update();
+            
             UpdatePlayerVelocity();
             UpdateFlash();
             UpdateFiring();
@@ -261,6 +263,22 @@ namespace HolyRail.Scripts.Enemies
                 return;
             }
 
+            if (_botState != BotState.Active)
+            {
+                return;
+            }
+
+            // Skip firing logic if idle
+            if (_isIdle)
+            {
+                return;
+            }
+
+            if (!_fireTimer.HasValue)
+            {
+                return;
+            }
+
             _fireTimer -= Time.deltaTime;
 
             float effectiveRange = EffectiveFiringRange;
@@ -299,7 +317,20 @@ namespace HolyRail.Scripts.Enemies
                     Debug.Log($"ShooterBot [{name}]: Player out of range ({distanceToPlayer:F1}m > {effectiveRange}m), not firing.");
                 }
 
-                _fireTimer = effectiveRate;
+                _fireTimer = null;
+            }
+        }
+
+        public override void OnCommandReceived(string command, params object[] args)
+        {
+            base.OnCommandReceived(command, args);
+            
+            switch (command)
+            {
+                case "Attack":
+                    _isIdle = false;
+                    ResetFireTimer();
+                    break;
             }
         }
 

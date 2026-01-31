@@ -5,6 +5,7 @@ using HolyRail.Scripts;
 
 namespace HolyRail.Scripts.Enemies
 {
+    // Refactored for EnemyController - auto-spawning removed
     [System.Serializable]
     public class SpawnableEnemy
     {
@@ -49,14 +50,6 @@ namespace HolyRail.Scripts.Enemies
         [field: SerializeField]
         public float SpawnDepth { get; private set; } = 10f;
 
-        [Header("Spawn Rate")]
-        [field: Tooltip("Seconds between each enemy spawn")]
-        [field: SerializeField]
-        public float SpawnInterval { get; private set; } = 2f;
-
-        [field: Tooltip("Maximum number of enemies active at once")]
-        [field: SerializeField]
-        public int MaxActiveEnemies { get; private set; } = 10;
 
         [Header("Pool Sizes")]
         [field: Tooltip("Total bullet instances to pre-allocate in the pool")]
@@ -131,7 +124,6 @@ namespace HolyRail.Scripts.Enemies
         private Queue<EnemyBullet> _bulletPool;
         private List<BaseEnemyBot> _activeBots;
         private List<EnemyBullet> _activeBullets = new();
-        private float _spawnTimer;
         private float _totalSpawnWeight;
 
         private void Awake()
@@ -173,7 +165,7 @@ namespace HolyRail.Scripts.Enemies
             // Log parameter changes during runtime for debugging
             if (Application.isPlaying)
             {
-                Debug.Log($"EnemySpawner: Parameters updated - BulletSpeed={BulletSpeed}, SpawnInterval={SpawnInterval}, MaxActiveEnemies={MaxActiveEnemies}");
+                Debug.Log($"EnemySpawner: Parameters updated - BulletSpeed={BulletSpeed}");
                 if (OverrideFireRate)
                 {
                     Debug.Log($"EnemySpawner: Global FireRate override active = {GlobalFireRate}s");
@@ -309,14 +301,6 @@ namespace HolyRail.Scripts.Enemies
                 return;
             }
 
-            _spawnTimer += Time.deltaTime;
-
-            if (_spawnTimer >= SpawnInterval && _activeBots.Count < MaxActiveEnemies)
-            {
-                SpawnBot();
-                _spawnTimer = 0f;
-            }
-
             // Check bullet proximity for parry threshold
             foreach (var bullet in _activeBullets)
             {
@@ -366,6 +350,42 @@ namespace HolyRail.Scripts.Enemies
             bot.OnSpawn();
             bot.gameObject.SetActive(true);
             _activeBots.Add(bot);
+        }
+
+        /// <summary>
+        /// Spawns an enemy for the EnemyController at a specified position.
+        /// Enemy will fly in from offscreen to the final position.
+        /// </summary>
+        public BaseEnemyBot SpawnEnemy(GameObject enemyPrefab, Vector3 finalPosition, bool startsIdle, float enterDuration)
+        {
+            if (!_enemyPools.TryGetValue(enemyPrefab, out var pool))
+            {
+                Debug.LogError($"EnemySpawner: No pool found for prefab {enemyPrefab.name}");
+                return null;
+            }
+
+            if (pool.Count == 0)
+            {
+                Debug.LogWarning($"EnemySpawner: Pool empty for {enemyPrefab.name}");
+                return null;
+            }
+
+            var bot = pool.Dequeue();
+            _instanceIdToPrefabMap.Add(bot.gameObject.GetInstanceID(), enemyPrefab);
+
+            // Calculate offscreen position (behind player)
+            Vector3 offscreenPos = finalPosition;
+            if (Player != null)
+            {
+                offscreenPos = finalPosition - Player.forward * 30f;
+            }
+
+            bot.transform.position = offscreenPos;
+            bot.OnSpawn(startsIdle, finalPosition, enterDuration);
+            bot.gameObject.SetActive(true);
+            _activeBots.Add(bot);
+
+            return bot;
         }
 
         private GameObject GetRandomEnemyPrefab()

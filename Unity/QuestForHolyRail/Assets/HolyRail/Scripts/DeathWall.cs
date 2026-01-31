@@ -317,7 +317,8 @@ namespace HolyRail.Scripts
 
             if (other.TryGetComponent<BaseEnemyBot>(out var bot))
             {
-                EnemySpawner.Instance?.RecycleBot(bot);
+                // Zack: Bots were spawning in behind the wall and dying immediately so I turned this off
+                //EnemySpawner.Instance?.RecycleBot(bot);
                 return;
             }
 

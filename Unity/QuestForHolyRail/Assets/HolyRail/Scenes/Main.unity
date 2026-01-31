@@ -720,11 +720,6 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
---- !u!4 &388309865 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: 2719569588957798408, guid: df0598a8a492f624aa26eafe2d8b616b, type: 3}
-  m_PrefabInstance: {fileID: 91670753}
-  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &396438357
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -1137,6 +1132,14 @@ PrefabInstance:
     - target: {fileID: 6777233405495993488, guid: 23de3d4f995348646889de355adde9be, type: 3}
       propertyPath: m_Name
       value: Player_Ophelia
+      objectReference: {fileID: 0}
+    - target: {fileID: 7999327760160305176, guid: 23de3d4f995348646889de355adde9be, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: -0.03453681
+      objectReference: {fileID: 0}
+    - target: {fileID: 8252906182989687641, guid: 23de3d4f995348646889de355adde9be, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: -0.03453678
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -2879,6 +2882,32 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: f6d148d888ffbf54b9afe9936dfaec1f, type: 3}
+--- !u!1 &1963062687 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 6558885053267105923, guid: ab0aafce3c0224be7befd1b0009a2a1d, type: 3}
+  m_PrefabInstance: {fileID: 3642659639112069008}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &1963062690
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1963062687}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f27746cddf45d46239c7228c18364f89, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::HolyRail.Scripts.Enemies.EnemyController
+  _availablePlans:
+  - {fileID: 11400000, guid: 915a8009d5ca4461d8b51256a02525b5, type: 2}
+  _planCooldown: 3
+  _debugLogging: 1
+--- !u!4 &2059586932 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 6144670705462001194, guid: 23de3d4f995348646889de355adde9be, type: 3}
+  m_PrefabInstance: {fileID: 677026847}
+  m_PrefabAsset: {fileID: 0}
 --- !u!33 &285757673750222148
 MeshFilter:
   m_ObjectHideFlags: 0
@@ -3198,7 +3227,7 @@ PrefabInstance:
     - target: {fileID: 4468446077880731019, guid: ab0aafce3c0224be7befd1b0009a2a1d, type: 3}
       propertyPath: <Player>k__BackingField
       value: 
-      objectReference: {fileID: 388309865}
+      objectReference: {fileID: 2059586932}
     - target: {fileID: 4468446077880731019, guid: ab0aafce3c0224be7befd1b0009a2a1d, type: 3}
       propertyPath: <BulletSpeed>k__BackingField
       value: 8
@@ -3282,7 +3311,10 @@ PrefabInstance:
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 6558885053267105923, guid: ab0aafce3c0224be7befd1b0009a2a1d, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1963062690}
   m_SourcePrefab: {fileID: 100100000, guid: ab0aafce3c0224be7befd1b0009a2a1d, type: 3}
 --- !u!1 &3838825835289551678
 GameObject:

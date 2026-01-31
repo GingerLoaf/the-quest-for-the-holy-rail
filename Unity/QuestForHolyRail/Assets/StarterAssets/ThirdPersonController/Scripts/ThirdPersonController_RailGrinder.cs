@@ -2031,10 +2031,21 @@ namespace StarterAssets
             var spawner = EnemySpawner.Instance;
             if (spawner == null) return;
 
+            var didDeflect = false;
             var bullets = spawner.GetAllBulletsInParryRange();
             foreach (var bullet in bullets)
             {
                 bullet.Deflect();
+                didDeflect = true;
+            }
+
+            if (didDeflect)
+            {
+                // Slow down time to emphasize the hit
+                if (Camera.main != null && Camera.main.TryGetComponent(out CameraEffects cameraEffects))
+                {
+                    cameraEffects.PunchTime(.3f);
+                }
             }
         }
 

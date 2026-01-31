@@ -120,6 +120,12 @@ namespace HolyRail.Scripts.Enemies
                 return;
             }
 
+            // Skip damage if idle
+            if (_isIdle)
+            {
+                return;
+            }
+
             if (Time.time < _lastDamageTime + _damageCooldown)
             {
                 return;
@@ -205,6 +211,19 @@ namespace HolyRail.Scripts.Enemies
             _propertyBlock.SetFloat(PatternSpinFrontId, _patternSpinFront * Mathf.Deg2Rad);
             _propertyBlock.SetFloat(PatternSpinBackId, _patternSpinBack * Mathf.Deg2Rad);
             _laserFieldRenderer.SetPropertyBlock(_propertyBlock);
+        }
+
+        public override void OnCommandReceived(string command, params object[] args)
+        {
+            base.OnCommandReceived(command, args);
+            
+            switch (command)
+            {
+                case "Attack":
+                    _isIdle = false;
+                    Debug.Log($"LaserBot [{name}]: Received 'Attack' command, laser field activated");
+                    break;
+            }
         }
 
         protected override void OnValidate()

@@ -1,0 +1,74 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ca07577ae8ee744d69e1d915e149d472, type: 3}
+  m_Name: EnemyPlan01
+  m_EditorClassIdentifier: Assembly-CSharp::HolyRail.Scripts.Enemies.EnemyPlan
+  PlanName: Unnamed Plan
+  SpawnWeight: 10
+  LoopActions: 0
+  EnterDuration: 1.5
+  ExitDuration: 1.5
+  Actions:
+  - rid: 2696228550994559102
+  - rid: 2696228550994559107
+  - rid: 2696228550994559108
+  - rid: 2696228550994559211
+  - rid: 2696228550994559109
+  - rid: 2696228550994559110
+  - rid: 2696228550994559209
+  references:
+    version: 2
+    RefIds:
+    - rid: 2696228550994559102
+      type: {class: SpawnEnemyAction, ns: HolyRail.Scripts.Enemies.Actions, asm: Assembly-CSharp}
+      data:
+        Delay: 0
+        EnemyPrefab: {fileID: 1000000000000000000, guid: f1f2f3f4f5f67890f1f2f3f4f5f67890, type: 3}
+        RelativePosition: {x: 0, y: 5, z: 10}
+        PositionVariance: {x: 0, y: 0, z: 0}
+        StartsIdle: 1
+    - rid: 2696228550994559107
+      type: {class: CommandEnemyAction, ns: HolyRail.Scripts.Enemies.Actions, asm: Assembly-CSharp}
+      data:
+        Delay: 1
+        TargetEnemyIndex: 0
+        Command: 0
+        TargetPosition: {x: 0, y: 0, z: 0}
+    - rid: 2696228550994559108
+      type: {class: CommandEnemyAction, ns: HolyRail.Scripts.Enemies.Actions, asm: Assembly-CSharp}
+      data:
+        Delay: 1
+        TargetEnemyIndex: 0
+        Command: 1
+        TargetPosition: {x: 5, y: 5, z: 10}
+    - rid: 2696228550994559109
+      type: {class: CommandEnemyAction, ns: HolyRail.Scripts.Enemies.Actions, asm: Assembly-CSharp}
+      data:
+        Delay: 1
+        TargetEnemyIndex: 0
+        Command: 0
+        TargetPosition: {x: 0, y: 0, z: 0}
+    - rid: 2696228550994559110
+      type: {class: CommandEnemyAction, ns: HolyRail.Scripts.Enemies.Actions, asm: Assembly-CSharp}
+      data:
+        Delay: 1
+        TargetEnemyIndex: 0
+        Command: 1
+        TargetPosition: {x: 0, y: 5, z: 10}
+    - rid: 2696228550994559209
+      type: {class: WaitAction, ns: HolyRail.Scripts.Enemies.Actions, asm: Assembly-CSharp}
+      data:
+        Delay: 5
+    - rid: 2696228550994559211
+      type: {class: WaitAction, ns: HolyRail.Scripts.Enemies.Actions, asm: Assembly-CSharp}
+      data:
+        Delay: 2

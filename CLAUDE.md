@@ -13,6 +13,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a Unity project. Open the project folder `Unity/QuestForHolyRail/` in Unity Hub. There are no CLI build/test commands - all building and testing happens through the Unity Editor.
 
+## Rules
+- Any time you recursively parse directories of files to get an understanding of the architecture or meaning, please create a CLAUDE.md file at the root of the directory searched and store what you learned in that file. Then, any time you are about to recursively search a directory, check if there is a CLAUDE.md file there first that you can read first before re-interpreting the entire directory. This will save use of tokens and time.
+
 ## Architecture
 
 ### Core Systems

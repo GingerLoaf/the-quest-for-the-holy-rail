@@ -27,6 +27,12 @@ namespace HolyRail.Scripts.Enemies
                 return;
             }
 
+            // Skip movement if idle
+            if (_isIdle)
+            {
+                return;
+            }
+
             // Move directly toward player position
             Vector3 targetPosition = Spawner.Player.position;
             Vector3 direction = (targetPosition - transform.position).normalized;
@@ -50,9 +56,10 @@ namespace HolyRail.Scripts.Enemies
 
         protected override void Update()
         {
-            if (_isExploding) return;
-
             base.Update();
+            
+            if (_isExploding) return;
+            if (_isIdle) return;
 
             if (!Spawner || !Spawner.Player)
             {
@@ -81,6 +88,17 @@ namespace HolyRail.Scripts.Enemies
             }
 
             if(Spawner) Spawner.RecycleBot(this, true);
+        }
+
+        public override void OnCommandReceived(string command, params object[] args)
+        {
+            switch (command)
+            {
+                case "Attack":
+                    _isIdle = false;
+                    Debug.Log($"KamikazeBot [{name}]: Received 'Attack' command, beginning chase");
+                    break;
+            }
         }
 
         protected override void OnValidate()

@@ -2,8 +2,16 @@ using UnityEngine;
 
 namespace HolyRail.Scripts.Enemies
 {
+    // Extended with state machine and command support for EnemyController
     public abstract class BaseEnemyBot : MonoBehaviour
     {
+        public enum BotState
+        {
+            Entering,   // Flying in from offscreen
+            Active,     // In position, executing behavior
+            Exiting     // Flying offscreen
+        }
+
         protected EnemySpawner Spawner;
 
         [Header("Bot Settings")]
@@ -16,6 +24,16 @@ namespace HolyRail.Scripts.Enemies
         public float RotationSmoothTime { get; private set; } = 0.12f;
 
         protected Camera MainCamera { get; private set; }
+
+        // State management
+        protected BotState _botState = BotState.Active;
+        protected bool _isIdle = false;
+
+        // Transition movement
+        protected Vector3 _targetOffset;
+        protected Vector3 _startOffset;
+        protected float _transitionProgress = 0f;
+        protected float _transitionDuration = 1.5f;
 
         public void Initialize(EnemySpawner spawner)
         {
@@ -33,10 +51,127 @@ namespace HolyRail.Scripts.Enemies
 
         public virtual void OnSpawn()
         {
+            // Legacy overload for backward compatibility
+            _botState = BotState.Active;
+            _isIdle = false;
+        }
+
+        /// <summary>
+        /// Called when enemy is spawned by EnemyController.
+        /// Enemy starts offscreen and flies to final position.
+        /// </summary>
+        public virtual void OnSpawn(bool startsIdle, Vector3 finalPosition, float enterDuration)
+        {
+            _isIdle = startsIdle;
+            _startOffset = Camera.main.transform.InverseTransformPoint(transform.position);
+            _targetOffset = Camera.main.transform.InverseTransformPoint(finalPosition);
+            _transitionDuration = enterDuration;
+            _transitionProgress = 0f;
+            _botState = BotState.Entering;
+
+            if (EnemyController.Instance != null)
+            {
+                EnemyController.Instance.OnEnemySpawned(this);
+            }
         }
 
         public virtual void OnRecycle()
         {
+            if (EnemyController.Instance != null)
+            {
+                EnemyController.Instance.OnEnemyKilled(this);
+            }
+        }
+
+        /// <summary>
+        /// Begins the exit transition, flying enemy offscreen.
+        /// </summary>
+        public virtual void BeginExitTransition(float exitDuration)
+        {
+            _botState = BotState.Exiting;
+            _transitionProgress = 0f;
+            _transitionDuration = exitDuration;
+
+            // Target is offscreen behind player
+            if (Spawner != null && Spawner.Player != null)
+            {
+                _startOffset = Spawner.Player.InverseTransformPoint(transform.position);
+                _targetOffset = Spawner.Player.forward * -30f;
+            }
+
+            // Disable attacks while exiting
+            _isIdle = true;
+        }
+
+        /// <summary>
+        /// Updates smooth transition movement (entering or exiting).
+        /// </summary>
+        protected virtual void UpdateTransition()
+        {
+            if (_botState == BotState.Active)
+            {
+                return;
+            }
+
+            _transitionProgress += Time.deltaTime;
+            var progressFraction = _transitionProgress / _transitionDuration;
+            if (progressFraction >= 1f)
+            {
+                transform.position = Camera.main.transform.TransformPoint(_targetOffset);
+
+                if (_botState == BotState.Entering)
+                {
+                    _botState = BotState.Active;
+                    if (EnemyController.Instance != null)
+                    {
+                        EnemyController.Instance.OnEnemyEnteredStage(this);
+                    }
+                }
+                else if (_botState == BotState.Exiting)
+                {
+                    if (EnemyController.Instance != null)
+                    {
+                        EnemyController.Instance.OnEnemyExited(this);
+                    }
+                    if (Spawner != null)
+                    {
+                        Spawner.RecycleBot(this, false); // Don't award points for timeout
+                    }
+                }
+            }
+            else
+            {
+                // Smooth lerp to target
+                var currentOffset = Vector3.MoveTowards(
+                    _startOffset,
+                    _targetOffset,
+                    progressFraction
+                );
+                
+                transform.position = Camera.main.transform.TransformPoint(currentOffset);
+            }
+        }
+
+        /// <summary>
+        /// Receives commands from EnemyController.
+        /// Override in subclasses to handle specific commands.
+        /// </summary>
+        public virtual void OnCommandReceived(string command, params object[] args)
+        {
+            switch (command)
+            {
+                case "MoveTo":
+                    if (args.Length > 0 && args[0] is Vector3 pos)
+                    {
+                        if (Spawner != null && Spawner.Player != null)
+                        {
+                            _targetOffset = pos;
+                            Debug.Log($"ShooterBot [{name}]: Received 'MoveTo' command, new offset={_targetOffset}");
+                        }
+                    }
+
+                    break;
+            }
         }
 
         protected virtual void Update()
@@ -46,7 +181,13 @@ namespace HolyRail.Scripts.Enemies
                 return;
             }
 
-            UpdateMovement();
+            UpdateTransition();
+
+            // Only update movement if in Active state
+            if (_botState == BotState.Active)
+            {
+                UpdateMovement();
+            }
         }
 
         protected abstract void UpdateMovement();
