@@ -446,6 +446,10 @@ namespace StarterAssets
         [Header("Parry VFX")]
         [Tooltip("Trail renderers to enable during parry window")]
         [SerializeField] private TrailRenderer[] _parryTrailRenderers;
+        
+        [Header("Drops")]
+        [Tooltip("Prefab to spawn when successfully parrying (e.g. Health Pickup)")]
+        [SerializeField] private GameObject _healthPickupPrefab;
 
         [Header("Spray Graffiti")]
         [Tooltip("Particle system for spray effect")]
@@ -2599,20 +2603,37 @@ namespace StarterAssets
             var spawner = EnemySpawner.Instance;
             if (spawner == null) return;
 
-            var didDeflect = false;
             var bullets = spawner.GetAllBulletsInParryRange();
             foreach (var bullet in bullets)
             {
                 bullet.Deflect();
-                didDeflect = true;
-            }
-
-            if (didDeflect)
-            {
-                // Slow down time to emphasize the hit
-                if (Camera.main != null && Camera.main.TryGetComponent(out CameraEffects cameraEffects))
+                
+                // Spawn health drop on successful parry if assigned
+                if (_healthPickupPrefab != null)
                 {
-                    cameraEffects.PunchTime(.3f);
+                    Vector3 spawnPos = bullet.transform.position;
+
+                    // If grinding, spawn the pickup on the rail ahead of the player
+                    if (_isGrinding && GrindSpline != null)
+                    {
+                        // Determine look-ahead direction based on grind direction
+                        float direction = (_grindDirection == SplineTravelDirection.EndToStart) ? -1f : 1f;
+                        
+                        // Look ahead a small distance (e.g. 5 meters)
+                        // Note: Spline T is normalized, so we need to convert meters to T
+                        float lookAheadMeters = 5f;
+                        float lookAheadT = lookAheadMeters / _grindSplineLength; 
+                        
+                        float spawnT = Mathf.Clamp01(_grindT + (lookAheadT * direction));
+                        
+                        // Evaluate position on spline
+                        spawnPos = (Vector3)GrindSpline.EvaluatePosition(spawnT);
+                        
+                        // Add height offset (using the same offset as vine generator if possible, or a default)
+                        spawnPos += transform.up * 1.0f;
+                    }
+
+                    Instantiate(_healthPickupPrefab, spawnPos, Quaternion.identity);
                 }
 
                 // Trigger haptic feedback for successful parry

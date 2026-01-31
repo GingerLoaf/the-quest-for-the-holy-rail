@@ -277,6 +277,8 @@ namespace HolyRail.Vines
 
         [Header("Pickup Spawning")]
         [field: SerializeField] public GameObject PickUpPrefab { get; set; }
+        [field: SerializeField] public GameObject RarePickUpPrefab { get; set; }
+        [field: SerializeField, Range(0f, 1f)] public float RarePickUpChance { get; set; } = 0.1f;
         [field: SerializeField] public int PickUpCount { get; set; } = 3;
         [field: SerializeField, Range(0.05f, 0.45f)] public float MinPickUpSpacing { get; set; } = 0.1f;
         [field: SerializeField] public float PickUpHeightOffset { get; set; } = 1.0f;
@@ -3139,13 +3141,20 @@ namespace HolyRail.Vines
 
                 var spawnPos = (Vector3)position + (Vector3)math.normalize(upVector) * PickUpHeightOffset;
 
-                var pickupInstance = Instantiate(PickUpPrefab, spawnPos, rotation, randomSpline.transform);
+                // Determine which prefab to spawn
+                GameObject prefabToSpawn = PickUpPrefab;
+                if (RarePickUpPrefab != null && random.NextDouble() < RarePickUpChance)
+                {
+                    prefabToSpawn = RarePickUpPrefab;
+                }
+
+                var pickupInstance = Instantiate(prefabToSpawn, spawnPos, rotation, randomSpline.transform);
 
                 // Set collection radius to account for height offset so player can collect while grinding
                 var pickupScript = pickupInstance.GetComponent<HolyRail.Scripts.PickUp>();
                 if (pickupScript != null)
                 {
-                    pickupScript.CollectionRadius = PickUpHeightOffset + 0.5f;
+                    pickupScript.collectionRadius = PickUpHeightOffset + 0.5f;
                 }
             }
 
