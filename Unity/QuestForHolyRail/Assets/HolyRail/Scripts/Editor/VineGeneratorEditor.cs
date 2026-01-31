@@ -257,6 +257,37 @@ namespace HolyRail.Vines.Editor
                 EditorGUILayout.Space();
                 EditorGUILayout.PropertyField(serializedObject.FindProperty("<RootPoints>k__BackingField"));
 
+                // Trunk Settings (Volume Mode only)
+                if (generator.AttractorGenerationMode == AttractorMode.Volume)
+                {
+                    EditorGUILayout.Space();
+                    EditorGUILayout.LabelField("Trunk Settings", EditorStyles.boldLabel);
+                    var trunkHeightProp = serializedObject.FindProperty("<TrunkHeight>k__BackingField");
+                    if (trunkHeightProp != null)
+                    {
+                        EditorGUILayout.PropertyField(
+                            trunkHeightProp,
+                            new GUIContent("Trunk Height", "Height of the trunk before branches start growing. Set to 0 to disable trunk.")
+                        );
+                    }
+                    else
+                    {
+                        EditorGUILayout.HelpBox("TrunkHeight property not found", MessageType.Error);
+                    }
+
+                    // Rail Connectivity for Volume mode
+                    EditorGUILayout.Space();
+                    EditorGUILayout.LabelField("Rail Connectivity", EditorStyles.boldLabel);
+                    EditorGUILayout.PropertyField(
+                        serializedObject.FindProperty("_enableRailBridges"),
+                        new GUIContent("Enable Rail Bridges", "Connect nearby rail endpoints with bridge splines")
+                    );
+                    EditorGUILayout.PropertyField(
+                        serializedObject.FindProperty("_enableConnectorRails"),
+                        new GUIContent("Enable Connector Rails", "Create rails to unreachable objectives")
+                    );
+                }
+
                 // Noise
                 EditorGUILayout.Space();
                 EditorGUILayout.LabelField("Noise", EditorStyles.boldLabel);
@@ -337,6 +368,43 @@ namespace HolyRail.Vines.Editor
             EditorGUILayout.PropertyField(serializedObject.FindProperty("<VineSegments>k__BackingField"));
             EditorGUILayout.PropertyField(serializedObject.FindProperty("<VineSegmentsPerUnit>k__BackingField"));
             EditorGUILayout.PropertyField(serializedObject.FindProperty("<GenerateMeshes>k__BackingField"));
+
+            // Mesh Tapering (only shown when mesh generation is enabled)
+            if (generator.GenerateMeshes)
+            {
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Mesh Tapering", EditorStyles.boldLabel);
+
+                EditorGUILayout.PropertyField(
+                    serializedObject.FindProperty("<EnableEndTapering>k__BackingField"),
+                    new GUIContent("Enable End Tapering", "Taper branch endpoints to a point")
+                );
+
+                if (generator.EnableEndTapering)
+                {
+                    EditorGUI.indentLevel++;
+                    EditorGUILayout.PropertyField(
+                        serializedObject.FindProperty("<EndTaperDistance>k__BackingField"),
+                        new GUIContent("Taper Distance", "Distance in meters from the end where tapering begins")
+                    );
+                    EditorGUI.indentLevel--;
+                }
+
+                EditorGUILayout.PropertyField(
+                    serializedObject.FindProperty("<DistanceTaperStrength>k__BackingField"),
+                    new GUIContent("Distance Taper", "How much branches thin based on distance from root (0=none, 1=full)")
+                );
+
+                if (generator.EnableEndTapering || generator.DistanceTaperStrength > 0f)
+                {
+                    EditorGUILayout.HelpBox(
+                        "Tapering uses custom mesh generation instead of SplineExtrude.\n" +
+                        "End Taper: Branch tips converge to a point.\n" +
+                        "Distance Taper: Branches get thinner the further they are from the root.",
+                        MessageType.Info
+                    );
+                }
+            }
 
             // Pickup Spawning
             EditorGUILayout.Space();

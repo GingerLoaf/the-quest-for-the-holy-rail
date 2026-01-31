@@ -35,7 +35,7 @@ namespace HolyRail.Scripts
         [SerializeField] private AudioClip _deathClip;
         [Tooltip("Sound played when player acquires an upgrade")]
         [SerializeField] private AudioClip _upgradeClip;
-        [Range(0, 1)] [SerializeField] private float _audioVolume = 0.8f;
+        [SerializeField] private float _audioVolume = 2f;
 
         public int MaxHealth
         {

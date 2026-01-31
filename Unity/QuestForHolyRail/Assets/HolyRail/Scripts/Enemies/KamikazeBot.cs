@@ -8,7 +8,7 @@ namespace HolyRail.Scripts.Enemies
     {
         [Header("Kamikaze Settings")]
         [Tooltip("Movement speed when chasing the player")]
-        public float ChaseSpeed = 6f;
+        public float ChaseSpeed = 12f;
 
         [Tooltip("The distance at which the bot explodes.")]
         public float ExplosionRadius = 3f;
@@ -26,7 +26,23 @@ namespace HolyRail.Scripts.Enemies
         [Header("Countdown Settings")]
         [field: Tooltip("Distance at which the countdown begins")]
         [field: SerializeField]
-        public float TriggerDistance { get; private set; } = 8f;
+        public float TriggerDistance { get; private set; } = 3.5f;
+
+        [field: Tooltip("Speed multiplier when armed/flashing")]
+        [field: SerializeField]
+        public float ArmedSpeedBoost { get; private set; } = 1.5f;
+
+        [field: Tooltip("Speed multiplier when player is grinding")]
+        [field: SerializeField]
+        public float GrindingSpeedBoost { get; private set; } = 1.4f;
+
+        [field: Tooltip("How far ahead of the player to target when grinding (for head-on attacks)")]
+        [field: SerializeField]
+        public float GrindingLeadDistance { get; private set; } = 8f;
+
+        [field: Tooltip("Minimum distance from player - bot will stop approaching when this close")]
+        [field: SerializeField]
+        public float MinDistanceFromPlayer { get; private set; } = 2f;
 
         [field: Tooltip("Duration of ramping flash phase (seconds)")]
         [field: SerializeField]
@@ -55,12 +71,16 @@ namespace HolyRail.Scripts.Enemies
         [Header("Audio")]
         [Tooltip("Looping charge/flyby sound while chasing")]
         [SerializeField] private AudioClip _chargeLoopClip;
+        [Tooltip("Looping sound when armed/flashing (about to explode)")]
+        [SerializeField] private AudioClip _armedLoopClip;
         [Tooltip("Explosion sounds (random selection)")]
         [SerializeField] private AudioClip[] _explosionClips;
         [Range(0, 1)] [SerializeField] private float _audioVolume = 1f;
         [Range(0, 1)] [SerializeField] private float _chargeAudioVolume = 0.3f;
+        [SerializeField] private float _armedAudioVolume = 3f;
 
         private AudioSource _chargeAudioSource;
+        private AudioSource _armedAudioSource;
         private bool _isExploding;
         private Renderer _renderer;
         private MaterialPropertyBlock _propBlock;
@@ -76,6 +96,9 @@ namespace HolyRail.Scripts.Enemies
         private bool _isArmed;
         private float _countdownTimer;
 
+        // Player controller reference for grinding detection
+        private StarterAssets.ThirdPersonController_RailGrinder _playerController;
+
         protected override void Awake()
         {
             base.Awake();
@@ -85,6 +108,14 @@ namespace HolyRail.Scripts.Enemies
             _chargeAudioSource.loop = true;
             _chargeAudioSource.playOnAwake = false;
             _chargeAudioSource.spatialBlend = 1f; // 3D sound
+
+            // Initialize armed audio source
+            _armedAudioSource = gameObject.AddComponent<AudioSource>();
+            _armedAudioSource.loop = true;
+            _armedAudioSource.playOnAwake = false;
+            _armedAudioSource.spatialBlend = 0.5f; // Partial 3D sound for better audibility
+            _armedAudioSource.minDistance = 5f;
+            _armedAudioSource.maxDistance = 100f;
 
             // Cache renderer for visual feedback (find first enabled renderer)
             foreach (var r in GetComponentsInChildren<Renderer>())
@@ -114,12 +145,36 @@ namespace HolyRail.Scripts.Enemies
                 return;
             }
 
-            // Move directly toward player position
-            Vector3 targetPosition = Spawner.Player.position;
-            Vector3 direction = (targetPosition - transform.position).normalized;
+            // Cache player controller reference
+            if (_playerController == null)
+            {
+                _playerController = Spawner.Player.GetComponent<StarterAssets.ThirdPersonController_RailGrinder>();
+            }
 
-            // Move toward player at chase speed
-            transform.position += direction * ChaseSpeed * Time.deltaTime;
+            // Check if player is grinding
+            bool playerIsGrinding = _playerController != null && _playerController.IsGrinding;
+
+            // Calculate target position - lead the player when grinding for head-on attacks
+            Vector3 targetPosition = Spawner.Player.position;
+            if (playerIsGrinding)
+            {
+                // Target ahead of the player in their movement direction
+                Vector3 playerForward = Spawner.Player.forward;
+                targetPosition = Spawner.Player.position + playerForward * GrindingLeadDistance;
+            }
+
+            Vector3 direction = (targetPosition - transform.position).normalized;
+            float distanceToPlayer = Vector3.Distance(transform.position, Spawner.Player.position);
+
+            // Only move if we're farther than minimum distance
+            if (distanceToPlayer > MinDistanceFromPlayer)
+            {
+                // Move toward player at chase speed (with boosts)
+                float speed = ChaseSpeed;
+                if (playerIsGrinding) speed *= GrindingSpeedBoost;
+                if (_isArmed) speed *= ArmedSpeedBoost;
+                transform.position += direction * speed * Time.deltaTime;
+            }
 
             // Face the player
             if (direction.sqrMagnitude > 0.001f)
@@ -145,6 +200,12 @@ namespace HolyRail.Scripts.Enemies
             _isArmed = false;
             _countdownTimer = 0f;
 
+            // Stop armed sound
+            if (_armedAudioSource != null && _armedAudioSource.isPlaying)
+            {
+                _armedAudioSource.Stop();
+            }
+
             // Reset visual state to default
             if (_renderer != null && _propBlock != null)
             {
@@ -169,6 +230,14 @@ namespace HolyRail.Scripts.Enemies
                 _isArmed = true;
                 _countdownTimer = 0f;
                 Debug.Log($"KamikazeBot [{name}]: Armed! Starting countdown.");
+
+                // Start armed loop sound
+                if (_armedLoopClip != null && _armedAudioSource != null)
+                {
+                    _armedAudioSource.clip = _armedLoopClip;
+                    _armedAudioSource.volume = _armedAudioVolume;
+                    _armedAudioSource.Play();
+                }
             }
 
             // Run countdown if armed
@@ -229,6 +298,12 @@ namespace HolyRail.Scripts.Enemies
             if (_chargeAudioSource != null && _chargeAudioSource.isPlaying)
             {
                 _chargeAudioSource.Stop();
+            }
+
+            // Stop armed sound
+            if (_armedAudioSource != null && _armedAudioSource.isPlaying)
+            {
+                _armedAudioSource.Stop();
             }
 
             // Play explosion sound with large 3D range

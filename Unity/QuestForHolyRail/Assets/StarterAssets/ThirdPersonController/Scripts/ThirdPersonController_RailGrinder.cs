@@ -335,10 +335,10 @@ namespace StarterAssets
         [Header("Grind Direction Tuning")]
         [Tooltip("Bias toward positive world Z when determining grind direction (0 = pure velocity, 1 = pure forward bias)")]
         [Range(0f, 1f)]
-        [SerializeField] private float _forwardBias = 0.5f;
+        [SerializeField] private float _forwardBias = 0.75f;
 
         [Tooltip("Minimum velocity magnitude to use velocity-based direction (below this, applies forward bias)")]
-        [SerializeField] private float _minVelocityForDirection = 2f;
+        [SerializeField] private float _minVelocityForDirection = 3f;
 
         [Header("Wall Riding")]
         [Tooltip("Enable wall ride mechanics")]
@@ -461,6 +461,7 @@ namespace StarterAssets
         private AudioSource _sprayLoopAudioSource;
         private bool _wasSprayingLastFrame;
         private bool _isGrinding;
+        public bool IsGrinding => _isGrinding;
         private float _grindExitCooldownTimer;
         private float _momentumPreservationTimer;
         private float _grindT;                 // Normalized spline position (0–1)

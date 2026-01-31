@@ -120,6 +120,10 @@ namespace HolyRail.Vines
         [field: SerializeField] public bool UseMultiDirectionRaycasts { get; set; } = true;
         [field: SerializeField] public AttractorMode AttractorGenerationMode { get; set; } = AttractorMode.Surface;
 
+        [Header("Trunk Settings (Volume Mode)")]
+        [field: SerializeField, Tooltip("Height of the trunk before branches start growing. Set to 0 to disable trunk.")]
+        public float TrunkHeight { get; set; } = 0f;
+
         [Header("Root Points")]
         [field: SerializeField] public List<Transform> RootPoints { get; private set; } = new List<Transform>();
 
@@ -245,8 +249,10 @@ namespace HolyRail.Vines
         [field: SerializeField, Range(0.05f, 1f)] public float AttractorGizmoSize { get; set; } = 0.15f;
 
         [Header("Spline Conversion")]
-        [field: SerializeField, Range(2, 100)] public int MinSplineLength { get; set; } = 2;
-        [field: SerializeField, Range(0f, 10f)] public float MinSplineWorldLength { get; set; } = 0.5f;
+        [field: SerializeField, Range(2, 100), Tooltip("Minimum number of nodes in a path. Paths with fewer nodes are filtered out.")]
+        public int MinSplineLength { get; set; } = 2;
+        [field: SerializeField, Range(0f, 10f), Tooltip("Minimum world-space length in meters. Paths shorter than this are filtered out.")]
+        public float MinSplineWorldLength { get; set; } = 0.5f;
 
         [Header("Path Smoothing")]
         [field: SerializeField] public bool EnablePathSmoothing { get; set; } = true;
@@ -258,6 +264,16 @@ namespace HolyRail.Vines
         [field: SerializeField, Range(3, 16)] public int VineSegments { get; set; } = 4;
         [field: SerializeField, Range(0, 64)] public int VineSegmentsPerUnit { get; set; } = 4;
         [field: SerializeField] public bool GenerateMeshes { get; set; } = true;
+
+        [Header("Mesh Tapering")]
+        [field: SerializeField, Tooltip("Enable tapering on branch endpoints")]
+        public bool EnableEndTapering { get; set; } = false;
+
+        [field: SerializeField, Range(0f, 10f), Tooltip("Distance in meters to taper at branch endpoints")]
+        public float EndTaperDistance { get; set; } = 2f;
+
+        [field: SerializeField, Range(0f, 1f), Tooltip("How much branches thin based on distance from root (0=none, 1=full)")]
+        public float DistanceTaperStrength { get; set; } = 0f;
 
         [Header("Pickup Spawning")]
         [field: SerializeField] public GameObject PickUpPrefab { get; set; }
@@ -667,21 +683,40 @@ namespace HolyRail.Vines
             // Step 3: Run GPU algorithm
             RunGPUAlgorithm();
 
+            // Count how many attractors were pruned (killed) by the algorithm
+            int activeAttractors = _generatedAttractors.Count(a => a.Active == 1);
+            int prunedAttractors = _generatedAttractors.Count - activeAttractors;
             Debug.Log($"VineGenerator: Generated {_generatedNodes.Count} nodes from {_generatedAttractors.Count} attractors");
+            Debug.Log($"VineGenerator: Attractor status - {prunedAttractors} pruned (within KillRadius={KillRadius}), {activeAttractors} still active");
+            Debug.Log($"VineGenerator: Algorithm params - AttractionRadius={AttractionRadius}, KillRadius={KillRadius}, BranchCooldown={EffectiveBranchCooldown} (density={BranchDensity})");
 
             // Debug: Report closest attractor distance from each root
-            if (_generatedNodes.Count <= RootPoints.Count && _generatedAttractors.Count > 0)
+            if (_generatedNodes.Count <= RootPoints.Count + (TrunkHeight > 0 ? Mathf.CeilToInt(TrunkHeight / StepSize) : 0) && _generatedAttractors.Count > 0)
             {
-                foreach (var root in RootPoints)
+                // Find the tip node (last node for each root)
+                var tipPositions = new List<Vector3>();
+                foreach (var node in _generatedNodes)
                 {
-                    if (root == null) continue;
+                    if (node.IsTip == 1)
+                        tipPositions.Add(node.Position);
+                }
+
+                foreach (var tipPos in tipPositions)
+                {
                     float minDist = float.MaxValue;
+                    int attractorsInRange = 0;
                     foreach (var att in _generatedAttractors)
                     {
-                        float dist = Vector3.Distance(root.position, att.Position);
+                        if (att.Active == 0) continue;
+                        float dist = Vector3.Distance(tipPos, att.Position);
                         if (dist < minDist) minDist = dist;
+                        if (dist <= AttractionRadius) attractorsInRange++;
                     }
-                    Debug.Log($"VineGenerator: Root '{root.name}' at {root.position} - nearest attractor is {minDist:F2} units away (AttractionRadius = {AttractionRadius})");
+                    Debug.Log($"VineGenerator: Tip at {tipPos} - nearest active attractor is {minDist:F2}m away, {attractorsInRange} attractors within AttractionRadius ({AttractionRadius}m)");
+                    if (minDist > AttractionRadius)
+                    {
+                        Debug.LogWarning($"VineGenerator: No attractors within AttractionRadius! Increase AttractionRadius or adjust AttractorBounds.");
+                    }
                 }
             }
         }
@@ -985,9 +1020,16 @@ namespace HolyRail.Vines
 
         private void GenerateVolumeAttractors(System.Random random, int count)
         {
+            // Offset bounds by root position so attractors follow root
+            Vector3 boundsOffset = Vector3.zero;
+            if (RootPoints != null && RootPoints.Count > 0 && RootPoints[0] != null)
+            {
+                boundsOffset = RootPoints[0].position;
+            }
+
             for (int i = 0; i < count; i++)
             {
-                var point = RandomPointInBounds(random, AttractorBounds);
+                var point = RandomPointInBounds(random, AttractorBounds) + boundsOffset;
                 _generatedAttractors.Add(new VineAttractor
                 {
                     Position = point,
@@ -2187,11 +2229,36 @@ namespace HolyRail.Vines
             {
                 if (root == null) continue;
 
+                Vector3 currentPos = root.position;
+                int parentIndex = -1; // Root has no parent
+
+                // If trunk height > 0, create trunk nodes first (for tree-like growth)
+                if (TrunkHeight > 0f)
+                {
+                    int trunkNodeCount = Mathf.Max(1, Mathf.CeilToInt(TrunkHeight / StepSize));
+                    Vector3 trunkDirection = root.up; // Trunk grows along root's local up axis
+
+                    for (int i = 0; i < trunkNodeCount; i++)
+                    {
+                        _generatedNodes.Add(new VineNode
+                        {
+                            Position = currentPos,
+                            ParentIndex = parentIndex,
+                            IsTip = 0, // Trunk nodes are not tips (don't grow branches)
+                            LastGrowIteration = 0
+                        });
+
+                        parentIndex = _generatedNodes.Count - 1;
+                        currentPos += trunkDirection * StepSize;
+                    }
+                }
+
+                // Add the actual growing tip at top of trunk (or at root if no trunk)
                 _generatedNodes.Add(new VineNode
                 {
-                    Position = root.position,
-                    ParentIndex = -1,
-                    IsTip = 1,
+                    Position = currentPos,
+                    ParentIndex = parentIndex,
+                    IsTip = 1, // This is the tip that will grow/branch
                     LastGrowIteration = -EffectiveBranchCooldown  // Allow immediate growth on first iteration
                 });
             }
@@ -2471,7 +2538,19 @@ namespace HolyRail.Vines
             // Optional: Filter close branches if MinBranchSeparation > 0
             if (MinBranchSeparation > 0f)
             {
-                FilterCloseBranches(branchPoints, childLookup);
+                var prunedSubtrees = FilterCloseBranches(branchPoints, childLookup);
+
+                // Remove leaf nodes that are descendants of pruned subtrees
+                if (prunedSubtrees.Count > 0)
+                {
+                    int beforeCount = leafNodes.Count;
+                    leafNodes.RemoveAll(leaf => IsDescendantOf(leaf, prunedSubtrees));
+                    int removedLeaves = beforeCount - leafNodes.Count;
+                    if (removedLeaves > 0)
+                    {
+                        Debug.Log($"VineGenerator: Removed {removedLeaves} leaf nodes from pruned subtrees");
+                    }
+                }
             }
 
             // Trace continuous paths from each leaf back to its root
@@ -2566,6 +2645,10 @@ namespace HolyRail.Vines
             int totalOriginalPoints = 0;
             int totalSmoothedPoints = 0;
 
+            // Track which segments have already been meshed to avoid overlapping geometry
+            // Key is (smaller node index, larger node index) to make edge comparison order-independent
+            var meshedSegments = new HashSet<(int, int)>();
+
             // Create splines for valid paths
             for (int pathIdx = 0; pathIdx < validPaths.Count; pathIdx++)
             {
@@ -2634,55 +2717,138 @@ namespace HolyRail.Vines
                 }
 #endif
 
-                // Generate mesh directly on this spline's GameObject
+                // Generate mesh - but only for the unique portion of this branch
+                // (to avoid overlapping meshes on shared trunk/branch segments)
                 if (GenerateMeshes)
                 {
-                    var meshFilter = splineGO.AddComponent<MeshFilter>();
-                    var meshRenderer = splineGO.AddComponent<MeshRenderer>();
-
-                    meshRenderer.sharedMaterial = materialToUse;
-
-                    var splineExtrude = splineGO.AddComponent<SplineExtrude>();
-                    splineExtrude.Container = splineContainer;
-                    splineExtrude.Radius = VineRadius;
-
-                    // Set radial segments
-                    int sides = Mathf.Max(3, VineSegments);
-                    splineExtrude.Sides = sides;
-
-                    // Also set Sides on the internal Shape via SerializedObject
-                    // SplineExtrude's Circle shape has its own m_Sides that takes precedence
-#if UNITY_EDITOR
-                    var so = new UnityEditor.SerializedObject(splineExtrude);
-                    var shapeProp = so.FindProperty("m_Shape");
-                    if (shapeProp != null)
+                    // Find where this path diverges from already-meshed segments
+                    int meshStartIndex = 0;
+                    for (int i = 1; i < path.Count; i++)
                     {
-                        // The shape is a managed reference, find its Sides property
-                        var shapeRef = shapeProp.managedReferenceValue;
-                        if (shapeRef != null)
+                        int nodeA = path[i - 1];
+                        int nodeB = path[i];
+                        var segment = nodeA < nodeB ? (nodeA, nodeB) : (nodeB, nodeA);
+
+                        if (meshedSegments.Contains(segment))
                         {
-                            var sidesField = shapeRef.GetType().GetField("m_Sides", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                            if (sidesField != null)
-                            {
-                                sidesField.SetValue(shapeRef, sides);
-                                so.ApplyModifiedPropertiesWithoutUndo();
-                            }
+                            meshStartIndex = i; // This segment is already meshed, start after it
+                        }
+                        else
+                        {
+                            break; // Found first unmeshed segment
                         }
                     }
+
+                    // Mark all segments from meshStartIndex onward as meshed
+                    for (int i = meshStartIndex + 1; i < path.Count; i++)
+                    {
+                        int nodeA = path[i - 1];
+                        int nodeB = path[i];
+                        var segment = nodeA < nodeB ? (nodeA, nodeB) : (nodeB, nodeA);
+                        meshedSegments.Add(segment);
+                    }
+
+                    // Create mesh spline only for the unique portion (meshStartIndex to end)
+                    // If the entire path is already meshed, skip mesh generation
+                    int uniqueNodeCount = path.Count - meshStartIndex;
+                    if (uniqueNodeCount >= 2)
+                    {
+                        // Create a separate GameObject for the mesh portion
+                        var meshGO = new GameObject($"VineMesh_{_generatedSplines.Count}");
+#if UNITY_EDITOR
+                        if (!Application.isPlaying)
+                        {
+                            UnityEditor.Undo.RegisterCreatedObjectUndo(meshGO, "Create Vine Mesh");
+                        }
+#endif
+                        meshGO.transform.SetParent(splineGO.transform, false);
+                        meshGO.transform.localPosition = Vector3.zero;
+                        meshGO.transform.localRotation = Quaternion.identity;
+                        meshGO.transform.localScale = Vector3.one;
+
+                        // Create a spline for just the mesh portion
+                        var meshSplineContainer = meshGO.AddComponent<SplineContainer>();
+                        if (meshSplineContainer.Splines.Count > 0)
+                        {
+                            meshSplineContainer.RemoveSplineAt(0);
+                        }
+                        var meshSpline = meshSplineContainer.AddSpline();
+
+                        // Add knots for just the unique portion
+                        for (int i = meshStartIndex; i < path.Count; i++)
+                        {
+                            var pos = _generatedNodes[path[i]].Position;
+                            var knot = new BezierKnot(pos);
+                            meshSpline.Add(knot, TangentMode.AutoSmooth);
+                        }
+
+                        var meshFilter = meshGO.AddComponent<MeshFilter>();
+                        var meshRenderer = meshGO.AddComponent<MeshRenderer>();
+                        meshRenderer.sharedMaterial = materialToUse;
+
+                        int sides = Mathf.Max(3, VineSegments);
+                        int segmentsPerUnit = Mathf.Max(1, VineSegmentsPerUnit);
+
+                        // Use tapered mesh generation if tapering is enabled
+                        if (EnableEndTapering || DistanceTaperStrength > 0f)
+                        {
+                            // Calculate distance from root for this branch segment
+                            float distanceFromRoot = CalculateDistanceFromRoot(path, meshStartIndex);
+
+                            var taperSettings = new TaperedVineMesh.TaperSettings
+                            {
+                                EnableEndTaper = EnableEndTapering,
+                                EndTaperDistance = EndTaperDistance,
+                                DistanceTaperStrength = DistanceTaperStrength,
+                                DistanceFromRoot = distanceFromRoot
+                            };
+
+                            var mesh = TaperedVineMesh.Generate(
+                                meshSpline,
+                                VineRadius,
+                                sides,
+                                segmentsPerUnit,
+                                taperSettings,
+                                capped: true
+                            );
+                            meshFilter.sharedMesh = mesh;
+                        }
+                        else
+                        {
+                            // Use SplineExtrude for non-tapered meshes (more efficient)
+                            var splineExtrude = meshGO.AddComponent<SplineExtrude>();
+                            splineExtrude.Container = meshSplineContainer;
+                            splineExtrude.Radius = VineRadius;
+                            splineExtrude.Sides = sides;
+
+#if UNITY_EDITOR
+                            var so = new UnityEditor.SerializedObject(splineExtrude);
+                            var shapeProp = so.FindProperty("m_Shape");
+                            if (shapeProp != null)
+                            {
+                                var sidesProp = shapeProp.FindPropertyRelative("m_Sides");
+                                if (sidesProp != null)
+                                {
+                                    sidesProp.intValue = sides;
+                                    so.ApplyModifiedPropertiesWithoutUndo();
+                                }
+                            }
 #endif
 
-                    splineExtrude.SegmentsPerUnit = Mathf.Max(1, VineSegmentsPerUnit);
-                    splineExtrude.Capped = true;
-                    splineExtrude.Rebuild();
+                            splineExtrude.SegmentsPerUnit = segmentsPerUnit;
+                            splineExtrude.Capped = true;
+                            splineExtrude.Rebuild();
+                        }
 
-                    // Always add SplineMeshController for glow effects
-                    var meshController = splineGO.AddComponent<SplineMeshController>();
-                    meshController.MeshTarget = meshRenderer;
-                    meshController.glowLength = GlowLength;
-                    meshController.glowBrightness = GlowBrightness;
-                    meshController.showHideDuration = GlowShowHideDuration;
-                    meshController.glowMix = 0f; // Start hidden
-                    meshController.glowLocation = 0f;
+                        // Add SplineMeshController for glow effects
+                        var meshController = meshGO.AddComponent<SplineMeshController>();
+                        meshController.MeshTarget = meshRenderer;
+                        meshController.glowLength = GlowLength;
+                        meshController.glowBrightness = GlowBrightness;
+                        meshController.showHideDuration = GlowShowHideDuration;
+                        meshController.glowMix = 0f;
+                        meshController.glowLocation = 0f;
+                    }
                 }
 
                 _generatedSplines.Add(splineContainer);
@@ -2766,51 +2932,145 @@ namespace HolyRail.Vines
             return _generatedSplines;
         }
 
-        private void FilterCloseBranches(HashSet<int> branchPoints, Dictionary<int, List<int>> childLookup)
+        /// <summary>
+        /// Calculates the normalized distance from root for a branch segment.
+        /// Used for distance-based tapering where branches further from the root are thinner.
+        /// </summary>
+        /// <param name="path">The full path from root to tip.</param>
+        /// <param name="startIndex">The index in the path where this mesh segment starts.</param>
+        /// <returns>Normalized distance (0 = at root, 1 = at tip).</returns>
+        private float CalculateDistanceFromRoot(List<int> path, int startIndex)
         {
-            if (branchPoints.Count < 2) return;
+            if (path == null || path.Count < 2 || startIndex <= 0)
+            {
+                return 0f;
+            }
+
+            // Calculate world distance from root to branch start
+            float distToStart = 0f;
+            for (int i = 1; i <= startIndex && i < path.Count; i++)
+            {
+                distToStart += Vector3.Distance(
+                    _generatedNodes[path[i - 1]].Position,
+                    _generatedNodes[path[i]].Position
+                );
+            }
+
+            // Calculate total path length
+            float totalLength = distToStart;
+            for (int i = startIndex + 1; i < path.Count; i++)
+            {
+                totalLength += Vector3.Distance(
+                    _generatedNodes[path[i - 1]].Position,
+                    _generatedNodes[path[i]].Position
+                );
+            }
+
+            return totalLength > 0f ? distToStart / totalLength : 0f;
+        }
+
+        private HashSet<int> FilterCloseBranches(HashSet<int> branchPoints, Dictionary<int, List<int>> childLookup)
+        {
+            var prunedSubtreeRoots = new HashSet<int>();
+
+            if (branchPoints.Count < 2) return prunedSubtreeRoots;
 
             var branchList = branchPoints.ToList();
-            var toRemove = new HashSet<int>();
+            var branchesToPrune = new HashSet<int>();
 
             // Check each pair of branch points
             for (int i = 0; i < branchList.Count; i++)
             {
-                if (toRemove.Contains(branchList[i])) continue;
+                if (branchesToPrune.Contains(branchList[i])) continue;
 
                 var posI = _generatedNodes[branchList[i]].Position;
 
                 for (int j = i + 1; j < branchList.Count; j++)
                 {
-                    if (toRemove.Contains(branchList[j])) continue;
+                    if (branchesToPrune.Contains(branchList[j])) continue;
 
                     var posJ = _generatedNodes[branchList[j]].Position;
                     float dist = Vector3.Distance(posI, posJ);
 
                     if (dist < MinBranchSeparation)
                     {
-                        // Remove the branch point with fewer children
+                        // Prune the branch point with fewer children
                         int childCountI = childLookup[branchList[i]].Count;
                         int childCountJ = childLookup[branchList[j]].Count;
 
-                        int nodeToRemove = childCountI <= childCountJ ? branchList[i] : branchList[j];
-                        toRemove.Add(nodeToRemove);
+                        int nodeToPrune = childCountI <= childCountJ ? branchList[i] : branchList[j];
+                        branchesToPrune.Add(nodeToPrune);
 
-                        Debug.Log($"VineGenerator: Pruning branch point {nodeToRemove} (too close to another branch, dist={dist:F2}m)");
+                        Debug.Log($"VineGenerator: Pruning branch point {nodeToPrune} (too close to another branch, dist={dist:F2}m)");
                     }
                 }
             }
 
-            // Remove the pruned branch points
-            foreach (int node in toRemove)
+            // For each pruned branch point, keep only the longest branch, mark others as pruned
+            foreach (int branchNode in branchesToPrune)
             {
-                branchPoints.Remove(node);
+                var children = childLookup[branchNode];
+                if (children.Count <= 1) continue;
+
+                // Find the child with the longest descendant chain (approximate by subtree depth)
+                int bestChild = children[0];
+                int bestDepth = GetSubtreeDepth(bestChild, childLookup);
+
+                for (int c = 1; c < children.Count; c++)
+                {
+                    int depth = GetSubtreeDepth(children[c], childLookup);
+                    if (depth > bestDepth)
+                    {
+                        bestDepth = depth;
+                        bestChild = children[c];
+                    }
+                }
+
+                // Mark all children except the best one as pruned subtree roots
+                foreach (int child in children)
+                {
+                    if (child != bestChild)
+                    {
+                        prunedSubtreeRoots.Add(child);
+                    }
+                }
+
+                // Also remove from branchPoints since it will effectively have one branch
+                branchPoints.Remove(branchNode);
             }
 
-            if (toRemove.Count > 0)
+            if (prunedSubtreeRoots.Count > 0)
             {
-                Debug.Log($"VineGenerator: Filtered {toRemove.Count} branch points due to MinBranchSeparation ({MinBranchSeparation}m)");
+                Debug.Log($"VineGenerator: Pruned {branchesToPrune.Count} branch points, marked {prunedSubtreeRoots.Count} subtrees for exclusion due to MinBranchSeparation ({MinBranchSeparation}m)");
             }
+
+            return prunedSubtreeRoots;
+        }
+
+        private int GetSubtreeDepth(int nodeIndex, Dictionary<int, List<int>> childLookup)
+        {
+            var children = childLookup[nodeIndex];
+            if (children.Count == 0) return 1;
+
+            int maxChildDepth = 0;
+            foreach (int child in children)
+            {
+                int childDepth = GetSubtreeDepth(child, childLookup);
+                if (childDepth > maxChildDepth) maxChildDepth = childDepth;
+            }
+            return 1 + maxChildDepth;
+        }
+
+        private bool IsDescendantOf(int nodeIndex, HashSet<int> ancestorCandidates)
+        {
+            int current = nodeIndex;
+            while (current >= 0)
+            {
+                if (ancestorCandidates.Contains(current))
+                    return true;
+                current = _generatedNodes[current].ParentIndex;
+            }
+            return false;
         }
 
         [SerializeField, HideInInspector]
@@ -3726,9 +3986,16 @@ namespace HolyRail.Vines
 
         private void OnDrawGizmosSelected()
         {
-            // Draw bounds
+            // Calculate bounds center offset by root position (for Volume mode)
+            Vector3 boundsCenter = AttractorBounds.center;
+            if (RootPoints != null && RootPoints.Count > 0 && RootPoints[0] != null)
+            {
+                boundsCenter += RootPoints[0].position;
+            }
+
+            // Draw bounds (follows root position in Volume mode)
             Gizmos.color = new Color(1f, 0.5f, 0f, 0.5f); // Orange
-            Gizmos.DrawWireCube(AttractorBounds.center, AttractorBounds.size);
+            Gizmos.DrawWireCube(boundsCenter, AttractorBounds.size);
 
             // Draw root points
             Gizmos.color = Color.red;

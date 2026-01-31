@@ -5,7 +5,7 @@ namespace HolyRail.Scripts.FX
     public class ExplosionRadiusVisual : MonoBehaviour
     {
         [field: SerializeField]
-        public float ScaleDuration { get; private set; } = 0.3f;
+        public float ScaleDuration { get; private set; } = 0.15f;
 
         private float _targetRadius;
         private float _timer;

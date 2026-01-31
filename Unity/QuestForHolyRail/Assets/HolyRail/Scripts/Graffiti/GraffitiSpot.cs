@@ -21,7 +21,7 @@ namespace HolyRail.Graffiti
         [SerializeField] private AudioClip _enterRangeClip;
         [Tooltip("Sound played when graffiti is completed")]
         [SerializeField] private AudioClip _completionClip;
-        [Range(0, 1)] [SerializeField] private float _audioVolume = 0.6f;
+        [SerializeField] private float _audioVolume = 2f;
 
         private static readonly int BlendAmountProperty = Shader.PropertyToID("_BlendAmount");
         private static readonly int FrameEnabledProperty = Shader.PropertyToID("_FrameEnabled");

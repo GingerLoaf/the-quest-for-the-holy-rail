@@ -327,6 +327,8 @@ namespace HolyRail.Scripts.Enemies
 
         public void SpawnBot()
         {
+            if (_enemyPools == null) return;
+
             var chosenPrefab = GetRandomEnemyPrefab();
             if (!chosenPrefab) return;
 
@@ -339,9 +341,12 @@ namespace HolyRail.Scripts.Enemies
             if (pool.Count == 0)
             {
                 Debug.LogWarning($"EnemySpawner: Pool empty for {chosenPrefab.name}, trying another type");
-                // Try other enemy types
+                // Try other enemy types (respecting spawn weights)
                 foreach (var enemyType in EnemyTypes)
                 {
+                    // Skip enemies with zero weight - they should never spawn
+                    if (enemyType.SpawnWeight <= 0f) continue;
+
                     if (_enemyPools.TryGetValue(enemyType.Prefab, out var altPool) && altPool.Count > 0)
                     {
                         pool = altPool;

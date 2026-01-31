@@ -76,9 +76,9 @@ namespace HolyRail.City
         [field: SerializeField] public float GraffitiEdgeClearance { get; set; } = 0.5f;
         [field: SerializeField, Range(0f, 1f)] public float GraffitiOnBillboardPercent { get; set; } = 0.3f;
         [field: SerializeField] public float GraffitiBillboardAvoidDistance { get; set; } = 5f;
+        [field: SerializeField] public float GraffitiWallOffset { get; set; } = 2.0f;
         [field: SerializeField] public float GraffitiProjectionWidth { get; set; } = 6f;
         [field: SerializeField] public float GraffitiProjectionHeight { get; set; } = 3f;
-        [field: SerializeField] public float GraffitiWallOffset { get; set; } = 2.0f;
 
         [Header("Generation Parameters")]
         [field: SerializeField] public int Seed { get; set; } = 12345;
@@ -214,6 +214,18 @@ namespace HolyRail.City
         // Cached pool references to avoid FindObjectsByType allocations during leapfrog
         private BuildingColliderPool[] _cachedColliderPools;
         private GraffitiSpotPool[] _cachedGraffitiPools;
+
+        // Debug counters for graffiti placement
+        private int _debugWallAttempts;
+        private int _debugWallSuccesses;
+        private int _debugBuildingSearchFails;
+        private int _debugWidthFails;
+        private int _debugHeightFails;
+        private int _debugYRangeFails;
+        private int _debugSpacingFails;
+        private int _debugCornerFails;
+        private int _debugBuildingIntersectFails;
+        private int _debugBillboardOverlapFails;
 
         public int ActualBuildingCount => _generatedBuildings.Count;
         public int ActualRampCount => _generatedRamps.Count;
@@ -716,6 +728,18 @@ namespace HolyRail.City
             // Generate graffiti spots if enabled
             if (EnableGraffiti)
             {
+                // Reset graffiti debug counters
+                _debugWallAttempts = 0;
+                _debugWallSuccesses = 0;
+                _debugBuildingSearchFails = 0;
+                _debugWidthFails = 0;
+                _debugHeightFails = 0;
+                _debugYRangeFails = 0;
+                _debugSpacingFails = 0;
+                _debugCornerFails = 0;
+                _debugBuildingIntersectFails = 0;
+                _debugBillboardOverlapFails = 0;
+
                 if (GraffitiSpotPrefab == null)
                 {
                     Debug.LogWarning("CityManager: Graffiti enabled but GraffitiSpotPrefab is not assigned!");
@@ -745,6 +769,9 @@ namespace HolyRail.City
                 if (generateCorridorC && _corridorPathC.Count > 0)
                     GenerateCorridorGraffitiSpots(_corridorPathC);
                 Debug.Log($"CityManager: Graffiti generation complete. Total graffiti spots: {_generatedGraffitiSpots.Count}");
+                Debug.Log($"CityManager Graffiti Debug: Wall attempts={_debugWallAttempts}, successes={_debugWallSuccesses}");
+                Debug.Log($"  Failures: search={_debugBuildingSearchFails}, width={_debugWidthFails}, height={_debugHeightFails}, Y-range={_debugYRangeFails}");
+                Debug.Log($"  Failures: spacing={_debugSpacingFails}, corners={_debugCornerFails}, intersect={_debugBuildingIntersectFails}, billboard={_debugBillboardOverlapFails}");
 
                 // Re-initialize any GraffitiSpotPools that reference this CityManager
                 var graffitiPools = FindObjectsByType<GraffitiSpotPool>(FindObjectsSortMode.None);
@@ -1896,6 +1923,8 @@ namespace HolyRail.City
 
         private bool TryPlaceGraffitiSpotOnWall(Vector3 pathPosition, Vector3 tangent, bool placeOnLeft)
         {
+            _debugWallAttempts++;
+
             // Calculate perpendicular direction (right of path)
             var right = Vector3.Cross(Vector3.up, tangent).normalized;
 
@@ -1905,6 +1934,7 @@ namespace HolyRail.City
 
             if (building == null)
             {
+                _debugBuildingSearchFails++;
                 return false; // No building found on this side
             }
 
@@ -1971,6 +2001,7 @@ namespace HolyRail.City
 
             if (safeMaxOffset <= 0)
             {
+                _debugWidthFails++;
                 return false; // Building wall too narrow for graffiti
             }
 
@@ -1988,6 +2019,7 @@ namespace HolyRail.City
 
             if (safeYMax <= safeYMin)
             {
+                _debugHeightFails++;
                 return false; // Building too short for graffiti
             }
 
@@ -2001,6 +2033,7 @@ namespace HolyRail.City
 
             if (actualYMax <= actualYMin)
             {
+                _debugYRangeFails++;
                 return false; // No valid Y range for this building
             }
 
@@ -2015,6 +2048,7 @@ namespace HolyRail.City
 
                 if (distSq < GraffitiMinSpacing * GraffitiMinSpacing)
                 {
+                    _debugSpacingFails++;
                     return false;
                 }
             }
@@ -2041,6 +2075,7 @@ namespace HolyRail.City
             {
                 if (!IsPointOnBuildingSurface(corner, buildingData, surfaceNormal, margin: 0.5f))
                 {
+                    _debugCornerFails++;
                     return false; // Graffiti would extend beyond building surface
                 }
             }
@@ -2048,6 +2083,7 @@ namespace HolyRail.City
             // Check that no other buildings intersect the graffiti projection
             if (DoesGraffitiIntersectOtherBuildings(corners, buildingData, surfaceNormal))
             {
+                _debugBuildingIntersectFails++;
                 return false; // Another building would catch part of the projection
             }
 
@@ -2066,15 +2102,19 @@ namespace HolyRail.City
                 // If some but not all corners are inside billboard = split image = reject
                 if (cornersInBillboard > 0 && cornersInBillboard < 4)
                 {
+                    _debugBillboardOverlapFails++;
                     return false; // Would split across billboard and wall
                 }
 
                 // If all 4 corners inside, also reject (graffiti fully on billboard - use billboard placement instead)
                 if (cornersInBillboard == 4)
                 {
+                    _debugBillboardOverlapFails++;
                     return false;
                 }
             }
+
+            _debugWallSuccesses++;
 
             // Rotation: DecalProjector projects along -Z (backward)
             // surfaceNormal points toward corridor (away from wall)
@@ -2101,16 +2141,12 @@ namespace HolyRail.City
 
             foreach (var building in _generatedBuildings)
             {
-                // Only consider innermost row buildings (those with colliders)
-                if (building.NeedsCollider == 0)
-                    continue;
-
                 var toBuilding = building.Position - pathPosition;
                 toBuilding.y = 0;
 
                 // Check if building is in the correct direction
                 float dot = Vector3.Dot(toBuilding.normalized, searchDirection);
-                if (dot < 0.5f) // Must be roughly in the search direction
+                if (dot < 0.2f) // Allow wider search angle (was 0.5)
                     continue;
 
                 float distSq = toBuilding.sqrMagnitude;
@@ -2173,7 +2209,7 @@ namespace HolyRail.City
 
         private bool DoesGraffitiIntersectOtherBuildings(Vector3[] corners, BuildingData targetBuilding, Vector3 surfaceNormal)
         {
-            float projectionDepth = 6f; // Slightly more than DecalProjector depth (5.29)
+            float projectionDepth = 1f; // Reduced from 6f - only reject if building is very close to graffiti position
 
             foreach (var building in _generatedBuildings)
             {
