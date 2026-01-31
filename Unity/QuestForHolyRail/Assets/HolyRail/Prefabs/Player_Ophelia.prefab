@@ -9039,7 +9039,7 @@ Transform:
   m_GameObject: {fileID: 2342037834633676799}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0.11954036, y: -0.0054952726, z: -0.03453636}
+  m_LocalPosition: {x: 0.11954036, y: -0.0054952726, z: -0.034536764}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -23157,7 +23157,7 @@ Transform:
   m_GameObject: {fileID: 4288504554016832237}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: -0.11953999, y: -0.0054950938, z: -0.03453636}
+  m_LocalPosition: {x: -0.11953999, y: -0.0054950938, z: -0.03453681}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -33125,6 +33125,8 @@ MonoBehaviour:
   GrindJumpMomentumMultiplier: 2.65
   GrindEndJumpHeight: 0.6
   GrindStartBoost: 4
+  _forwardBias: 0.75
+  _minVelocityForDirection: 3
   EnableWallRide: 1
   WallRideLayers:
     serializedVersion: 2
@@ -33144,7 +33146,7 @@ MonoBehaviour:
   RampLayers:
     serializedVersion: 2
     m_Bits: 128
-  RampBoostAmount: 66
+  RampBoostAmount: 111
   RampBoostCooldown: 0.5
   GrindObstacleLayers:
     serializedVersion: 2
@@ -33185,6 +33187,8 @@ MonoBehaviour:
   _sprayEffect: {fileID: 6409302564663048900}
   _sprayPivot: {fileID: 7717445520371569659}
   GrindGlowLight: {fileID: 4826309402932079196}
+  _deathEffectVolume: {fileID: 0}
+  _deathWipeDuration: 1
   VirtualCamera: {fileID: 0}
   GrindFOVBoost: 15
   FOVLerpSpeed: 5

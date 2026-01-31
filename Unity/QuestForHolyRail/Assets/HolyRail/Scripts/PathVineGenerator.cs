@@ -9,6 +9,14 @@ using Random = UnityEngine.Random;
 
 namespace HolyRail
 {
+    public struct GraffitiCandidate
+    {
+        public Vector3 Position;
+        public Vector3 SplineTangent;
+        public float DistanceToWall;
+        public float SplineDistance;  // Cumulative distance along all splines (for segmenting)
+    }
+
     public class PathVineGenerator : MonoBehaviour
     {
         [Header("References")]
@@ -54,11 +62,26 @@ namespace HolyRail
         [Header("Editor")]
         [SerializeField] private bool _liveUpdate;
 
+        [Header("Graffiti Sampling")]
+        [SerializeField] private float _graffitiSampleSpacing = 3f;
+
         public bool LiveUpdate => _liveUpdate;
 
         private readonly List<GameObject> _generatedVines = new List<GameObject>();
+        private readonly List<SplineSample> _cachedSplineSamples = new List<SplineSample>();
         private int _vineIndex;
         private IReadOnlyList<Vector3> _currentCorridor;
+
+        private struct SplineSample
+        {
+            public Vector3 Position;
+            public Vector3 Tangent;
+            public float CumulativeDistance;
+        }
+
+        private float _totalSplineLength;
+
+        public float GetTotalSplineLength() => _totalSplineLength;
 
         public void Generate()
         {
@@ -81,7 +104,9 @@ namespace HolyRail
             GenerateVinesForCorridor(_cityManager.CorridorPathB, "B");
             GenerateVinesForCorridor(_cityManager.CorridorPathC, "C");
 
-            Debug.Log($"PathVineGenerator: Generated {_generatedVines.Count} vines.");
+            CacheSplineSamples();
+
+            Debug.Log($"PathVineGenerator: Generated {_generatedVines.Count} vines, cached {_cachedSplineSamples.Count} samples.");
 
             // Auto-generate meshes when not in live update mode
             if (_generateMesh && !_liveUpdate)
@@ -110,6 +135,7 @@ namespace HolyRail
                 }
             }
             _generatedVines.Clear();
+            _cachedSplineSamples.Clear();
 
             // Also destroy any orphaned children of _splineParent
             if (_splineParent != null)
@@ -588,6 +614,109 @@ namespace HolyRail
             }
 
             return container;
+        }
+
+        private void CacheSplineSamples()
+        {
+            _cachedSplineSamples.Clear();
+            _totalSplineLength = 0f;
+
+            foreach (var vineGO in _generatedVines)
+            {
+                var container = vineGO.GetComponent<SplineContainer>();
+                if (container == null) continue;
+
+                var spline = container.Spline;
+                float length = spline.GetLength();
+
+                for (float dist = 0; dist < length; dist += _graffitiSampleSpacing)
+                {
+                    float t = dist / length;
+                    _cachedSplineSamples.Add(new SplineSample
+                    {
+                        Position = (Vector3)spline.EvaluatePosition(t),
+                        Tangent = ((Vector3)spline.EvaluateTangent(t)).normalized,
+                        CumulativeDistance = _totalSplineLength + dist
+                    });
+                }
+
+                _totalSplineLength += length;
+            }
+        }
+
+        public List<GraffitiCandidate> GetGraffitiCandidatePositions(
+            IReadOnlyList<BuildingData> buildings,
+            float maxWallDistance = 15f)
+        {
+            var candidates = new List<GraffitiCandidate>();
+
+            foreach (var sample in _cachedSplineSamples)
+            {
+                float nearestWallDist = FindDistanceToNearestWall(sample.Position, buildings);
+
+                if (nearestWallDist <= maxWallDistance)
+                {
+                    candidates.Add(new GraffitiCandidate
+                    {
+                        Position = sample.Position,
+                        SplineTangent = sample.Tangent,
+                        DistanceToWall = nearestWallDist,
+                        SplineDistance = sample.CumulativeDistance
+                    });
+                }
+            }
+
+            // Don't sort globally - CityManager handles segment-based selection
+            return candidates;
+        }
+
+        private float FindDistanceToNearestWall(Vector3 point, IReadOnlyList<BuildingData> buildings)
+        {
+            float nearest = float.MaxValue;
+
+            foreach (var building in buildings)
+            {
+                float dist = CalculateDistanceToBuildingSurface(point, building);
+                if (dist < nearest)
+                    nearest = dist;
+            }
+
+            return nearest;
+        }
+
+        private float CalculateDistanceToBuildingSurface(Vector3 point, BuildingData building)
+        {
+            float halfWidth = building.Scale.x * 0.5f;
+            float halfDepth = building.Scale.z * 0.5f;
+
+            var toPoint = point - building.Position;
+            toPoint.y = 0;
+
+            var buildingForward = building.Rotation * Vector3.forward;
+            var buildingRight = building.Rotation * Vector3.right;
+
+            float dotForward = Vector3.Dot(toPoint, buildingForward);
+            float dotRight = Vector3.Dot(toPoint, buildingRight);
+
+            float distForward = Mathf.Abs(dotForward) - halfDepth;
+            float distRight = Mathf.Abs(dotRight) - halfWidth;
+
+            if (distForward <= 0 && distRight <= 0)
+            {
+                return Mathf.Max(distForward, distRight);
+            }
+            else if (distForward <= 0)
+            {
+                return distRight;
+            }
+            else if (distRight <= 0)
+            {
+                return distForward;
+            }
+            else
+            {
+                return Mathf.Sqrt(distForward * distForward + distRight * distRight);
+            }
         }
     }
 }

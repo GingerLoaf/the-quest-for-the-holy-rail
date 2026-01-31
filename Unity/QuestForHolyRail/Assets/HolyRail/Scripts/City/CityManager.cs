@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using HolyRail;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -76,9 +77,11 @@ namespace HolyRail.City
         [field: SerializeField] public float GraffitiEdgeClearance { get; set; } = 0.5f;
         [field: SerializeField, Range(0f, 1f)] public float GraffitiOnBillboardPercent { get; set; } = 0.3f;
         [field: SerializeField] public float GraffitiBillboardAvoidDistance { get; set; } = 5f;
-        [field: SerializeField] public float GraffitiWallOffset { get; set; } = 2.0f;
+        [field: SerializeField] public float GraffitiWallOffset { get; set; } = 0.1f;
         [field: SerializeField] public float GraffitiProjectionWidth { get; set; } = 6f;
         [field: SerializeField] public float GraffitiProjectionHeight { get; set; } = 3f;
+        [field: SerializeField] public bool UseSplineBasedGraffiti { get; set; } = true;
+        [field: SerializeField] public PathVineGenerator VineGenerator { get; set; }
 
         [Header("Generation Parameters")]
         [field: SerializeField] public int Seed { get; set; } = 12345;
@@ -745,29 +748,38 @@ namespace HolyRail.City
                     Debug.LogWarning("CityManager: Graffiti enabled but GraffitiSpotPrefab is not assigned!");
                 }
 
-                if (generateCorridorA && _corridorPathA.Count > 0)
+                if (UseSplineBasedGraffiti && VineGenerator != null)
                 {
-                    if (IsLoopMode)
-                    {
-                        _loopState.HalfA.GraffitiStartIndex = _generatedGraffitiSpots.Count;
-                        GenerateCorridorGraffitiSpotsForHalf(_corridorPathA, 0, pathMidpointIndex);
-                        _loopState.HalfA.GraffitiCount = _generatedGraffitiSpots.Count - _loopState.HalfA.GraffitiStartIndex;
-
-                        _loopState.HalfB.GraffitiStartIndex = _generatedGraffitiSpots.Count;
-                        GenerateCorridorGraffitiSpotsForHalf(_corridorPathA, pathMidpointIndex, _corridorPathA.Count);
-                        _loopState.HalfB.GraffitiCount = _generatedGraffitiSpots.Count - _loopState.HalfB.GraffitiStartIndex;
-                    }
-                    else
-                    {
-                        GenerateCorridorGraffitiSpots(_corridorPathA);
-                    }
+                    VineGenerator.Generate();
+                    GenerateSplineBasedGraffitiSpots();
                 }
-                if (generateCorridorB && _corridorPathB.Count > 0)
-                    GenerateCorridorGraffitiSpots(_corridorPathB);
-                if (_corridorPathB_ToBC.Count > 0)
-                    GenerateCorridorGraffitiSpots(_corridorPathB_ToBC);
-                if (generateCorridorC && _corridorPathC.Count > 0)
-                    GenerateCorridorGraffitiSpots(_corridorPathC);
+                else
+                {
+                    if (generateCorridorA && _corridorPathA.Count > 0)
+                    {
+                        if (IsLoopMode)
+                        {
+                            _loopState.HalfA.GraffitiStartIndex = _generatedGraffitiSpots.Count;
+                            GenerateCorridorGraffitiSpotsForHalf(_corridorPathA, 0, pathMidpointIndex);
+                            _loopState.HalfA.GraffitiCount = _generatedGraffitiSpots.Count - _loopState.HalfA.GraffitiStartIndex;
+
+                            _loopState.HalfB.GraffitiStartIndex = _generatedGraffitiSpots.Count;
+                            GenerateCorridorGraffitiSpotsForHalf(_corridorPathA, pathMidpointIndex, _corridorPathA.Count);
+                            _loopState.HalfB.GraffitiCount = _generatedGraffitiSpots.Count - _loopState.HalfB.GraffitiStartIndex;
+                        }
+                        else
+                        {
+                            GenerateCorridorGraffitiSpots(_corridorPathA);
+                        }
+                    }
+                    if (generateCorridorB && _corridorPathB.Count > 0)
+                        GenerateCorridorGraffitiSpots(_corridorPathB);
+                    if (_corridorPathB_ToBC.Count > 0)
+                        GenerateCorridorGraffitiSpots(_corridorPathB_ToBC);
+                    if (generateCorridorC && _corridorPathC.Count > 0)
+                        GenerateCorridorGraffitiSpots(_corridorPathC);
+                }
+
                 Debug.Log($"CityManager: Graffiti generation complete. Total graffiti spots: {_generatedGraffitiSpots.Count}");
                 Debug.Log($"CityManager Graffiti Debug: Wall attempts={_debugWallAttempts}, successes={_debugWallSuccesses}");
                 Debug.Log($"  Failures: search={_debugBuildingSearchFails}, width={_debugWidthFails}, height={_debugHeightFails}, Y-range={_debugYRangeFails}");
@@ -1692,6 +1704,81 @@ namespace HolyRail.City
             return true;
         }
 
+        private void GenerateSplineBasedGraffitiSpots()
+        {
+            if (VineGenerator == null) return;
+
+            var candidates = VineGenerator.GetGraffitiCandidatePositions(
+                _generatedBuildings,
+                maxWallDistance: CorridorWidth * 0.5f
+            );
+
+            if (candidates.Count == 0) return;
+
+            int graffitiOnBillboards = Mathf.RoundToInt(GraffitiCount * GraffitiOnBillboardPercent);
+            int graffitiOnWalls = GraffitiCount - graffitiOnBillboards;
+
+            PlaceGraffitiOnBillboards(graffitiOnBillboards);
+
+            // Calculate total spline length to determine segment size
+            float totalSplineLength = VineGenerator.GetTotalSplineLength();
+            if (totalSplineLength <= 0f || graffitiOnWalls <= 0) return;
+
+            float segmentLength = totalSplineLength / graffitiOnWalls;
+
+            // Group candidates by which segment they belong to
+            var segmentCandidates = new Dictionary<int, List<GraffitiCandidate>>();
+
+            foreach (var candidate in candidates)
+            {
+                // Skip candidates inside plazas or junctions
+                if (IsNearPlazaOrJunction(candidate.Position))
+                    continue;
+
+                // Determine which segment this candidate belongs to based on its spline position
+                int segmentIndex = Mathf.FloorToInt(candidate.SplineDistance / segmentLength);
+                segmentIndex = Mathf.Clamp(segmentIndex, 0, graffitiOnWalls - 1);
+
+                if (!segmentCandidates.ContainsKey(segmentIndex))
+                    segmentCandidates[segmentIndex] = new List<GraffitiCandidate>();
+
+                segmentCandidates[segmentIndex].Add(candidate);
+            }
+
+            int placed = 0;
+
+            // For each segment, pick the best candidate (closest to wall) with some randomization
+            for (int seg = 0; seg < graffitiOnWalls && placed < graffitiOnWalls; seg++)
+            {
+                if (!segmentCandidates.TryGetValue(seg, out var segCandidates) || segCandidates.Count == 0)
+                    continue;
+
+                // Sort by wall distance, then pick from top candidates with randomization
+                segCandidates.Sort((a, b) => a.DistanceToWall.CompareTo(b.DistanceToWall));
+
+                // Pick randomly from top 3 candidates (if available) for variety
+                int pickRange = Mathf.Min(3, segCandidates.Count);
+                int pickIndex = Random.Range(0, pickRange);
+                var candidate = segCandidates[pickIndex];
+
+                // Try to place (existing method handles building wall placement + spacing check)
+                // Use Y offsets centered around rail height so graffiti is visible while grinding
+                // -2 to +1 meters from rail: slightly below to slightly above eye level
+                if (TryPlaceGraffitiSpotOnWall(candidate.Position, candidate.SplineTangent, placeOnLeft: true,
+                    yOffsetMin: -2f, yOffsetMax: 1f))
+                {
+                    placed++;
+                }
+                else if (TryPlaceGraffitiSpotOnWall(candidate.Position, candidate.SplineTangent, placeOnLeft: false,
+                    yOffsetMin: -2f, yOffsetMax: 1f))
+                {
+                    placed++;
+                }
+            }
+
+            Debug.Log($"CityManager: Placed {placed} graffiti spots using spline-based placement");
+        }
+
         private void GenerateCorridorGraffitiSpots(List<Vector3> path)
         {
             if (path.Count < 2)
@@ -1902,15 +1989,10 @@ namespace HolyRail.City
                 position += billboardRight * xOffset; // Horizontal offset along billboard
                 position.y = yPos;
 
-                // DecalProjector projects along -Z
-                // billboard.Normal points toward corridor, so forward (+Z) = billboard.Normal
-                // This makes -Z point into the billboard surface
-                var graffitiRotation = Quaternion.LookRotation(billboard.Normal, Vector3.up);
-
                 var graffiti = new GraffitiSpotData
                 {
                     Position = position,
-                    Rotation = graffitiRotation,
+                    Rotation = Quaternion.identity,
                     Normal = -billboard.Normal, // Direction decal projects (into billboard)
                     BillboardIndex = billboardIndex
                 };
@@ -1921,7 +2003,8 @@ namespace HolyRail.City
             }
         }
 
-        private bool TryPlaceGraffitiSpotOnWall(Vector3 pathPosition, Vector3 tangent, bool placeOnLeft)
+        private bool TryPlaceGraffitiSpotOnWall(Vector3 pathPosition, Vector3 tangent, bool placeOnLeft,
+            float? yOffsetMin = null, float? yOffsetMax = null)
         {
             _debugWallAttempts++;
 
@@ -1973,9 +2056,8 @@ namespace HolyRail.City
                 surfaceOffset = surfaceNormal * halfWidth;
             }
 
-            // Position in front of the building surface (toward corridor)
-            // surfaceNormal points toward corridor, so add offset in that direction
-            // DecalProjector projects 5.29 units backward, so we need enough offset to prevent clipping
+            // Position flush with the building surface (tiny offset to prevent z-fighting)
+            // surfaceNormal points toward corridor, so add small offset in that direction
             var position = buildingData.Position + surfaceOffset + surfaceNormal * GraffitiWallOffset;
 
             // Add random horizontal offset along the wall surface
@@ -2024,8 +2106,10 @@ namespace HolyRail.City
             }
 
             // Also respect player-reachable height constraints
-            float playerYMin = pathPosition.y + GraffitiYOffsetMin;
-            float playerYMax = pathPosition.y + GraffitiYOffsetMax;
+            float effectiveYOffsetMin = yOffsetMin ?? GraffitiYOffsetMin;
+            float effectiveYOffsetMax = yOffsetMax ?? GraffitiYOffsetMax;
+            float playerYMin = pathPosition.y + effectiveYOffsetMin;
+            float playerYMax = pathPosition.y + effectiveYOffsetMax;
 
             // Clamp to intersection of safe range and player range
             float actualYMin = Mathf.Max(safeYMin, playerYMin);
@@ -2038,6 +2122,16 @@ namespace HolyRail.City
             }
 
             position.y = RandomRange(actualYMin, actualYMax);
+
+            // Check that the graffiti position is not inside any building
+            foreach (var otherBuilding in _generatedBuildings)
+            {
+                if (IsPointInsideBuilding(position, otherBuilding))
+                {
+                    _debugBuildingIntersectFails++;
+                    return false;
+                }
+            }
 
             // Check spacing from other graffiti spots
             foreach (var existingGraffiti in _generatedGraffitiSpots)
@@ -2116,15 +2210,10 @@ namespace HolyRail.City
 
             _debugWallSuccesses++;
 
-            // Rotation: DecalProjector projects along -Z (backward)
-            // surfaceNormal points toward corridor (away from wall)
-            // We want -Z to point at wall, so forward (+Z) should point toward corridor = surfaceNormal
-            var rotation = Quaternion.LookRotation(surfaceNormal, Vector3.up);
-
             var graffiti = new GraffitiSpotData
             {
                 Position = position,
-                Rotation = rotation,
+                Rotation = Quaternion.identity,
                 Normal = -surfaceNormal, // Normal points INTO wall
                 BillboardIndex = -1 // Not on a billboard
             };
@@ -2173,6 +2262,21 @@ namespace HolyRail.City
             float halfWidth = billboard.Scale.x * 0.5f;
             float halfHeight = billboard.Scale.y * 0.5f;
             float halfDepth = billboard.Scale.z * 0.5f + 0.5f; // Extra depth margin for projection
+
+            return Mathf.Abs(localPos.x) <= halfWidth &&
+                   Mathf.Abs(localPos.y) <= halfHeight &&
+                   Mathf.Abs(localPos.z) <= halfDepth;
+        }
+
+        private bool IsPointInsideBuilding(Vector3 point, BuildingData building)
+        {
+            // Transform point to building's local space
+            var toPoint = point - building.Position;
+            var localPos = Quaternion.Inverse(building.Rotation) * toPoint;
+
+            float halfWidth = building.Scale.x * 0.5f;
+            float halfHeight = building.Scale.y * 0.5f;
+            float halfDepth = building.Scale.z * 0.5f;
 
             return Mathf.Abs(localPos.x) <= halfWidth &&
                    Mathf.Abs(localPos.y) <= halfHeight &&

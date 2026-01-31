@@ -1,10 +1,13 @@
+using System.Collections;
 using System.Collections.Generic;
 using Art.PickUps;
 using UnityEngine;
+using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
 using UnityEngine.Splines;
 using Unity.Mathematics;
 using HolyRail.City;
+using HolyRail.PostProcessing;
 using HolyRail.Scripts;
 using HolyRail.Scripts.Enemies;
 using HolyRail.Graffiti;
@@ -455,6 +458,13 @@ namespace StarterAssets
 
         public GrindGlowLight GrindGlowLight;
 
+        [Header("Death Effect")]
+        [Tooltip("Volume containing the MatrixRainDeathVolume component for death wipe effect")]
+        [SerializeField] private Volume _deathEffectVolume;
+        [Tooltip("Duration of the death wipe animation in seconds")]
+        [SerializeField] private float _deathWipeDuration = 1f;
+
+        private MatrixRainDeathVolume _deathWipeVolume;
         private AudioSource _grindLoopAudioSource;
         private AudioSource _skateLoopAudioSource;
         private AudioSource _wallRideLoopAudioSource;
@@ -738,6 +748,13 @@ namespace StarterAssets
                 GameSessionManager.Instance.ResetHealth();
                 GameSessionManager.Instance.ClearPickups();
                 GameSessionManager.Instance.OnPlayerDeath += HandlePlayerDeath;
+            }
+
+            // Cache death wipe volume component
+            if (_deathEffectVolume != null && _deathEffectVolume.profile.TryGet(out MatrixRainDeathVolume deathVolume))
+            {
+                _deathWipeVolume = deathVolume;
+                _deathWipeVolume.wipePosition.Override(0f); // Ensure starts at 0
             }
         }
 
@@ -2492,7 +2509,58 @@ namespace StarterAssets
 
         private void HandlePlayerDeath()
         {
-            Debug.Log("<color=red>Player died! Performing soft reset...</color>");
+            StartCoroutine(DeathWipeSequence());
+        }
+
+        private IEnumerator DeathWipeSequence()
+        {
+            Debug.Log("<color=red>Player died! Starting death wipe...</color>");
+
+            // Pause the game
+            float previousTimeScale = Time.timeScale;
+            Time.timeScale = 0f;
+
+            // Animate wipe from 0 to 1 using unscaled time
+            if (_deathWipeVolume != null)
+            {
+                float elapsed = 0f;
+                while (elapsed < _deathWipeDuration)
+                {
+                    elapsed += Time.unscaledDeltaTime;
+                    float t = Mathf.Clamp01(elapsed / _deathWipeDuration);
+                    _deathWipeVolume.wipePosition.Override(t);
+                    yield return null;
+                }
+                _deathWipeVolume.wipePosition.Override(1f);
+            }
+
+            // Perform the actual reset while fully covered
+            PerformSoftReset();
+
+            // Wait while fully masked for the teleport to visually take effect
+            yield return new WaitForSecondsRealtime(0.5f);
+
+            // Animate wipe back from 1 to 0
+            if (_deathWipeVolume != null)
+            {
+                float elapsed = 0f;
+                while (elapsed < _deathWipeDuration)
+                {
+                    elapsed += Time.unscaledDeltaTime;
+                    float t = 1f - Mathf.Clamp01(elapsed / _deathWipeDuration);
+                    _deathWipeVolume.wipePosition.Override(t);
+                    yield return null;
+                }
+                _deathWipeVolume.wipePosition.Override(0f);
+            }
+
+            // Resume the game
+            Time.timeScale = previousTimeScale > 0 ? previousTimeScale : 1f;
+        }
+
+        private void PerformSoftReset()
+        {
+            Debug.Log("<color=yellow>Performing soft reset...</color>");
 
             // Reset score
             ScoreManager.Instance?.ResetScore();

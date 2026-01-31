@@ -260,6 +260,8 @@ namespace HolyRail.Vines
 
         [Header("Mesh Rendering")]
         [field: SerializeField] public Material VineMaterial { get; set; }
+        [field: SerializeField, Tooltip("Material with vertex tapering shader (HolyRail/ScrollingGradientTapered)")]
+        public Material TaperedVineMaterial { get; set; }
         [field: SerializeField, Range(0.01f, 0.5f)] public float VineRadius { get; set; } = 0.05f;
         [field: SerializeField, Range(3, 16)] public int VineSegments { get; set; } = 4;
         [field: SerializeField, Range(0, 64)] public int VineSegmentsPerUnit { get; set; } = 4;
@@ -2774,8 +2776,22 @@ namespace HolyRail.Vines
                         }
                         var meshSpline = meshSplineContainer.AddSpline();
 
-                        // Add knots for just the unique portion
-                        for (int i = meshStartIndex; i < path.Count; i++)
+                        // For branches (meshStartIndex > 0), include one extra point before the branch point
+                        // This creates overlap with the trunk so the branch can emerge from inside
+                        int actualMeshStart = meshStartIndex > 0 ? meshStartIndex - 1 : meshStartIndex;
+
+                        // Calculate overlap distance (world distance from extra point to original start)
+                        float overlapDistance = 0f;
+                        if (meshStartIndex > 0 && actualMeshStart < meshStartIndex)
+                        {
+                            overlapDistance = Vector3.Distance(
+                                _generatedNodes[path[actualMeshStart]].Position,
+                                _generatedNodes[path[meshStartIndex]].Position
+                            );
+                        }
+
+                        // Add knots for the mesh portion (with optional overlap)
+                        for (int i = actualMeshStart; i < path.Count; i++)
                         {
                             var pos = _generatedNodes[path[i]].Position;
                             var knot = new BezierKnot(pos);
@@ -2784,61 +2800,100 @@ namespace HolyRail.Vines
 
                         var meshFilter = meshGO.AddComponent<MeshFilter>();
                         var meshRenderer = meshGO.AddComponent<MeshRenderer>();
-                        meshRenderer.sharedMaterial = materialToUse;
 
                         int sides = Mathf.Max(3, VineSegments);
                         int segmentsPerUnit = Mathf.Max(1, VineSegmentsPerUnit);
 
-                        // Use tapered mesh generation if tapering is enabled
-                        if (EnableEndTapering || DistanceTaperStrength > 0f)
-                        {
-                            // Calculate distance from root for this branch segment
-                            float distanceFromRoot = CalculateDistanceFromRoot(path, meshStartIndex);
-
-                            var taperSettings = new TaperedVineMesh.TaperSettings
-                            {
-                                EnableEndTaper = EnableEndTapering,
-                                EndTaperDistance = EndTaperDistance,
-                                DistanceTaperStrength = DistanceTaperStrength,
-                                DistanceFromRoot = distanceFromRoot
-                            };
-
-                            var mesh = TaperedVineMesh.Generate(
-                                meshSpline,
-                                VineRadius,
-                                sides,
-                                segmentsPerUnit,
-                                taperSettings,
-                                capped: true
-                            );
-                            meshFilter.sharedMesh = mesh;
-                        }
-                        else
-                        {
-                            // Use SplineExtrude for non-tapered meshes (more efficient)
-                            var splineExtrude = meshGO.AddComponent<SplineExtrude>();
-                            splineExtrude.Container = meshSplineContainer;
-                            splineExtrude.Radius = VineRadius;
-                            splineExtrude.Sides = sides;
+                        // Always use SplineExtrude for mesh generation
+                        var splineExtrude = meshGO.AddComponent<SplineExtrude>();
+                        splineExtrude.Container = meshSplineContainer;
+                        splineExtrude.Radius = VineRadius;
+                        splineExtrude.Sides = sides;
 
 #if UNITY_EDITOR
-                            var so = new UnityEditor.SerializedObject(splineExtrude);
-                            var shapeProp = so.FindProperty("m_Shape");
-                            if (shapeProp != null)
+                        var so = new UnityEditor.SerializedObject(splineExtrude);
+                        var shapeProp = so.FindProperty("m_Shape");
+                        if (shapeProp != null)
+                        {
+                            var sidesProp = shapeProp.FindPropertyRelative("m_Sides");
+                            if (sidesProp != null)
                             {
-                                var sidesProp = shapeProp.FindPropertyRelative("m_Sides");
-                                if (sidesProp != null)
-                                {
-                                    sidesProp.intValue = sides;
-                                    so.ApplyModifiedPropertiesWithoutUndo();
-                                }
+                                sidesProp.intValue = sides;
+                                so.ApplyModifiedPropertiesWithoutUndo();
                             }
+                        }
 #endif
 
-                            splineExtrude.SegmentsPerUnit = segmentsPerUnit;
-                            splineExtrude.Capped = true;
-                            splineExtrude.Rebuild();
+                        splineExtrude.SegmentsPerUnit = segmentsPerUnit;
+                        // Never use SplineExtrude caps - they create gaps at branch junctions
+                        // because the branch's start cap orientation doesn't match the trunk.
+                        // Instead, the shader closes mesh ends via vertex tapering.
+                        splineExtrude.Capped = false;
+                        splineExtrude.Rebuild();
+
+                        // Post-process mesh to add UV2 with direct spline t (0-1) values
+                        // This enables precise tapering at branch junctions
+                        float meshSplineLength = meshSpline.GetLength();
+                        var mesh = meshFilter.sharedMesh;
+                        if (mesh != null && meshSplineLength > 0.001f)
+                        {
+                            var uvs = new List<Vector2>();
+                            mesh.GetUVs(0, uvs);
+
+                            // Create UV2 with normalized spline t (0-1)
+                            var uv2s = new List<Vector2>(uvs.Count);
+                            for (int k = 0; k < uvs.Count; k++)
+                            {
+                                // UV.y is world distance along spline, convert to spline t
+                                float splineT = Mathf.Clamp01(uvs[k].y / meshSplineLength);
+                                uv2s.Add(new Vector2(splineT, 0f));
+                            }
+                            mesh.SetUVs(1, uv2s);
                         }
+
+                        // Always use tapered material for consistent end handling
+                        // The shader closes mesh ends even when user has tapering disabled
+                        var taperedMat = TaperedVineMaterial;
+                        if (taperedMat == null)
+                        {
+#if UNITY_EDITOR
+                            taperedMat = AssetDatabase.LoadAssetAtPath<Material>(
+                                "Assets/HolyRail/Materials/ScrollingGradientTapered.mat");
+#endif
+                        }
+                        meshRenderer.sharedMaterial = taperedMat != null ? taperedMat : materialToUse;
+
+                        // Set per-instance taper properties via MaterialPropertyBlock
+                        // Calculate distance from root at start and end of this mesh segment
+                        bool isBranchMesh = meshStartIndex > 0;
+                        float distanceFromRootStart = CalculateDistanceFromRoot(path, meshStartIndex);
+                        float distanceFromRootEnd = CalculateDistanceFromRoot(path, path.Count - 1);
+                        float splineLength = meshSplineLength;
+
+                        // Calculate _StartTaperT: normalized t where the overlap ends (branch emerges from trunk)
+                        float startTaperT = 0f;
+                        if (isBranchMesh && overlapDistance > 0f && splineLength > 0.001f)
+                        {
+                            startTaperT = overlapDistance / splineLength;
+                        }
+
+                        // Use a minimum taper distance to close mesh ends when user has tapering disabled
+                        // Only apply to the END of meshes (isBranchMesh tells shader to skip start taper)
+                        float effectiveEndTaper = EnableEndTapering ? EndTaperDistance : 0.01f;
+
+                        var propBlock = new MaterialPropertyBlock();
+                        propBlock.SetFloat("_Radius", VineRadius);
+                        propBlock.SetFloat("_SplineLength", splineLength);
+                        propBlock.SetFloat("_EndTaperDistance", effectiveEndTaper);
+                        propBlock.SetFloat("_IsBranchMesh", isBranchMesh ? 1f : 0f);
+                        propBlock.SetFloat("_StartTaperT", startTaperT);
+                        propBlock.SetFloat("_DistanceTaperStrength", DistanceTaperStrength);
+                        // Pass both start and end values for progressive tapering along the branch
+                        propBlock.SetFloat("_DistanceFromRootStart", distanceFromRootStart);
+                        propBlock.SetFloat("_DistanceFromRootEnd", distanceFromRootEnd);
+                        // Keep legacy value for backwards compatibility (average of start/end)
+                        propBlock.SetFloat("_DistanceFromRoot", (distanceFromRootStart + distanceFromRootEnd) * 0.5f);
+                        meshRenderer.SetPropertyBlock(propBlock);
 
                         // Add SplineMeshController for glow effects
                         var meshController = meshGO.AddComponent<SplineMeshController>();
