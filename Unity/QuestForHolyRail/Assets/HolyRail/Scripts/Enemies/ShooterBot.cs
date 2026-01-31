@@ -117,7 +117,11 @@ namespace HolyRail.Scripts.Enemies
         {
             base.OnSpawn();
 
-            Debug.Log($"ShooterBot [{name}]: Spawned with FireRate={EffectiveFireRate}s, FiringRange={EffectiveFiringRange}m");
+            // Randomize initial fire timer to desynchronize bots that spawn together
+            // Range is 50%-150% of fire rate so bots fire at different times
+            _fireTimer = EffectiveFireRate * Random.Range(0.5f, 1.5f);
+
+            Debug.Log($"ShooterBot [{name}]: Spawned with FireRate={EffectiveFireRate}s, FiringRange={EffectiveFiringRange}m, InitialTimer={_fireTimer:F2}s");
 
             // Randomize position offset within configured ranges
             _targetOffset = new Vector3(
@@ -147,6 +151,39 @@ namespace HolyRail.Scripts.Enemies
                 _motorAudioSource.volume = _audioVolume;
                 _motorAudioSource.Play();
             }
+        }
+
+        public override void OnSpawn(bool startsIdle, Vector3 finalPosition, float enterDuration)
+        {
+            base.OnSpawn(startsIdle, finalPosition, enterDuration);
+
+            // Randomize initial fire timer to desynchronize bots that spawn together
+            // Range is 50%-150% of fire rate so bots fire at different times
+            _fireTimer = EffectiveFireRate * Random.Range(0.5f, 1.5f);
+
+            // Initialize player position tracking for velocity-based lead targeting
+            if (Spawner && Spawner.Player)
+            {
+                _lastPlayerPos = Spawner.Player.position;
+                _playerVelocity = Vector3.zero;
+            }
+
+            // Clear any property block overrides
+            if (_renderer != null && _propertyBlock != null)
+            {
+                _propertyBlock.Clear();
+                _renderer.SetPropertyBlock(_propertyBlock);
+            }
+
+            // Start motor loop sound
+            if (_motorLoopClip != null && _motorAudioSource != null)
+            {
+                _motorAudioSource.clip = _motorLoopClip;
+                _motorAudioSource.volume = _audioVolume;
+                _motorAudioSource.Play();
+            }
+
+            Debug.Log($"ShooterBot [{name}]: Spawned via EnemyController with FireRate={EffectiveFireRate}s, FiringRange={EffectiveFiringRange}m, StartsIdle={startsIdle}, InitialTimer={_fireTimer:F2}s");
         }
 
         protected override void UpdateMovement()

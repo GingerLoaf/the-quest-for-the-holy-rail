@@ -332,6 +332,14 @@ namespace StarterAssets
         [Tooltip("Speed boost applied when starting a grind")]
         public float GrindStartBoost = 4f;
 
+        [Header("Grind Direction Tuning")]
+        [Tooltip("Bias toward positive world Z when determining grind direction (0 = pure velocity, 1 = pure forward bias)")]
+        [Range(0f, 1f)]
+        [SerializeField] private float _forwardBias = 0.5f;
+
+        [Tooltip("Minimum velocity magnitude to use velocity-based direction (below this, applies forward bias)")]
+        [SerializeField] private float _minVelocityForDirection = 2f;
+
         [Header("Wall Riding")]
         [Tooltip("Enable wall ride mechanics")]
         public bool EnableWallRide = true;
@@ -1168,14 +1176,30 @@ namespace StarterAssets
             tangent.y = 0f;
             tangent.Normalize();
 
-            // Use player's velocity to determine grind direction
-            // If no velocity, use player's facing direction
+            // Start with player velocity
             Vector3 playerDirection = _controller.velocity;
             playerDirection.y = 0f;
-            if (playerDirection.sqrMagnitude < 0.1f)
+
+            // Check if we should apply forward bias
+            float velocityMag = playerDirection.magnitude;
+            if (velocityMag < _minVelocityForDirection)
             {
-                playerDirection = transform.forward;
+                // Low velocity: blend between facing and world forward based on bias
+                Vector3 facing = transform.forward;
+                facing.y = 0f;
+                facing.Normalize();
+
+                Vector3 worldForward = Vector3.forward; // Positive Z
+                playerDirection = Vector3.Lerp(facing, worldForward, _forwardBias);
             }
+            else
+            {
+                // Have velocity: blend velocity with world forward based on bias
+                playerDirection.Normalize();
+                Vector3 worldForward = Vector3.forward;
+                playerDirection = Vector3.Lerp(playerDirection, worldForward, _forwardBias * 0.5f);
+            }
+
             playerDirection.Normalize();
 
             // Dot product: positive means same direction as tangent (StartToEnd)

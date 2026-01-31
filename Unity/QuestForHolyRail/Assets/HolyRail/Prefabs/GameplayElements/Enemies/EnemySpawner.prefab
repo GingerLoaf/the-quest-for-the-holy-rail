@@ -10,6 +10,7 @@ GameObject:
   m_Component:
   - component: {fileID: 4779066903883341362}
   - component: {fileID: 4468446077880731019}
+  - component: {fileID: 2683270118720389793}
   m_Layer: 0
   m_Name: EnemySpawner
   m_TagString: Untagged
@@ -57,21 +58,36 @@ MonoBehaviour:
   <SpawnWidth>k__BackingField: 13.5
   <SpawnHeight>k__BackingField: 18.8
   <SpawnDepth>k__BackingField: 10.34
-  <SpawnInterval>k__BackingField: 2
-  <MaxActiveEnemies>k__BackingField: 7
   <BulletPoolSize>k__BackingField: 55
-  <BulletSpeed>k__BackingField: 33
+  <BulletSpeed>k__BackingField: 22
   <BulletSpeedScalesWithPlayer>k__BackingField: 1
   <BulletsKnockOffRail>k__BackingField: 0
   <BulletLifetime>k__BackingField: 11
-  <BulletHomingAmount>k__BackingField: 0
+  <BulletHomingAmount>k__BackingField: 1
   <ParryFlashSpeed>k__BackingField: 1
   <ParryFlashMin>k__BackingField: 1
   <ParryFlashMax>k__BackingField: 1
-  <OverrideFireRate>k__BackingField: 1
-  <GlobalFireRate>k__BackingField: 2
-  <OverrideFiringRange>k__BackingField: 0
-  <GlobalFiringRange>k__BackingField: 30
-  <ParryThresholdDistance>k__BackingField: 1
+  <ShooterBotFireRate>k__BackingField: 5
+  <ShooterBotFiringRange>k__BackingField: 30
+  <UseConstantSpawnMode>k__BackingField: 1
+  <SpawnInterval>k__BackingField: 4
+  <MaxActiveEnemies>k__BackingField: 7
+  <ParryThresholdDistance>k__BackingField: 1.5
   <ParryWindowDuration>k__BackingField: 1
   <ExplosionEffectPrefab>k__BackingField: {fileID: 8735397256515887857, guid: 49c6e6b1e379e324db8528492827b459, type: 3}
+--- !u!114 &2683270118720389793
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6558885053267105923}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f27746cddf45d46239c7228c18364f89, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::HolyRail.Scripts.Enemies.EnemyController
+  _availablePlans:
+  - {fileID: 11400000, guid: 915a8009d5ca4461d8b51256a02525b5, type: 2}
+  _planCooldown: 3
+  _debugLogging: 1

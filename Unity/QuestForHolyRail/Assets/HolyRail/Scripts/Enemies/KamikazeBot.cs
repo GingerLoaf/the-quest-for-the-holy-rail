@@ -30,11 +30,11 @@ namespace HolyRail.Scripts.Enemies
 
         [field: Tooltip("Duration of ramping flash phase (seconds)")]
         [field: SerializeField]
-        public float FlashDuration { get; private set; } = 1f;
+        public float FlashDuration { get; private set; } = 0.5f;
 
         [field: Tooltip("Duration of solid red before explosion (seconds)")]
         [field: SerializeField]
-        public float SolidRedDuration { get; private set; } = 0.5f;
+        public float SolidRedDuration { get; private set; } = 0f;
 
         [field: Tooltip("Flash speed at start of countdown (cycles per second)")]
         [field: SerializeField]
@@ -192,10 +192,10 @@ namespace HolyRail.Scripts.Enemies
             if (!_isArmed) return;
 
             float flash;
-            if (_countdownTimer < FlashDuration)
+            if (_countdownTimer < FlashDuration || SolidRedDuration <= 0f)
             {
                 // Flashing phase: speed ramps up over time
-                float t = _countdownTimer / FlashDuration;
+                float t = FlashDuration > 0f ? Mathf.Clamp01(_countdownTimer / FlashDuration) : 1f;
                 float flashSpeed = Mathf.Lerp(FlashSpeedStart, FlashSpeedEnd, t);
 
                 // Oscillate between 0 and 1
@@ -203,7 +203,7 @@ namespace HolyRail.Scripts.Enemies
             }
             else
             {
-                // Solid red phase
+                // Solid red phase (only if SolidRedDuration > 0)
                 flash = 1f;
             }
 

@@ -21,7 +21,7 @@ namespace HolyRail.Scripts.FX
         {
             _timer += Time.deltaTime;
             float t = Mathf.Clamp01(_timer / ScaleDuration);
-            float scale = _targetRadius * 2f * t;  // diameter = radius * 2
+            float scale = _targetRadius * 3f * t;  // diameter = radius * 2, plus 50% bigger
             transform.localScale = Vector3.one * scale;
 
             if (_timer >= ScaleDuration)

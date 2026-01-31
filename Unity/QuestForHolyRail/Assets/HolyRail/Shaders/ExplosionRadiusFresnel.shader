@@ -32,7 +32,7 @@ Shader "HolyRail/ExplosionRadiusFresnel"
 
         Blend SrcAlpha One
         ZWrite Off
-        Cull Off
+        Cull Front
 
         Pass
         {
@@ -42,7 +42,6 @@ Shader "HolyRail/ExplosionRadiusFresnel"
             HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
-            #pragma multi_compile_fog
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
@@ -59,7 +58,6 @@ Shader "HolyRail/ExplosionRadiusFresnel"
                 float2 uv : TEXCOORD0;
                 float3 worldNormal : TEXCOORD1;
                 float3 worldViewDir : TEXCOORD2;
-                float fogFactor : TEXCOORD3;
             };
 
             TEXTURE2D(_NoiseTex1);
@@ -90,7 +88,6 @@ Shader "HolyRail/ExplosionRadiusFresnel"
                 output.uv = input.uv;
                 output.worldNormal = normalInput.normalWS;
                 output.worldViewDir = GetWorldSpaceViewDir(vertexInput.positionWS);
-                output.fogFactor = ComputeFogFactor(vertexInput.positionCS.z);
 
                 return output;
             }
@@ -104,25 +101,19 @@ Shader "HolyRail/ExplosionRadiusFresnel"
                 half noise1 = SAMPLE_TEXTURE2D(_NoiseTex1, sampler_NoiseTex1, uv1).r;
                 half noise2 = SAMPLE_TEXTURE2D(_NoiseTex2, sampler_NoiseTex2, uv2).r;
 
-                // Blend the two noise textures
-                half noiseCombined = lerp(noise1, noise2, _NoiseBlend);
-
-                // Calculate fresnel
+                // Calculate fresnel - use abs() so it works on both sides of sphere
                 float3 worldNormal = normalize(input.worldNormal);
                 float3 worldViewDir = normalize(input.worldViewDir);
-                float fresnel = pow(1.0 - saturate(dot(worldNormal, worldViewDir)), _FresnelPower);
-                fresnel *= _FresnelIntensity;
+                float NdotV = abs(dot(worldNormal, worldViewDir));
+                float fresnel = pow(1.0 - NdotV, _FresnelPower) * _FresnelIntensity;
 
-                // Combine fresnel with noise
-                half fresnelNoise = fresnel * (0.5 + noiseCombined * 0.5);
+                // Both textures multiplied by fresnel
+                half visibility = fresnel * noise1 * noise2;
 
-                // Final color
+                // Final color: just color * fresnel * noise1 * noise2
                 half4 finalColor;
-                finalColor.rgb = _Color.rgb * _EmissionIntensity * fresnelNoise;
-                finalColor.a = _Color.a * fresnelNoise;
-
-                // Apply fog
-                finalColor.rgb = MixFog(finalColor.rgb, input.fogFactor);
+                finalColor.rgb = _Color.rgb * visibility;
+                finalColor.a = _Color.a * visibility;
 
                 return finalColor;
             }

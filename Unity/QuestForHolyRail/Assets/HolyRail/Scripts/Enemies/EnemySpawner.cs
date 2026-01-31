@@ -168,10 +168,16 @@ namespace HolyRail.Scripts.Enemies
 
         private void OnValidate()
         {
+            // Recalculate total spawn weight when EnemyTypes are modified
+            if (EnemyTypes != null)
+            {
+                _totalSpawnWeight = EnemyTypes.Sum(e => e.SpawnWeight);
+            }
+
             // Log parameter changes during runtime for debugging
             if (Application.isPlaying)
             {
-                Debug.Log($"EnemySpawner: Parameters updated - BulletSpeed={BulletSpeed}, ShooterBotFireRate={ShooterBotFireRate}s, ShooterBotFiringRange={ShooterBotFiringRange}m");
+                Debug.Log($"EnemySpawner: Parameters updated - BulletSpeed={BulletSpeed}, ShooterBotFireRate={ShooterBotFireRate}s, ShooterBotFiringRange={ShooterBotFiringRange}m, TotalSpawnWeight={_totalSpawnWeight}");
             }
         }
 
