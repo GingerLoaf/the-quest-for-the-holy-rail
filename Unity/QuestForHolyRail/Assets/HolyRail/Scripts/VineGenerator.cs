@@ -41,11 +41,34 @@ namespace HolyRail.Vines
         public const float CurvinessMax = 0.65f;
     }
 
+    // Player reach constants (from ThirdPersonController_RailGrinder)
+    public static class PlayerReachConstants
+    {
+        public const float JumpHeight = 1.2f;           // Player's jump height
+        public const float GrindSpeed = 8f;             // Base grind speed
+        public const float HorizontalReach = 4.5f;      // Approximate horizontal reach at grind speed
+        public const float ReachPadding = 0.5f;         // Safety padding for reachability checks
+    }
+
+    // Report on objective reachability from generated rails
+    public struct ReachabilityReport
+    {
+        public int TotalBillboards;
+        public int ReachableBillboards;
+        public int TotalGraffiti;
+        public int ReachableGraffiti;
+        public List<BillboardData> UnreachableBillboards;
+        public List<GraffitiSpotData> UnreachableGraffiti;
+
+        public int UnreachableObjectives => (TotalBillboards - ReachableBillboards) + (TotalGraffiti - ReachableGraffiti);
+        public float BillboardReachabilityPercent => TotalBillboards > 0 ? (ReachableBillboards * 100f / TotalBillboards) : 100f;
+        public float GraffitiReachabilityPercent => TotalGraffiti > 0 ? (ReachableGraffiti * 100f / TotalGraffiti) : 100f;
+    }
+
     [ExecuteInEditMode]
     public class VineGenerator : MonoBehaviour
     {
         private const int FixedPointScale = 10000;
-        private const int MaxNodes = 50000;
         private const int ThreadGroupSize = 64;
 
         [System.Serializable]
@@ -76,6 +99,10 @@ namespace HolyRail.Vines
 
         [Header("Editor")]
         [field: SerializeField] public bool AutoRegenerate { get; set; } = false;
+
+        [Header("Limits")]
+        [field: SerializeField, Range(1000, 200000)] public int MaxNodes { get; set; } = 50000;
+        [field: SerializeField, Range(10, 2000)] public int MaxSplineCount { get; set; } = 200;
 
         [Header("Algorithm Settings")]
         [field: SerializeField] public ComputeShader VineComputeShader { get; private set; }
@@ -114,6 +141,18 @@ namespace HolyRail.Vines
         [Header("Ramp Avoidance")]
         [field: SerializeField] public bool EnableRampAvoidance { get; set; } = true;
         [field: SerializeField, Range(0.5f, 20f)] public float RampAvoidanceDistance { get; set; } = 3f;
+        [field: SerializeField] public LayerMask RampLayers { get; set; }
+
+        [Header("Ground Avoidance")]
+        [field: SerializeField] public bool EnableGroundAvoidance { get; set; } = true;
+        [field: SerializeField] public LayerMask GroundLayers { get; set; }
+        [field: SerializeField, Range(0.1f, 5f)] public float MinHeightAboveGround { get; set; } = 0.5f;
+
+        [Header("Building/Billboard Avoidance")]
+        [field: SerializeField] public bool EnableBuildingAvoidance { get; set; } = true;
+        [field: SerializeField, Range(0.5f, 5f)] public float BuildingAvoidanceDistance { get; set; } = 2f;
+        [field: SerializeField] public bool EnableBillboardAvoidance { get; set; } = true;
+        [field: SerializeField, Range(0.5f, 3f)] public float BillboardAvoidanceDistance { get; set; } = 1.5f;
 
         [Header("Direction Bias")]
         [field: SerializeField] public Vector3 ForwardDirection { get; set; } = Vector3.forward;
@@ -122,14 +161,14 @@ namespace HolyRail.Vines
         [Header("Free Mode Settings")]
         [field: SerializeField] public int FreeSplineCount { get; set; } = 10;
         [field: SerializeField] public Vector2 FreeLengthRange { get; set; } = new Vector2(20f, 50f);
-        [field: SerializeField] public int FreePointsPerSpline { get; set; } = 20;
-        [field: SerializeField] public Vector3 FreeNoiseAmplitude { get; set; } = new Vector3(2f, 2f, 0f);  // Right, Up, Forward
-        [field: SerializeField] public Vector3 FreeNoiseFrequency { get; set; } = new Vector3(0.5f, 0.3f, 0f);  // Right, Up, Forward
+        [field: SerializeField] public int FreePointsPerSpline { get; set; } = 35;  // More points = smoother curves
+        [field: SerializeField] public Vector3 FreeNoiseAmplitude { get; set; } = new Vector3(6f, 2.5f, 0f);  // Right, Up, Forward - moderate lateral weave, gentle vertical
+        [field: SerializeField] public Vector3 FreeNoiseFrequency { get; set; } = new Vector3(0.12f, 0.1f, 0f);  // Right, Up, Forward - low frequency for smooth waves
 
         [Header("Path Mode Settings")]
         [field: SerializeField] public CityManager CityManager { get; set; }
         [field: SerializeField] public int VinesPerCorridor { get; set; } = 3;
-        [field: SerializeField] public Vector2 PathLengthRange { get; set; } = new Vector2(50f, 200f);
+        [field: SerializeField] public Vector2 PathLengthRange { get; set; } = new Vector2(25f, 120f);  // Minimum useful rail length
         [field: SerializeField] public float PathCorridorWidth { get; set; } = 20f;
         [field: SerializeField] public float PathStartOffset { get; set; } = 10f;
         [field: SerializeField] public bool StartBelowGround { get; set; } = true;
@@ -138,10 +177,10 @@ namespace HolyRail.Vines
 
         [Header("Path Mode - Attraction")]
         [field: SerializeField, Range(0f, 1f)]
-        public float BillboardAttractionStrength { get; set; } = 0f;
+        public float BillboardAttractionStrength { get; set; } = 0.4f;  // Route 40% toward billboards
 
         [field: SerializeField, Range(0f, 1f)]
-        public float GraffitiAttractionStrength { get; set; } = 0f;
+        public float GraffitiAttractionStrength { get; set; } = 0.5f;  // Route 50% toward graffiti
 
         [field: SerializeField]
         public float AttractorSearchRadius { get; set; } = 50f;
@@ -156,7 +195,7 @@ namespace HolyRail.Vines
 
         [Header("Level Chunk Influence")]
         [field: SerializeField, Range(0f, 1f)]
-        public float LevelChunkInfluence { get; set; } = 0f;
+        public float LevelChunkInfluence { get; set; } = 0.6f;  // Blend toward proven smooth parameters
 
         [Header("Volume Height")]
         [field: SerializeField]
@@ -174,6 +213,27 @@ namespace HolyRail.Vines
         [field: SerializeField]
         public float VineStartRange { get; set; } = 0.8f;  // Legacy - kept for old methods
 
+        [Header("Rail Connectivity")]
+        [SerializeField]
+        private bool _enableRailBridges = true;
+        public bool EnableRailBridges { get => _enableRailBridges; set => _enableRailBridges = value; }
+
+        [SerializeField, Range(2f, 15f)]
+        private float _bridgeMaxDistance = 8f;
+        public float BridgeMaxDistance { get => _bridgeMaxDistance; set => _bridgeMaxDistance = value; }
+
+        [SerializeField, Range(0.1f, 2f)]
+        private float _bridgeMinDistance = 0.5f;
+        public float BridgeMinDistance { get => _bridgeMinDistance; set => _bridgeMinDistance = value; }
+
+        [SerializeField, Range(0.1f, 5f)]
+        private float _stitchDistance = 3f;
+        public float StitchDistance { get => _stitchDistance; set => _stitchDistance = value; }
+
+        [SerializeField]
+        private bool _enableConnectorRails = true;
+        public bool EnableConnectorRails { get => _enableConnectorRails; set => _enableConnectorRails = value; }
+
         [Header("Visualization")]
         [field: SerializeField] public bool ShowAttractors { get; set; } = true;
         [field: SerializeField] public bool ShowNodes { get; set; } = true;
@@ -186,7 +246,6 @@ namespace HolyRail.Vines
 
         [Header("Spline Conversion")]
         [field: SerializeField, Range(2, 100)] public int MinSplineLength { get; set; } = 2;
-        [field: SerializeField, Range(10, 1000)] public int MaxSplineCount { get; set; } = 200;
         [field: SerializeField, Range(0f, 10f)] public float MinSplineWorldLength { get; set; } = 0.5f;
 
         [Header("Path Smoothing")]
@@ -254,6 +313,11 @@ namespace HolyRail.Vines
         private int _growKernel;
         private int _pruneKernel;
 
+        // Spatial grids for building/billboard collision checks
+        private SpatialGrid<BuildingData> _buildingSpatialGrid;
+        private SpatialGrid<BillboardData> _billboardSpatialGrid;
+        private List<int> _spatialQueryResults = new List<int>();
+
         // Cached glow material (loaded from Assets)
         private Material _scrollingGradientMaterial;
 
@@ -270,21 +334,268 @@ namespace HolyRail.Vines
         }
 
         public int NodeCount => _generatedNodes.Count;
-        public int AttractorCount_Active => _generatedAttractors.FindAll(a => a.Active == 1).Count;
+        public int AttractorCount_Active => _generatedAttractors.Count(a => a.Active == 1);
         public int SplineCount => _generatedSplines.Count;
         public bool HasData => _generatedNodes.Count > 0;
         public IReadOnlyList<BranchConnection> BranchConnections => _branchConnections;
 
-        public List<SplineContainer> GetConnectedSplines(SplineContainer fromSpline, bool atEnd)
+        private void InitializeObstacleGrids()
         {
-            foreach (var connection in _branchConnections)
+            if (CityManager == null)
             {
-                if (connection.FromSpline == fromSpline && connection.FromEnd == atEnd)
+                _buildingSpatialGrid = null;
+                _billboardSpatialGrid = null;
+                return;
+            }
+
+            // Initialize building spatial grid (only corridor-adjacent buildings with NeedsCollider == 1)
+            if (CityManager.HasData && EnableBuildingAvoidance)
+            {
+                _buildingSpatialGrid = new SpatialGrid<BuildingData>(
+                    20f, // Cell size - buildings are large
+                    Vector3.zero,
+                    b => b.Position,
+                    b => b.NeedsCollider == 1 // Only check corridor-adjacent buildings
+                );
+                _buildingSpatialGrid.Initialize(CityManager.Buildings);
+                Debug.Log($"VineGenerator: Building spatial grid initialized with {CityManager.Buildings.Count} buildings ({_buildingSpatialGrid.CellCount} cells)");
+            }
+            else
+            {
+                _buildingSpatialGrid = null;
+            }
+
+            // Initialize billboard spatial grid
+            if (CityManager.HasBillboardData && EnableBillboardAvoidance)
+            {
+                _billboardSpatialGrid = new SpatialGrid<BillboardData>(
+                    15f, // Cell size - billboards are medium-sized
+                    Vector3.zero,
+                    b => b.Position
+                );
+                _billboardSpatialGrid.Initialize(CityManager.Billboards);
+                Debug.Log($"VineGenerator: Billboard spatial grid initialized with {CityManager.Billboards.Count} billboards ({_billboardSpatialGrid.CellCount} cells)");
+            }
+            else
+            {
+                _billboardSpatialGrid = null;
+            }
+        }
+
+        private bool IsPointInsideOBB(Vector3 point, Vector3 center, Vector3 halfExtents, Quaternion rotation, float padding)
+        {
+            // Transform point to local space of the OBB
+            Vector3 localPoint = Quaternion.Inverse(rotation) * (point - center);
+            Vector3 paddedExtents = halfExtents + Vector3.one * padding;
+
+            return Mathf.Abs(localPoint.x) <= paddedExtents.x &&
+                   Mathf.Abs(localPoint.y) <= paddedExtents.y &&
+                   Mathf.Abs(localPoint.z) <= paddedExtents.z;
+        }
+
+        private bool IsPositionInsideBuilding(Vector3 position, float padding)
+        {
+            if (_buildingSpatialGrid == null || CityManager == null || !CityManager.HasData)
+                return false;
+
+            // Query nearby buildings using spatial grid
+            float queryRadius = 30f + padding; // Search radius covers typical building sizes
+            _buildingSpatialGrid.GetItemsInRadius(position, queryRadius, _spatialQueryResults);
+
+            foreach (var index in _spatialQueryResults)
+            {
+                var building = CityManager.Buildings[index];
+
+                // Building Scale: x = width, y = height, z = depth
+                Vector3 halfExtents = building.Scale * 0.5f;
+
+                if (IsPointInsideOBB(position, building.Position, halfExtents, building.Rotation, padding))
                 {
-                    return connection.ConnectedSplines;
+                    return true;
                 }
             }
-            return null;
+
+            return false;
+        }
+
+        private bool IsPositionInsideBillboard(Vector3 position, float padding)
+        {
+            if (_billboardSpatialGrid == null || CityManager == null || !CityManager.HasBillboardData)
+                return false;
+
+            // Query nearby billboards using spatial grid
+            float queryRadius = 20f + padding; // Search radius covers typical billboard sizes
+            _billboardSpatialGrid.GetItemsInRadius(position, queryRadius, _spatialQueryResults);
+
+            foreach (var index in _spatialQueryResults)
+            {
+                var billboard = CityManager.Billboards[index];
+
+                // Billboard Scale: x = width, y = height, z = depth (thin)
+                Vector3 halfExtents = billboard.Scale * 0.5f;
+
+                if (IsPointInsideOBB(position, billboard.Position, halfExtents, billboard.Rotation, padding))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private Vector3 GetBuildingAvoidanceOffset(Vector3 position, Vector3 prevPosition)
+        {
+            if (_buildingSpatialGrid == null || CityManager == null || !CityManager.HasData)
+                return Vector3.zero;
+
+            Vector3 totalPush = Vector3.zero;
+            int pushCount = 0;
+
+            // Query nearby buildings
+            float queryRadius = 30f + BuildingAvoidanceDistance;
+            _buildingSpatialGrid.GetItemsInRadius(position, queryRadius, _spatialQueryResults);
+
+            foreach (var index in _spatialQueryResults)
+            {
+                var building = CityManager.Buildings[index];
+                Vector3 halfExtents = building.Scale * 0.5f;
+
+                if (!IsPointInsideOBB(position, building.Position, halfExtents, building.Rotation, BuildingAvoidanceDistance))
+                    continue;
+
+                // Calculate push direction: transform to local, find nearest face, push outward
+                Vector3 localPoint = Quaternion.Inverse(building.Rotation) * (position - building.Position);
+                Vector3 paddedExtents = halfExtents + Vector3.one * BuildingAvoidanceDistance;
+
+                // Find which axis has the smallest penetration
+                float penX = paddedExtents.x - Mathf.Abs(localPoint.x);
+                float penY = paddedExtents.y - Mathf.Abs(localPoint.y);
+                float penZ = paddedExtents.z - Mathf.Abs(localPoint.z);
+
+                Vector3 localPush;
+                if (penX <= penY && penX <= penZ)
+                {
+                    // Push out along X
+                    localPush = new Vector3(Mathf.Sign(localPoint.x) * (penX + 0.5f), 0f, 0f);
+                }
+                else if (penY <= penZ)
+                {
+                    // Push out along Y (up/down)
+                    localPush = new Vector3(0f, Mathf.Sign(localPoint.y) * (penY + 0.5f), 0f);
+                }
+                else
+                {
+                    // Push out along Z
+                    localPush = new Vector3(0f, 0f, Mathf.Sign(localPoint.z) * (penZ + 0.5f));
+                }
+
+                // Transform push back to world space
+                Vector3 worldPush = building.Rotation * localPush;
+                totalPush += worldPush;
+                pushCount++;
+            }
+
+            return pushCount > 0 ? totalPush / pushCount : Vector3.zero;
+        }
+
+        private Vector3 GetBillboardAvoidanceOffset(Vector3 position, Vector3 prevPosition)
+        {
+            if (_billboardSpatialGrid == null || CityManager == null || !CityManager.HasBillboardData)
+                return Vector3.zero;
+
+            Vector3 totalPush = Vector3.zero;
+            int pushCount = 0;
+
+            // Query nearby billboards
+            float queryRadius = 20f + BillboardAvoidanceDistance;
+            _billboardSpatialGrid.GetItemsInRadius(position, queryRadius, _spatialQueryResults);
+
+            foreach (var index in _spatialQueryResults)
+            {
+                var billboard = CityManager.Billboards[index];
+                Vector3 halfExtents = billboard.Scale * 0.5f;
+
+                if (!IsPointInsideOBB(position, billboard.Position, halfExtents, billboard.Rotation, BillboardAvoidanceDistance))
+                    continue;
+
+                // Push along the billboard's normal (inward-facing direction points into corridor)
+                // We want to push the vine away from the billboard surface
+                Vector3 pushDir = -billboard.Normal; // Opposite of inward normal = outward
+
+                // Calculate penetration depth
+                Vector3 localPoint = Quaternion.Inverse(billboard.Rotation) * (position - billboard.Position);
+                float penZ = (halfExtents.z + BillboardAvoidanceDistance) - Mathf.Abs(localPoint.z);
+
+                totalPush += pushDir * (penZ + 0.5f);
+                pushCount++;
+            }
+
+            return pushCount > 0 ? totalPush / pushCount : Vector3.zero;
+        }
+
+        // Maximum allowed direction change per step (in degrees) to prevent zig-zagging
+        private const float MaxDirectionChangeDegrees = 45f;
+
+        private Vector3 ApplyAllObstacleAvoidance(Vector3 position, Vector3 prevPosition)
+        {
+            Vector3 originalPosition = position;
+
+            // 1. Ground clamp (always first)
+            ClampAboveGround(ref position);
+
+            // 2. Building avoidance (queries CityManager.Buildings)
+            if (EnableBuildingAvoidance && IsPositionInsideBuilding(position, BuildingAvoidanceDistance))
+            {
+                position += GetBuildingAvoidanceOffset(position, prevPosition);
+            }
+
+            // 3. Billboard avoidance (queries CityManager.Billboards)
+            if (EnableBillboardAvoidance && IsPositionInsideBillboard(position, BillboardAvoidanceDistance))
+            {
+                position += GetBillboardAvoidanceOffset(position, prevPosition);
+            }
+
+            // 4. Ramp avoidance (existing)
+            if (EnableRampAvoidance && IsPositionNearRamp(position, RampAvoidanceDistance))
+            {
+                position += GetRampAvoidanceOffset(position, prevPosition);
+            }
+
+            // 5. Apply forward bias to encourage flow in ForwardDirection
+            if (ForwardBias > 0.01f)
+            {
+                Vector3 toPosition = position - prevPosition;
+                float forwardComponent = Vector3.Dot(toPosition, ForwardDirection.normalized);
+
+                // If moving backward relative to forward direction, bias it forward
+                if (forwardComponent < 0)
+                {
+                    // Add forward push proportional to how backward we're going
+                    position += ForwardDirection.normalized * (-forwardComponent * ForwardBias);
+                }
+            }
+
+            // 6. Anti-zigzag: limit direction change from previous segment
+            Vector3 originalDir = (originalPosition - prevPosition).normalized;
+            Vector3 newDir = (position - prevPosition).normalized;
+
+            if (originalDir.sqrMagnitude > 0.01f && newDir.sqrMagnitude > 0.01f)
+            {
+                float angle = Vector3.Angle(originalDir, newDir);
+                if (angle > MaxDirectionChangeDegrees)
+                {
+                    // Blend toward the original direction to limit the turn
+                    float blendFactor = MaxDirectionChangeDegrees / angle;
+                    Vector3 blendedDir = Vector3.Slerp(originalDir, newDir, blendFactor).normalized;
+                    float dist = Vector3.Distance(originalPosition, prevPosition);
+                    position = prevPosition + blendedDir * dist;
+                }
+            }
+
+            // 7. Final ground clamp
+            ClampAboveGround(ref position);
+
+            return position;
         }
 
         public void Regenerate()
@@ -315,6 +626,9 @@ namespace HolyRail.Vines
             }
 
             Clear();
+
+            // Initialize spatial grids for building/billboard collision checks
+            InitializeObstacleGrids();
 
             // Free mode bypasses attractors and GPU algorithm
             if (AttractorGenerationMode == AttractorMode.Free)
@@ -401,22 +715,30 @@ namespace HolyRail.Vines
             int obstacleFiltered = 0;
             int rampFiltered = 0;
 
-            if (EnableObstacleAvoidance)
+            // Single-pass in-place filtering to avoid allocations
+            int writeIndex = 0;
+            for (int i = 0; i < _generatedAttractors.Count; i++)
             {
-                int beforeObstacle = _generatedAttractors.Count;
-                _generatedAttractors = _generatedAttractors
-                    .Where(a => !Physics.CheckSphere(a.Position, ObstacleAvoidanceDistance))
-                    .ToList();
-                obstacleFiltered = beforeObstacle - _generatedAttractors.Count;
+                var attractor = _generatedAttractors[i];
+
+                if (EnableObstacleAvoidance && Physics.CheckSphere(attractor.Position, ObstacleAvoidanceDistance))
+                {
+                    obstacleFiltered++;
+                    continue;
+                }
+
+                if (EnableRampAvoidance && IsPositionNearRamp(attractor.Position, RampAvoidanceDistance))
+                {
+                    rampFiltered++;
+                    continue;
+                }
+
+                _generatedAttractors[writeIndex++] = attractor;
             }
 
-            if (EnableRampAvoidance)
+            if (writeIndex < _generatedAttractors.Count)
             {
-                int beforeRamp = _generatedAttractors.Count;
-                _generatedAttractors = _generatedAttractors
-                    .Where(a => !IsPositionNearRamp(a.Position, RampAvoidanceDistance))
-                    .ToList();
-                rampFiltered = beforeRamp - _generatedAttractors.Count;
+                _generatedAttractors.RemoveRange(writeIndex, _generatedAttractors.Count - writeIndex);
             }
 
             int totalRemoved = originalCount - _generatedAttractors.Count;
@@ -424,84 +746,212 @@ namespace HolyRail.Vines
                 Debug.Log($"VineGenerator: Filtered {totalRemoved} attractors ({obstacleFiltered} near obstacles, {rampFiltered} near ramps)");
         }
 
-        private int _rampAvoidanceHitCount = 0;
-
         private bool IsPositionNearRamp(Vector3 position, float distance)
         {
-            if (CityManager == null || !CityManager.HasRampData)
-                return false;
-
-            foreach (var ramp in CityManager.Ramps)
+            // Check physics layer for any ramp colliders (manual or generated)
+            // Auto-detect Ramp layer if RampLayers not set
+            LayerMask effectiveLayers = RampLayers;
+            if (effectiveLayers.value == 0)
             {
-                // Ramp Scale: x = width, y = depth (thin), z = length
-                // Use the ramp's maximum extent plus avoidance distance as radius
-                float rampRadius = Mathf.Max(ramp.Scale.x, ramp.Scale.z) * 0.5f + distance;
-                float rampRadiusSq = rampRadius * rampRadius;
+                int rampLayer = LayerMask.NameToLayer("Ramp");
+                if (rampLayer != -1)
+                    effectiveLayers = 1 << rampLayer;
+            }
 
-                // Check XZ distance (horizontal plane) - most important for ground-based ramps
-                var toRamp = position - ramp.Position;
-                float horizDistSq = toRamp.x * toRamp.x + toRamp.z * toRamp.z;
+            if (effectiveLayers.value != 0 && Physics.CheckSphere(position, distance, effectiveLayers))
+            {
+                return true;
+            }
 
-                // Check if within horizontal radius and reasonable vertical range
-                float verticalTolerance = ramp.Scale.z * 0.5f + distance + 5f; // Extra vertical buffer for tilted ramps
-                if (horizDistSq < rampRadiusSq && Mathf.Abs(toRamp.y) < verticalTolerance)
+            // Also check CityManager ramp data (for generated ramps that may not have colliders yet)
+            if (CityManager != null && CityManager.HasRampData)
+            {
+                foreach (var ramp in CityManager.Ramps)
                 {
-                    _rampAvoidanceHitCount++;
-                    return true;
+                    // Ramp Scale: x = width, y = depth (thin), z = length
+                    // Use the ramp's maximum extent plus avoidance distance as radius
+                    float rampRadius = Mathf.Max(ramp.Scale.x, ramp.Scale.z) * 0.5f + distance;
+                    float rampRadiusSq = rampRadius * rampRadius;
+
+                    // Check XZ distance (horizontal plane) - most important for ground-based ramps
+                    var toRamp = position - ramp.Position;
+                    float horizDistSq = toRamp.x * toRamp.x + toRamp.z * toRamp.z;
+
+                    // Check if within horizontal radius and reasonable vertical range
+                    float verticalTolerance = ramp.Scale.z * 0.5f + distance + 5f; // Extra vertical buffer for tilted ramps
+                    if (horizDistSq < rampRadiusSq && Mathf.Abs(toRamp.y) < verticalTolerance)
+                    {
+                        return true;
+                    }
                 }
             }
 
             return false;
         }
 
+        private static readonly Collider[] _rampOverlapResults = new Collider[8];
+
         private Vector3 GetRampAvoidanceOffset(Vector3 position, Vector3 prevPosition)
         {
-            if (CityManager == null || !CityManager.HasRampData)
-                return Vector3.zero;
-
             Vector3 totalPush = Vector3.zero;
             int pushCount = 0;
 
-            foreach (var ramp in CityManager.Ramps)
+            // Check physics layer for any ramp colliders (manual or generated)
+            // Auto-detect Ramp layer if RampLayers not set
+            LayerMask effectiveLayers = RampLayers;
+            if (effectiveLayers.value == 0)
             {
-                // Ramp Scale: x = width, y = depth (thin), z = length
-                float rampRadius = Mathf.Max(ramp.Scale.x, ramp.Scale.z) * 0.5f + RampAvoidanceDistance;
+                int rampLayer = LayerMask.NameToLayer("Ramp");
+                if (rampLayer != -1)
+                    effectiveLayers = 1 << rampLayer;
+            }
 
-                var toPosition = position - ramp.Position;
-                float horizDist = Mathf.Sqrt(toPosition.x * toPosition.x + toPosition.z * toPosition.z);
+            if (effectiveLayers.value != 0)
+            {
+                // Use larger detection radius for early, gradual avoidance
+                float detectionRadius = RampAvoidanceDistance * 2f;
+                int hitCount = Physics.OverlapSphereNonAlloc(position, detectionRadius, _rampOverlapResults, effectiveLayers);
 
-                if (horizDist < rampRadius)
+                for (int i = 0; i < hitCount; i++)
                 {
-                    // Calculate push direction (away from ramp center, in XZ plane)
-                    Vector3 pushDir;
-                    if (horizDist > 0.1f)
+                    var collider = _rampOverlapResults[i];
+                    var closestPoint = collider.ClosestPoint(position);
+                    var toPosition = position - closestPoint;
+                    float dist = toPosition.magnitude;
+
+                    if (dist < detectionRadius)
                     {
-                        pushDir = new Vector3(toPosition.x, 0f, toPosition.z).normalized;
-                    }
-                    else
-                    {
-                        // Too close to center, use travel direction or ramp's forward
-                        var travelDir = (position - prevPosition);
-                        travelDir.y = 0f;
-                        if (travelDir.sqrMagnitude > 0.01f)
+                        // Check obstacle height - tall obstacles go around, short ones go over
+                        float obstacleHeight = collider.bounds.size.y;
+                        float obstacleTop = collider.bounds.max.y;
+                        bool isTallObstacle = obstacleHeight > 3f || obstacleTop > position.y + 2f;
+
+                        // Get travel direction
+                        Vector3 travelDir = (position - prevPosition).normalized;
+                        if (travelDir.sqrMagnitude < 0.01f) travelDir = ForwardDirection.normalized;
+
+                        // Very gradual cubic falloff - start curving early, gentle push
+                        float t = 1f - (dist / detectionRadius); // 1 at center, 0 at edge
+                        float smoothT = t * t * t; // Cubic falloff for very smooth transitions
+                        float pushStrength = smoothT * RampAvoidanceDistance * 0.3f;
+
+                        Vector3 pushDir;
+                        if (isTallObstacle)
                         {
-                            pushDir = travelDir.normalized;
+                            // Go around sideways for tall obstacles
+                            Vector3 perpendicular = Vector3.Cross(Vector3.up, travelDir).normalized;
+                            float sideSign = Mathf.Sign(Vector3.Dot(perpendicular, toPosition));
+                            pushDir = perpendicular * sideSign;
                         }
                         else
                         {
-                            // Use ramp's right direction as escape
-                            pushDir = ramp.Rotation * Vector3.right;
+                            // Go over for short ramps
+                            pushDir = Vector3.up;
                         }
-                    }
 
-                    // Push strength based on how deep inside the avoidance zone
-                    float pushStrength = rampRadius - horizDist + 1f;
-                    totalPush += pushDir * pushStrength;
-                    pushCount++;
+                        totalPush += pushDir * pushStrength;
+                        pushCount++;
+                    }
+                }
+            }
+
+            // Also check CityManager ramp data
+            if (CityManager != null && CityManager.HasRampData)
+            {
+                foreach (var ramp in CityManager.Ramps)
+                {
+                    // Ramp Scale: x = width, y = height, z = length
+                    // Use 2x detection radius for earlier, smoother avoidance
+                    float rampRadius = Mathf.Max(ramp.Scale.x, ramp.Scale.z) * 0.5f + RampAvoidanceDistance * 2f;
+
+                    var toPosition = position - ramp.Position;
+                    float horizDist = Mathf.Sqrt(toPosition.x * toPosition.x + toPosition.z * toPosition.z);
+
+                    if (horizDist < rampRadius)
+                    {
+                        // Determine travel direction for perpendicular calculation
+                        var travelDir = (position - prevPosition);
+                        travelDir.y = 0f;
+                        if (travelDir.sqrMagnitude < 0.01f)
+                        {
+                            travelDir = ramp.Rotation * Vector3.forward;
+                        }
+                        travelDir.Normalize();
+
+                        // Detect if this is a tall obstacle (like a building) vs a short ramp
+                        float obstacleHeight = ramp.Scale.y;
+                        float obstacleTop = ramp.Position.y + obstacleHeight * 0.5f;
+                        bool isTallObstacle = obstacleHeight > 3f || obstacleTop > position.y + 2f;
+
+                        // Smooth falloff - stronger push when closer, gentle when near edge
+                        float t = 1f - (horizDist / rampRadius); // 1 at center, 0 at edge
+                        float smoothT = t * t * t; // Cubic falloff for very smooth transitions
+                        float pushStrength = smoothT * RampAvoidanceDistance * 0.3f;
+
+                        Vector3 pushDir;
+                        if (isTallObstacle)
+                        {
+                            // Go around sideways for tall obstacles
+                            Vector3 perpendicular = Vector3.Cross(Vector3.up, travelDir).normalized;
+                            float sideSign = Mathf.Sign(Vector3.Dot(perpendicular, toPosition));
+                            pushDir = perpendicular * sideSign;
+                        }
+                        else
+                        {
+                            // Go over for short ramps
+                            pushDir = Vector3.up;
+                        }
+
+                        totalPush += pushDir * pushStrength;
+                        pushCount++;
+                    }
                 }
             }
 
             return pushCount > 0 ? totalPush / pushCount : Vector3.zero;
+        }
+
+        private float GetGroundHeight(Vector3 position)
+        {
+            if (!EnableGroundAvoidance)
+                return 0f;
+
+            // Get effective ground layers - auto-detect if not set
+            LayerMask effectiveLayers = GroundLayers;
+            if (effectiveLayers == 0)
+            {
+                // Try common ground layer names
+                int groundLayer = LayerMask.NameToLayer("Ground");
+                if (groundLayer >= 0)
+                    effectiveLayers = 1 << groundLayer;
+                else
+                {
+                    int defaultLayer = LayerMask.NameToLayer("Default");
+                    if (defaultLayer >= 0)
+                        effectiveLayers = 1 << defaultLayer;
+                }
+            }
+
+            if (effectiveLayers == 0)
+                return 0f;
+
+            // Raycast down from above the position to find ground
+            Vector3 rayStart = position + Vector3.up * 100f;
+            if (Physics.Raycast(rayStart, Vector3.down, out RaycastHit hit, 200f, effectiveLayers))
+            {
+                return hit.point.y + MinHeightAboveGround;
+            }
+
+            return 0f;
+        }
+
+        private void ClampAboveGround(ref Vector3 position)
+        {
+            float minY = GetGroundHeight(position);
+            if (position.y < minY)
+            {
+                position.y = minY;
+            }
         }
 
         private void GenerateSurfaceAttractors(System.Random random, int count)
@@ -615,25 +1065,15 @@ namespace HolyRail.Vines
                         + up * noiseUp
                         + right * noiseRight;
 
-                    // Obstacle avoidance: push position away from obstacles
-                    if (EnableObstacleAvoidance && i > 0 && Physics.CheckSphere(position, ObstacleAvoidanceDistance))
+                    // Apply unified obstacle avoidance (buildings, billboards, ramps, ground clamp)
+                    if (i > 0)
                     {
                         var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
-                        var dir = (position - prevPos).normalized;
-                        float dist = Vector3.Distance(prevPos, position);
-
-                        if (Physics.SphereCast(prevPos, ObstacleAvoidanceDistance * 0.5f, dir, out var hit, dist + ObstacleAvoidanceDistance))
-                        {
-                            // Push position back along travel direction and away along surface normal
-                            position = hit.point - dir * ObstacleAvoidanceDistance + hit.normal * ObstacleAvoidanceDistance;
-                        }
+                        position = ApplyAllObstacleAvoidance(position, prevPos);
                     }
-
-                    // Ramp avoidance: push position away from ramps
-                    if (EnableRampAvoidance && i > 0 && IsPositionNearRamp(position, RampAvoidanceDistance))
+                    else
                     {
-                        var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
-                        position += GetRampAvoidanceOffset(position, prevPos);
+                        ClampAboveGround(ref position);
                     }
 
                     _generatedNodes.Add(new VineNode
@@ -875,12 +1315,6 @@ namespace HolyRail.Vines
                 : "";
             Debug.Log($"VineGenerator (Path): Generated {_generatedNodes.Count} nodes across {totalVines} vines{attractionInfo} following {corridorPaths.Count} corridor path(s)");
 
-            if (EnableRampAvoidance)
-            {
-                Debug.Log($"VineGenerator (Path): Ramp avoidance triggered {_rampAvoidanceHitCount} times");
-                _rampAvoidanceHitCount = 0;
-            }
-
             // Optionally generate billboard-connecting vines
             if (PathEnableBillboardVines)
             {
@@ -1023,24 +1457,15 @@ namespace HolyRail.Vines
                 float sagY = -4f * BillboardSagAmount * t * (1f - t);
                 position.y += sagY;
 
-                // Apply obstacle avoidance if enabled
-                if (EnableObstacleAvoidance && i > 0 && Physics.CheckSphere(position, ObstacleAvoidanceDistance))
+                // Apply unified obstacle avoidance (buildings, billboards, ramps, ground clamp)
+                if (i > 0 || !isFirstInChain)
                 {
                     var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
-                    var dir = (position - prevPos).normalized;
-                    float dist = Vector3.Distance(prevPos, position);
-
-                    if (Physics.SphereCast(prevPos, ObstacleAvoidanceDistance * 0.5f, dir, out var hit, dist + ObstacleAvoidanceDistance))
-                    {
-                        position = hit.point - dir * ObstacleAvoidanceDistance + hit.normal * ObstacleAvoidanceDistance;
-                    }
+                    position = ApplyAllObstacleAvoidance(position, prevPos);
                 }
-
-                // Ramp avoidance: push position away from ramps
-                if (EnableRampAvoidance && i > 0 && IsPositionNearRamp(position, RampAvoidanceDistance))
+                else
                 {
-                    var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
-                    position += GetRampAvoidanceOffset(position, prevPos);
+                    ClampAboveGround(ref position);
                 }
 
                 // Parent index: only root node has -1
@@ -1200,31 +1625,16 @@ namespace HolyRail.Vines
                     + currentRight * noiseRight
                     + Vector3.up * noiseUp;
 
-                // Clamp to stay above ground (y >= 0)
-                position.y = Mathf.Max(position.y, 0f);
-
-                // Apply obstacle avoidance if enabled
-                if (EnableObstacleAvoidance && i > 0 && Physics.CheckSphere(position, ObstacleAvoidanceDistance))
+                // Apply unified obstacle avoidance (buildings, billboards, ramps, ground clamp)
+                if (i > 0)
                 {
                     var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
-                    var dir = (position - prevPos).normalized;
-                    float dist = Vector3.Distance(prevPos, position);
-
-                    if (Physics.SphereCast(prevPos, ObstacleAvoidanceDistance * 0.5f, dir, out var hit, dist + ObstacleAvoidanceDistance))
-                    {
-                        position = hit.point - dir * ObstacleAvoidanceDistance + hit.normal * ObstacleAvoidanceDistance;
-                    }
+                    position = ApplyAllObstacleAvoidance(position, prevPos);
                 }
-
-                // Ramp avoidance: push position away from ramps
-                if (EnableRampAvoidance && i > 0 && IsPositionNearRamp(position, RampAvoidanceDistance))
+                else
                 {
-                    var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
-                    position += GetRampAvoidanceOffset(position, prevPos);
+                    ClampAboveGround(ref position);
                 }
-
-                // Final ground clamp after obstacle avoidance
-                position.y = Mathf.Max(position.y, 0f);
 
                 _generatedNodes.Add(new VineNode
                 {
@@ -1290,31 +1700,16 @@ namespace HolyRail.Vines
                     + right * noiseRight
                     + Vector3.up * noiseUp;  // Use world up for vertical noise
 
-                // Clamp to stay above ground (y >= 0)
-                position.y = Mathf.Max(position.y, 0f);
-
-                // Apply obstacle avoidance if enabled
-                if (EnableObstacleAvoidance && i > 0 && Physics.CheckSphere(position, ObstacleAvoidanceDistance))
+                // Apply unified obstacle avoidance (buildings, billboards, ramps, ground clamp)
+                if (i > 0)
                 {
                     var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
-                    var dir = (position - prevPos).normalized;
-                    float dist = Vector3.Distance(prevPos, position);
-
-                    if (Physics.SphereCast(prevPos, ObstacleAvoidanceDistance * 0.5f, dir, out var hit, dist + ObstacleAvoidanceDistance))
-                    {
-                        position = hit.point - dir * ObstacleAvoidanceDistance + hit.normal * ObstacleAvoidanceDistance;
-                    }
+                    position = ApplyAllObstacleAvoidance(position, prevPos);
                 }
-
-                // Ramp avoidance: push position away from ramps
-                if (EnableRampAvoidance && i > 0 && IsPositionNearRamp(position, RampAvoidanceDistance))
+                else
                 {
-                    var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
-                    position += GetRampAvoidanceOffset(position, prevPos);
+                    ClampAboveGround(ref position);
                 }
-
-                // Final ground clamp after obstacle avoidance
-                position.y = Mathf.Max(position.y, 0f);
 
                 _generatedNodes.Add(new VineNode
                 {
@@ -1369,31 +1764,16 @@ namespace HolyRail.Vines
                     + right * noiseRight
                     + Vector3.up * noiseUp;
 
-                // Clamp to stay above ground (y >= 0)
-                position.y = Mathf.Max(position.y, 0f);
-
-                // Apply obstacle avoidance if enabled
-                if (EnableObstacleAvoidance && i > 0 && Physics.CheckSphere(position, ObstacleAvoidanceDistance))
+                // Apply unified obstacle avoidance (buildings, billboards, ramps, ground clamp)
+                if (i > 0)
                 {
                     var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
-                    var dir = (position - prevPos).normalized;
-                    float dist = Vector3.Distance(prevPos, position);
-
-                    if (Physics.SphereCast(prevPos, ObstacleAvoidanceDistance * 0.5f, dir, out var hit, dist + ObstacleAvoidanceDistance))
-                    {
-                        position = hit.point - dir * ObstacleAvoidanceDistance + hit.normal * ObstacleAvoidanceDistance;
-                    }
+                    position = ApplyAllObstacleAvoidance(position, prevPos);
                 }
-
-                // Ramp avoidance: push position away from ramps
-                if (EnableRampAvoidance && i > 0 && IsPositionNearRamp(position, RampAvoidanceDistance))
+                else
                 {
-                    var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
-                    position += GetRampAvoidanceOffset(position, prevPos);
+                    ClampAboveGround(ref position);
                 }
-
-                // Final ground clamp after obstacle avoidance
-                position.y = Mathf.Max(position.y, 0f);
 
                 _generatedNodes.Add(new VineNode
                 {
@@ -1493,31 +1873,16 @@ namespace HolyRail.Vines
                     + right * (lateralOffset + noiseRight)
                     + Vector3.up * (height + noiseUp);
 
-                // Clamp to stay above ground (y >= 0)
-                position.y = Mathf.Max(position.y, 0f);
-
-                // Apply obstacle avoidance if enabled
-                if (EnableObstacleAvoidance && i > 0 && Physics.CheckSphere(position, ObstacleAvoidanceDistance))
+                // Apply unified obstacle avoidance (buildings, billboards, ramps, ground clamp)
+                if (i > 0)
                 {
                     var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
-                    var dir = (position - prevPos).normalized;
-                    float dist = Vector3.Distance(prevPos, position);
-
-                    if (Physics.SphereCast(prevPos, ObstacleAvoidanceDistance * 0.5f, dir, out var hit, dist + ObstacleAvoidanceDistance))
-                    {
-                        position = hit.point - dir * ObstacleAvoidanceDistance + hit.normal * ObstacleAvoidanceDistance;
-                    }
+                    position = ApplyAllObstacleAvoidance(position, prevPos);
                 }
-
-                // Ramp avoidance: push position away from ramps
-                if (EnableRampAvoidance && i > 0 && IsPositionNearRamp(position, RampAvoidanceDistance))
+                else
                 {
-                    var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
-                    position += GetRampAvoidanceOffset(position, prevPos);
+                    ClampAboveGround(ref position);
                 }
-
-                // Final ground clamp after obstacle avoidance
-                position.y = Mathf.Max(position.y, 0f);
 
                 _generatedNodes.Add(new VineNode
                 {
@@ -1586,31 +1951,16 @@ namespace HolyRail.Vines
                     + right * totalLateralOffset
                     + Vector3.up * (currentHeight + noiseUp);
 
-                // Clamp to stay above ground
-                position.y = Mathf.Max(position.y, 0f);
-
-                // Apply obstacle avoidance if enabled
-                if (EnableObstacleAvoidance && i > 0 && Physics.CheckSphere(position, ObstacleAvoidanceDistance))
+                // Apply unified obstacle avoidance (buildings, billboards, ramps, ground clamp)
+                if (i > 0)
                 {
                     var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
-                    var dir = (position - prevPos).normalized;
-                    float dist = Vector3.Distance(prevPos, position);
-
-                    if (Physics.SphereCast(prevPos, ObstacleAvoidanceDistance * 0.5f, dir, out var hit, dist + ObstacleAvoidanceDistance))
-                    {
-                        position = hit.point - dir * ObstacleAvoidanceDistance + hit.normal * ObstacleAvoidanceDistance;
-                    }
+                    position = ApplyAllObstacleAvoidance(position, prevPos);
                 }
-
-                // Ramp avoidance: push position away from ramps
-                if (EnableRampAvoidance && i > 0 && IsPositionNearRamp(position, RampAvoidanceDistance))
+                else
                 {
-                    var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
-                    position += GetRampAvoidanceOffset(position, prevPos);
+                    ClampAboveGround(ref position);
                 }
-
-                // Final ground clamp after obstacle avoidance
-                position.y = Mathf.Max(position.y, 0f);
 
                 _generatedNodes.Add(new VineNode
                 {
@@ -1711,14 +2061,24 @@ namespace HolyRail.Vines
                 if (accumulated >= selection)
                 {
                     usedPairs.Add((pair.startIdx, pair.endIdx));
-                    return (targets[pair.startIdx], targets[pair.endIdx]);
+                    var startTarget = targets[pair.startIdx];
+                    var endTarget = targets[pair.endIdx];
+                    // Ensure vines grow from low Z to high Z (front to back)
+                    if (startTarget.Position.z > endTarget.Position.z)
+                        (startTarget, endTarget) = (endTarget, startTarget);
+                    return (startTarget, endTarget);
                 }
             }
 
             // Fallback to first valid pair
             var fallback = validPairs[0];
             usedPairs.Add((fallback.startIdx, fallback.endIdx));
-            return (targets[fallback.startIdx], targets[fallback.endIdx]);
+            var fallbackStart = targets[fallback.startIdx];
+            var fallbackEnd = targets[fallback.endIdx];
+            // Ensure vines grow from low Z to high Z (front to back)
+            if (fallbackStart.Position.z > fallbackEnd.Position.z)
+                (fallbackStart, fallbackEnd) = (fallbackEnd, fallbackStart);
+            return (fallbackStart, fallbackEnd);
         }
 
         private void GenerateAttractedVine(
@@ -1789,31 +2149,16 @@ namespace HolyRail.Vines
                     + right * noiseRight
                     + Vector3.up * (sagY + noiseUp);
 
-                // Clamp to stay above ground
-                position.y = Mathf.Max(position.y, 0f);
-
-                // Apply obstacle avoidance if enabled
-                if (EnableObstacleAvoidance && i > 0 && Physics.CheckSphere(position, ObstacleAvoidanceDistance))
+                // Apply unified obstacle avoidance (buildings, billboards, ramps, ground clamp)
+                if (i > 0)
                 {
                     var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
-                    var dir = (position - prevPos).normalized;
-                    float dist = Vector3.Distance(prevPos, position);
-
-                    if (Physics.SphereCast(prevPos, ObstacleAvoidanceDistance * 0.5f, dir, out var hit, dist + ObstacleAvoidanceDistance))
-                    {
-                        position = hit.point - dir * ObstacleAvoidanceDistance + hit.normal * ObstacleAvoidanceDistance;
-                    }
+                    position = ApplyAllObstacleAvoidance(position, prevPos);
                 }
-
-                // Ramp avoidance: push position away from ramps
-                if (EnableRampAvoidance && i > 0 && IsPositionNearRamp(position, RampAvoidanceDistance))
+                else
                 {
-                    var prevPos = _generatedNodes[_generatedNodes.Count - 1].Position;
-                    position += GetRampAvoidanceOffset(position, prevPos);
+                    ClampAboveGround(ref position);
                 }
-
-                // Final ground clamp after obstacle avoidance
-                position.y = Mathf.Max(position.y, 0f);
 
                 _generatedNodes.Add(new VineNode
                 {
@@ -2370,6 +2715,25 @@ namespace HolyRail.Vines
             }
             Debug.Log($"[VineSpline] {validSplines}/{_generatedSplines.Count} splines are valid for grinding");
 
+            // Phase 2-4: Generate connector rails and bridges for better connectivity
+            if (CityManager != null && (EnableConnectorRails || EnableRailBridges))
+            {
+                // Validate which objectives are reachable
+                var report = ValidateObjectiveReachability();
+
+                // Generate connector rails to unreachable objectives
+                if (EnableConnectorRails && report.UnreachableObjectives > 0)
+                {
+                    GenerateConnectorRails(report);
+                }
+
+                // Generate bridges between rail endpoints
+                if (EnableRailBridges)
+                {
+                    GenerateRailBridges();
+                }
+            }
+
             // Notify rail grinder to refresh its spline cache
             var railGrinder = ThirdPersonController_RailGrinder.Instance;
             if (railGrinder != null)
@@ -2693,6 +3057,630 @@ namespace HolyRail.Vines
             {
                 Regenerate();
             }
+        }
+
+        /// <summary>
+        /// Validates which billboards and graffiti spots are reachable from the generated rails.
+        /// An objective is considered reachable if a player can jump to it from any point on a rail.
+        /// </summary>
+        public ReachabilityReport ValidateObjectiveReachability()
+        {
+            var report = new ReachabilityReport
+            {
+                UnreachableBillboards = new List<BillboardData>(),
+                UnreachableGraffiti = new List<GraffitiSpotData>()
+            };
+
+            if (CityManager == null || _generatedSplines.Count == 0)
+            {
+                Debug.LogWarning("ValidateObjectiveReachability: CityManager or splines not available");
+                return report;
+            }
+
+            // Max reach distance combines vertical jump and horizontal movement
+            float maxReachDistance = Mathf.Sqrt(
+                PlayerReachConstants.JumpHeight * PlayerReachConstants.JumpHeight +
+                PlayerReachConstants.HorizontalReach * PlayerReachConstants.HorizontalReach
+            ) + PlayerReachConstants.ReachPadding;
+
+            // Check billboards
+            if (CityManager.HasBillboardData)
+            {
+                report.TotalBillboards = CityManager.Billboards.Count;
+                foreach (var billboard in CityManager.Billboards)
+                {
+                    bool isReachable = IsObjectiveReachableFromSplines(billboard.Position, maxReachDistance);
+                    if (isReachable)
+                    {
+                        report.ReachableBillboards++;
+                    }
+                    else
+                    {
+                        report.UnreachableBillboards.Add(billboard);
+                    }
+                }
+            }
+
+            // Check graffiti
+            if (CityManager.HasGraffitiData)
+            {
+                report.TotalGraffiti = CityManager.GraffitiSpots.Count;
+                foreach (var graffiti in CityManager.GraffitiSpots)
+                {
+                    bool isReachable = IsObjectiveReachableFromSplines(graffiti.Position, maxReachDistance);
+                    if (isReachable)
+                    {
+                        report.ReachableGraffiti++;
+                    }
+                    else
+                    {
+                        report.UnreachableGraffiti.Add(graffiti);
+                    }
+                }
+            }
+
+            Debug.Log($"Reachability Report: Billboards {report.ReachableBillboards}/{report.TotalBillboards} ({report.BillboardReachabilityPercent:F1}%), " +
+                      $"Graffiti {report.ReachableGraffiti}/{report.TotalGraffiti} ({report.GraffitiReachabilityPercent:F1}%)");
+
+            return report;
+        }
+
+        /// <summary>
+        /// Checks if a position is reachable from any point on any generated spline.
+        /// </summary>
+        private bool IsObjectiveReachableFromSplines(Vector3 targetPosition, float maxDistance)
+        {
+            foreach (var splineContainer in _generatedSplines)
+            {
+                if (splineContainer == null || splineContainer.Spline == null)
+                    continue;
+
+                var spline = splineContainer.Spline;
+                if (spline.Count < 2)
+                    continue;
+
+                // Sample the spline at regular intervals to find the closest point
+                int sampleCount = Mathf.Max(10, spline.Count * 2);
+                for (int i = 0; i <= sampleCount; i++)
+                {
+                    float t = (float)i / sampleCount;
+                    var splinePos = (Vector3)splineContainer.EvaluatePosition(t);
+
+                    float distance = Vector3.Distance(splinePos, targetPosition);
+                    if (distance <= maxDistance)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Finds the nearest point on any spline to the given position.
+        /// Returns the spline container, the t parameter, and the actual position.
+        /// </summary>
+        private (SplineContainer spline, float t, Vector3 position, float distance)? FindNearestSplinePoint(Vector3 targetPosition)
+        {
+            SplineContainer nearestSpline = null;
+            float nearestT = 0f;
+            Vector3 nearestPosition = Vector3.zero;
+            float nearestDistance = float.MaxValue;
+
+            foreach (var splineContainer in _generatedSplines)
+            {
+                if (splineContainer == null || splineContainer.Spline == null)
+                    continue;
+
+                var spline = splineContainer.Spline;
+                if (spline.Count < 2)
+                    continue;
+
+                // Sample to find approximate nearest point, then refine
+                int sampleCount = Mathf.Max(20, spline.Count * 3);
+                for (int i = 0; i <= sampleCount; i++)
+                {
+                    float t = (float)i / sampleCount;
+                    var splinePos = (Vector3)splineContainer.EvaluatePosition(t);
+
+                    float distance = Vector3.Distance(splinePos, targetPosition);
+                    if (distance < nearestDistance)
+                    {
+                        nearestDistance = distance;
+                        nearestSpline = splineContainer;
+                        nearestT = t;
+                        nearestPosition = splinePos;
+                    }
+                }
+            }
+
+            if (nearestSpline != null)
+            {
+                return (nearestSpline, nearestT, nearestPosition, nearestDistance);
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Generates connector rails from existing rails to unreachable objectives.
+        /// </summary>
+        public void GenerateConnectorRails(ReachabilityReport report)
+        {
+            if (!EnableConnectorRails)
+                return;
+
+            if (report.UnreachableObjectives == 0)
+            {
+                Debug.Log("GenerateConnectorRails: All objectives are already reachable");
+                return;
+            }
+
+            int connectorsCreated = 0;
+            float targetReachDistance = PlayerReachConstants.JumpHeight + PlayerReachConstants.ReachPadding;
+
+            // Process unreachable graffiti (higher priority)
+            foreach (var graffiti in report.UnreachableGraffiti)
+            {
+                var nearestResult = FindNearestSplinePoint(graffiti.Position);
+                if (!nearestResult.HasValue)
+                    continue;
+
+                var (nearestSpline, nearestT, nearestPosition, distance) = nearestResult.Value;
+
+                // Create connector spline
+                if (CreateConnectorSpline(nearestPosition, graffiti.Position, graffiti.Normal, targetReachDistance))
+                {
+                    connectorsCreated++;
+                }
+            }
+
+            // Process unreachable billboards
+            foreach (var billboard in report.UnreachableBillboards)
+            {
+                var nearestResult = FindNearestSplinePoint(billboard.Position);
+                if (!nearestResult.HasValue)
+                    continue;
+
+                var (nearestSpline, nearestT, nearestPosition, distance) = nearestResult.Value;
+
+                // Create connector spline
+                if (CreateConnectorSpline(nearestPosition, billboard.Position, billboard.Normal, targetReachDistance))
+                {
+                    connectorsCreated++;
+                }
+            }
+
+            Debug.Log($"GenerateConnectorRails: Created {connectorsCreated} connector rails to objectives");
+        }
+
+        /// <summary>
+        /// Creates a smooth connector spline from a rail point toward an objective.
+        /// </summary>
+        private bool CreateConnectorSpline(Vector3 startPos, Vector3 targetPos, Vector3 targetNormal, float targetReachDistance)
+        {
+            // Calculate end position within jump reach of target
+            Vector3 toTarget = targetPos - startPos;
+            float totalDistance = toTarget.magnitude;
+
+            if (totalDistance < 1f)
+            {
+                // Already very close
+                return false;
+            }
+
+            // End the connector within reach of the target
+            Vector3 endDirection = toTarget.normalized;
+            Vector3 endPos = targetPos - endDirection * targetReachDistance;
+
+            // If target has a normal (wall-mounted), offset the end position slightly outward
+            if (targetNormal.sqrMagnitude > 0.01f)
+            {
+                endPos += targetNormal * 1.5f;
+            }
+
+            // Create a smooth quadratic bezier curve
+            Vector3 midPoint = (startPos + endPos) * 0.5f;
+            // Add subtle arc - raise the midpoint for visual appeal
+            midPoint.y += Mathf.Min(2f, totalDistance * 0.1f);
+
+            // Create SplineContainer
+            var splineGO = new GameObject($"ConnectorRail_{_generatedSplines.Count}");
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+            {
+                UnityEditor.Undo.RegisterCreatedObjectUndo(splineGO, "Create Connector Rail");
+            }
+#endif
+            splineGO.transform.SetParent(transform, true);
+            splineGO.transform.position = Vector3.zero;
+            splineGO.transform.rotation = Quaternion.identity;
+            var parentScale = transform.lossyScale;
+            splineGO.transform.localScale = new Vector3(
+                1f / parentScale.x,
+                1f / parentScale.y,
+                1f / parentScale.z
+            );
+
+            var splineContainer = splineGO.AddComponent<SplineContainer>();
+            if (splineContainer.Splines.Count > 0)
+            {
+                splineContainer.RemoveSplineAt(0);
+            }
+            var spline = splineContainer.AddSpline();
+
+            // Generate bezier curve points with obstacle avoidance
+            int pointCount = 10;
+            Vector3 prevPos = startPos;
+            for (int i = 0; i <= pointCount; i++)
+            {
+                float t = (float)i / pointCount;
+                // Quadratic bezier: B(t) = (1-t)²P0 + 2(1-t)tP1 + t²P2
+                float oneMinusT = 1f - t;
+                Vector3 pos = oneMinusT * oneMinusT * startPos +
+                              2f * oneMinusT * t * midPoint +
+                              t * t * endPos;
+
+                // Apply unified obstacle avoidance
+                if (i > 0)
+                {
+                    pos = ApplyAllObstacleAvoidance(pos, prevPos);
+                }
+                else
+                {
+                    pos.y = Mathf.Max(pos.y, 0f);
+                }
+                prevPos = pos;
+
+                var knot = new BezierKnot((float3)pos);
+                spline.Add(knot, TangentMode.AutoSmooth);
+            }
+
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+            {
+                EditorUtility.SetDirty(splineContainer);
+            }
+#endif
+
+            // Add mesh rendering
+            if (GenerateMeshes)
+            {
+                var materialToUse = VineMaterial;
+                if (materialToUse == null)
+                {
+                    materialToUse = CreateDefaultVineMaterial();
+                }
+
+                var meshFilter = splineGO.AddComponent<MeshFilter>();
+                var meshRenderer = splineGO.AddComponent<MeshRenderer>();
+                meshRenderer.sharedMaterial = materialToUse;
+
+                var splineExtrude = splineGO.AddComponent<SplineExtrude>();
+                splineExtrude.Container = splineContainer;
+                splineExtrude.Radius = VineRadius;
+                splineExtrude.Sides = Mathf.Max(3, VineSegments);
+                splineExtrude.SegmentsPerUnit = Mathf.Max(1, VineSegmentsPerUnit);
+                splineExtrude.Capped = true;
+                splineExtrude.Rebuild();
+
+                // Add glow controller
+                var meshController = splineGO.AddComponent<SplineMeshController>();
+                meshController.MeshTarget = meshRenderer;
+                meshController.glowLength = GlowLength;
+                meshController.glowBrightness = GlowBrightness;
+                meshController.showHideDuration = GlowShowHideDuration;
+                meshController.glowMix = 0f;
+                meshController.glowLocation = 0f;
+            }
+
+            _generatedSplines.Add(splineContainer);
+            return true;
+        }
+
+        /// <summary>
+        /// Generates bridge splines to connect nearby rail endpoints.
+        /// </summary>
+        public void GenerateRailBridges()
+        {
+            if (!EnableRailBridges)
+                return;
+
+            if (_generatedSplines.Count < 2)
+            {
+                Debug.Log("GenerateRailBridges: Need at least 2 splines to create bridges");
+                return;
+            }
+
+            // Collect all spline endpoints (start and end)
+            var endpoints = new List<(SplineContainer spline, bool isEnd, Vector3 position, Vector3 tangent)>();
+
+            foreach (var splineContainer in _generatedSplines)
+            {
+                if (splineContainer == null || splineContainer.Spline == null)
+                    continue;
+
+                var spline = splineContainer.Spline;
+                if (spline.Count < 2)
+                    continue;
+
+                // Start point (t=0)
+                var startPos = (Vector3)splineContainer.EvaluatePosition(0f);
+                var startTangent = (Vector3)splineContainer.EvaluateTangent(0f);
+                endpoints.Add((splineContainer, false, startPos, startTangent));
+
+                // End point (t=1)
+                var endPos = (Vector3)splineContainer.EvaluatePosition(1f);
+                var endTangent = (Vector3)splineContainer.EvaluateTangent(1f);
+                endpoints.Add((splineContainer, true, endPos, endTangent));
+            }
+
+            // Find pairs of endpoints that can be bridged
+            var bridgedPairs = new HashSet<(int, int)>();
+            int bridgesCreated = 0;
+            int stitchesCreated = 0;
+
+            for (int i = 0; i < endpoints.Count; i++)
+            {
+                for (int j = i + 1; j < endpoints.Count; j++)
+                {
+                    // Skip if same spline
+                    if (endpoints[i].spline == endpoints[j].spline)
+                        continue;
+
+                    // Check distance
+                    float distance = Vector3.Distance(endpoints[i].position, endpoints[j].position);
+
+                    // Too far to connect
+                    if (distance > BridgeMaxDistance)
+                        continue;
+
+                    // Too close (would create overlapping geometry)
+                    if (distance < BridgeMinDistance)
+                        continue;
+
+                    // Check if already bridged (avoid duplicate bridges)
+                    int splineIdxI = _generatedSplines.IndexOf(endpoints[i].spline);
+                    int splineIdxJ = _generatedSplines.IndexOf(endpoints[j].spline);
+                    var pairKey = splineIdxI < splineIdxJ ? (splineIdxI, splineIdxJ) : (splineIdxJ, splineIdxI);
+                    if (bridgedPairs.Contains(pairKey))
+                        continue;
+
+                    // Determine connection type based on distance
+                    bool useStitch = distance <= StitchDistance;
+
+                    if (useStitch)
+                    {
+                        // Direct stitch for very close endpoints
+                        if (CreateStitchSpline(endpoints[i], endpoints[j]))
+                        {
+                            bridgedPairs.Add(pairKey);
+                            stitchesCreated++;
+                        }
+                        continue;
+                    }
+
+                    // Check direction compatibility - avoid parallel same-direction endpoints
+                    // (tangents pointing in similar directions create awkward U-turns)
+                    Vector3 tangentI = endpoints[i].isEnd ? endpoints[i].tangent : -endpoints[i].tangent;
+                    Vector3 tangentJ = endpoints[j].isEnd ? endpoints[j].tangent : -endpoints[j].tangent;
+                    Vector3 bridgeDir = (endpoints[j].position - endpoints[i].position).normalized;
+
+                    // If both tangents point strongly in opposite directions to the bridge, skip
+                    float dotI = Vector3.Dot(tangentI.normalized, bridgeDir);
+                    float dotJ = Vector3.Dot(tangentJ.normalized, -bridgeDir);
+                    if (dotI < -0.7f && dotJ < -0.7f)
+                        continue;
+
+                    // Create curved bridge for farther endpoints
+                    if (CreateBridgeSpline(endpoints[i], endpoints[j]))
+                    {
+                        bridgedPairs.Add(pairKey);
+                        bridgesCreated++;
+                    }
+                }
+            }
+
+            Debug.Log($"GenerateRailBridges: Created {stitchesCreated} stitches and {bridgesCreated} bridges between splines");
+        }
+
+        /// <summary>
+        /// Creates a simple straight-line stitch spline between two very close endpoints.
+        /// </summary>
+        private bool CreateStitchSpline(
+            (SplineContainer spline, bool isEnd, Vector3 position, Vector3 tangent) endpointA,
+            (SplineContainer spline, bool isEnd, Vector3 position, Vector3 tangent) endpointB)
+        {
+            Vector3 startPos = endpointA.position;
+            Vector3 endPos = endpointB.position;
+
+            // Create SplineContainer
+            var splineGO = new GameObject($"StitchRail_{_generatedSplines.Count}");
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+            {
+                UnityEditor.Undo.RegisterCreatedObjectUndo(splineGO, "Create Stitch Rail");
+            }
+#endif
+            splineGO.transform.SetParent(transform, true);
+            splineGO.transform.position = Vector3.zero;
+            splineGO.transform.rotation = Quaternion.identity;
+            var parentScale = transform.lossyScale;
+            splineGO.transform.localScale = new Vector3(
+                1f / parentScale.x,
+                1f / parentScale.y,
+                1f / parentScale.z
+            );
+
+            var splineContainer = splineGO.AddComponent<SplineContainer>();
+            if (splineContainer.Splines.Count > 0)
+            {
+                splineContainer.RemoveSplineAt(0);
+            }
+            var spline = splineContainer.AddSpline();
+
+            // Simple 2-point straight line
+            spline.Add(new BezierKnot((float3)startPos), TangentMode.AutoSmooth);
+            spline.Add(new BezierKnot((float3)endPos), TangentMode.AutoSmooth);
+
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+            {
+                EditorUtility.SetDirty(splineContainer);
+            }
+#endif
+
+            // Add mesh rendering
+            if (GenerateMeshes)
+            {
+                var materialToUse = VineMaterial;
+                if (materialToUse == null)
+                {
+                    materialToUse = CreateDefaultVineMaterial();
+                }
+
+                var meshFilter = splineGO.AddComponent<MeshFilter>();
+                var meshRenderer = splineGO.AddComponent<MeshRenderer>();
+                meshRenderer.sharedMaterial = materialToUse;
+
+                var splineExtrude = splineGO.AddComponent<SplineExtrude>();
+                splineExtrude.Container = splineContainer;
+                splineExtrude.Radius = VineRadius;
+                splineExtrude.Sides = Mathf.Max(3, VineSegments);
+                splineExtrude.SegmentsPerUnit = Mathf.Max(1, VineSegmentsPerUnit);
+                splineExtrude.Capped = true;
+                splineExtrude.Rebuild();
+
+                // Add glow controller
+                var meshController = splineGO.AddComponent<SplineMeshController>();
+                meshController.glowMix = 0f;
+                meshController.glowLocation = 0f;
+            }
+
+            _generatedSplines.Add(splineContainer);
+            return true;
+        }
+
+        /// <summary>
+        /// Creates a smooth bridge spline between two rail endpoints.
+        /// </summary>
+        private bool CreateBridgeSpline(
+            (SplineContainer spline, bool isEnd, Vector3 position, Vector3 tangent) endpointA,
+            (SplineContainer spline, bool isEnd, Vector3 position, Vector3 tangent) endpointB)
+        {
+            Vector3 startPos = endpointA.position;
+            Vector3 endPos = endpointB.position;
+            float distance = Vector3.Distance(startPos, endPos);
+
+            // Calculate control points for cubic bezier based on tangent directions
+            // Use tangent directions to create natural flow
+            Vector3 startTangent = endpointA.isEnd ? endpointA.tangent : -endpointA.tangent;
+            Vector3 endTangent = endpointB.isEnd ? -endpointB.tangent : endpointB.tangent;
+
+            // Control point offset is proportional to distance
+            float controlOffset = distance * 0.35f;
+            Vector3 controlA = startPos + startTangent.normalized * controlOffset;
+            Vector3 controlB = endPos + endTangent.normalized * controlOffset;
+
+            // Create SplineContainer
+            var splineGO = new GameObject($"BridgeRail_{_generatedSplines.Count}");
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+            {
+                UnityEditor.Undo.RegisterCreatedObjectUndo(splineGO, "Create Bridge Rail");
+            }
+#endif
+            splineGO.transform.SetParent(transform, true);
+            splineGO.transform.position = Vector3.zero;
+            splineGO.transform.rotation = Quaternion.identity;
+            var parentScale = transform.lossyScale;
+            splineGO.transform.localScale = new Vector3(
+                1f / parentScale.x,
+                1f / parentScale.y,
+                1f / parentScale.z
+            );
+
+            var splineContainer = splineGO.AddComponent<SplineContainer>();
+            if (splineContainer.Splines.Count > 0)
+            {
+                splineContainer.RemoveSplineAt(0);
+            }
+            var spline = splineContainer.AddSpline();
+
+            // Generate cubic bezier curve points with obstacle avoidance
+            int pointCount = Mathf.Max(8, Mathf.RoundToInt(distance / 2f));
+            Vector3 prevPos = startPos;
+            for (int i = 0; i <= pointCount; i++)
+            {
+                float t = (float)i / pointCount;
+                // Cubic bezier: B(t) = (1-t)³P0 + 3(1-t)²tP1 + 3(1-t)t²P2 + t³P3
+                float oneMinusT = 1f - t;
+                float t2 = t * t;
+                float t3 = t2 * t;
+                float oneMinusT2 = oneMinusT * oneMinusT;
+                float oneMinusT3 = oneMinusT2 * oneMinusT;
+
+                Vector3 pos = oneMinusT3 * startPos +
+                              3f * oneMinusT2 * t * controlA +
+                              3f * oneMinusT * t2 * controlB +
+                              t3 * endPos;
+
+                // Apply unified obstacle avoidance
+                if (i > 0)
+                {
+                    pos = ApplyAllObstacleAvoidance(pos, prevPos);
+                }
+                else
+                {
+                    pos.y = Mathf.Max(pos.y, 0f);
+                }
+                prevPos = pos;
+
+                var knot = new BezierKnot((float3)pos);
+                spline.Add(knot, TangentMode.AutoSmooth);
+            }
+
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+            {
+                EditorUtility.SetDirty(splineContainer);
+            }
+#endif
+
+            // Add mesh rendering
+            if (GenerateMeshes)
+            {
+                var materialToUse = VineMaterial;
+                if (materialToUse == null)
+                {
+                    materialToUse = CreateDefaultVineMaterial();
+                }
+
+                var meshFilter = splineGO.AddComponent<MeshFilter>();
+                var meshRenderer = splineGO.AddComponent<MeshRenderer>();
+                meshRenderer.sharedMaterial = materialToUse;
+
+                var splineExtrude = splineGO.AddComponent<SplineExtrude>();
+                splineExtrude.Container = splineContainer;
+                splineExtrude.Radius = VineRadius;
+                splineExtrude.Sides = Mathf.Max(3, VineSegments);
+                splineExtrude.SegmentsPerUnit = Mathf.Max(1, VineSegmentsPerUnit);
+                splineExtrude.Capped = true;
+                splineExtrude.Rebuild();
+
+                // Add glow controller
+                var meshController = splineGO.AddComponent<SplineMeshController>();
+                meshController.MeshTarget = meshRenderer;
+                meshController.glowLength = GlowLength;
+                meshController.glowBrightness = GlowBrightness;
+                meshController.showHideDuration = GlowShowHideDuration;
+                meshController.glowMix = 0f;
+                meshController.glowLocation = 0f;
+            }
+
+            _generatedSplines.Add(splineContainer);
+            return true;
         }
 
         private void OnDrawGizmos()

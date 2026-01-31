@@ -25,7 +25,7 @@ namespace HolyRail.City
 
         private static readonly Vector3 InactivePosition = new(0, -1000f, 0);
 
-        private BuildingSpatialGrid _spatialGrid;
+        private SpatialGrid<BuildingData> _spatialGrid;
         private readonly List<BoxCollider> _colliderPool = new();
         private readonly List<int> _activeIndices = new();
         private readonly List<int> _queryResults = new();
@@ -34,9 +34,10 @@ namespace HolyRail.City
         private Vector3 _lastUpdatePosition;
         private int _buildingsLayer;
         private bool _initialized;
+        private int _playerSearchFrame; // Throttle player search
 
         // Ramp collider pool
-        private RampSpatialGrid _rampSpatialGrid;
+        private SpatialGrid<RampData> _rampSpatialGrid;
         private readonly List<BoxCollider> _rampColliderPool = new();
         private readonly List<int> _activeRampIndices = new();
         private readonly List<int> _rampQueryResults = new();
@@ -46,7 +47,7 @@ namespace HolyRail.City
         private bool _rampInitialized;
 
         // Billboard collider pool
-        private BillboardSpatialGrid _billboardSpatialGrid;
+        private SpatialGrid<BillboardData> _billboardSpatialGrid;
         private readonly List<BoxCollider> _billboardColliderPool = new();
         private readonly List<int> _activeBillboardIndices = new();
         private readonly List<int> _billboardQueryResults = new();
@@ -189,9 +190,14 @@ namespace HolyRail.City
                 ClearBillboards();
             }
 
-            // Auto-find player if TrackingTarget not assigned
+            // Auto-find player if TrackingTarget not assigned (throttle search to every 30 frames)
             if (TrackingTarget == null)
             {
+                _playerSearchFrame++;
+                if (_playerSearchFrame < 30)
+                    return;
+
+                _playerSearchFrame = 0;
                 var player = GameObject.FindGameObjectWithTag("Player");
                 if (player != null)
                 {
@@ -205,9 +211,11 @@ namespace HolyRail.City
             }
 
             var currentPosition = TrackingTarget.position;
-            var distanceMoved = Vector3.Distance(currentPosition, _lastUpdatePosition);
+            var delta = currentPosition - _lastUpdatePosition;
+            var distanceMovedSq = delta.sqrMagnitude;
+            var thresholdSq = UpdateDistanceThreshold * UpdateDistanceThreshold;
 
-            if (distanceMoved >= UpdateDistanceThreshold)
+            if (distanceMovedSq >= thresholdSq)
             {
                 if (_initialized)
                     UpdateActiveColliders(currentPosition);
@@ -238,7 +246,11 @@ namespace HolyRail.City
                 _buildingsLayer = 0;
             }
 
-            _spatialGrid = new BuildingSpatialGrid(DefaultCellSize, CityManager.transform.position);
+            _spatialGrid = new SpatialGrid<BuildingData>(
+                DefaultCellSize,
+                CityManager.transform.position,
+                b => b.Position,
+                b => b.NeedsCollider != 0);
             _spatialGrid.Initialize(CityManager.Buildings);
 
             CreateColliderPool();
@@ -279,7 +291,10 @@ namespace HolyRail.City
 
             Debug.Log($"BuildingColliderPool.InitializeRamps: Initializing with {CityManager.Ramps.Count} ramps, layer={_rampLayer}");
 
-            _rampSpatialGrid = new RampSpatialGrid(DefaultCellSize, CityManager.transform.position);
+            _rampSpatialGrid = new SpatialGrid<RampData>(
+                DefaultCellSize,
+                CityManager.transform.position,
+                r => r.Position);
             _rampSpatialGrid.Initialize(CityManager.Ramps);
 
             CreateRampColliderPool();
@@ -318,7 +333,10 @@ namespace HolyRail.City
 
             Debug.Log($"BuildingColliderPool.InitializeBillboards: Initializing with {CityManager.Billboards.Count} billboards, layer={_billboardsLayer}");
 
-            _billboardSpatialGrid = new BillboardSpatialGrid(DefaultCellSize, CityManager.transform.position);
+            _billboardSpatialGrid = new SpatialGrid<BillboardData>(
+                DefaultCellSize,
+                CityManager.transform.position,
+                b => b.Position);
             _billboardSpatialGrid.Initialize(CityManager.Billboards);
 
             CreateBillboardColliderPool();
@@ -355,7 +373,7 @@ namespace HolyRail.City
             if (!_initialized || _spatialGrid == null)
                 return;
 
-            _spatialGrid.GetBuildingsInBounds(bounds, _queryResults);
+            _spatialGrid.GetItemsInBounds(bounds, _queryResults);
             ActivateCollidersForBuildings(_queryResults);
         }
 
@@ -624,7 +642,7 @@ namespace HolyRail.City
             if (_spatialGrid == null)
                 return;
 
-            _spatialGrid.GetBuildingsInRadius(center, ActivationRadius, _queryResults);
+            _spatialGrid.GetItemsInRadius(center, ActivationRadius, _queryResults);
             ActivateCollidersForBuildings(_queryResults);
         }
 
@@ -699,7 +717,7 @@ namespace HolyRail.City
             if (_rampSpatialGrid == null)
                 return;
 
-            _rampSpatialGrid.GetRampsInRadius(center, ActivationRadius, _rampQueryResults);
+            _rampSpatialGrid.GetItemsInRadius(center, ActivationRadius, _rampQueryResults);
             ActivateCollidersForRamps(_rampQueryResults);
         }
 
@@ -774,7 +792,7 @@ namespace HolyRail.City
             if (_billboardSpatialGrid == null)
                 return;
 
-            _billboardSpatialGrid.GetBillboardsInRadius(center, ActivationRadius, _billboardQueryResults);
+            _billboardSpatialGrid.GetItemsInRadius(center, ActivationRadius, _billboardQueryResults);
             ActivateCollidersForBillboards(_billboardQueryResults);
         }
 

@@ -22,6 +22,14 @@ public class SplineMeshController : MonoBehaviour
 
     private MaterialPropertyBlock _propertyBlock;
 
+    // Dirty tracking to avoid setting property block every frame
+    private float _lastGlowLocation;
+    private float _lastGlowLength;
+    private float _lastGlowFlip;
+    private float _lastGlowMix;
+    private float _lastGlowBrightness;
+    private bool _propertyBlockDirty = true;
+
     /// <summary>
     /// Don't call every frame...
     /// </summary>
@@ -90,6 +98,7 @@ public class SplineMeshController : MonoBehaviour
             _animTimer += Time.deltaTime;
             var t = Mathf.Clamp01(_animTimer / showHideDuration);
             glowMix = Mathf.Lerp(_animFrom, _animTo, t);
+            _propertyBlockDirty = true;
 
             if (t >= 1f)
                 _animating = false;
@@ -101,12 +110,29 @@ public class SplineMeshController : MonoBehaviour
         }
 
         float location = glowLocation;
+        float flipValue = flip ? 1f : 0f;
 
-        PropertyBlock.SetFloat("_GlowLocation", location);
-        PropertyBlock.SetFloat("_GlowLength", glowLength);
-        PropertyBlock.SetFloat("_GlowFlip", flip ? 1f : 0f);
-        PropertyBlock.SetFloat("_GlowMix", glowMix);
-        PropertyBlock.SetFloat("_GlowBrightness", glowBrightness);
-        MeshTarget.SetPropertyBlock(PropertyBlock);
+        // Only update property block when values actually change
+        if (_propertyBlockDirty ||
+            location != _lastGlowLocation ||
+            glowLength != _lastGlowLength ||
+            flipValue != _lastGlowFlip ||
+            glowMix != _lastGlowMix ||
+            glowBrightness != _lastGlowBrightness)
+        {
+            PropertyBlock.SetFloat("_GlowLocation", location);
+            PropertyBlock.SetFloat("_GlowLength", glowLength);
+            PropertyBlock.SetFloat("_GlowFlip", flipValue);
+            PropertyBlock.SetFloat("_GlowMix", glowMix);
+            PropertyBlock.SetFloat("_GlowBrightness", glowBrightness);
+            MeshTarget.SetPropertyBlock(PropertyBlock);
+
+            _lastGlowLocation = location;
+            _lastGlowLength = glowLength;
+            _lastGlowFlip = flipValue;
+            _lastGlowMix = glowMix;
+            _lastGlowBrightness = glowBrightness;
+            _propertyBlockDirty = false;
+        }
     }
 }

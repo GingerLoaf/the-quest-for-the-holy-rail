@@ -1,10 +1,93 @@
 using System;
+using System.Collections.Generic;
 using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Splines;
 
 namespace Unity.Splines.Examples
 {
+    /// <summary>
+    /// Simple spatial grid for fast radius queries on SplineContainers.
+    /// </summary>
+    internal class SplineContainerSpatialGrid
+    {
+        private readonly Dictionary<Vector2Int, List<int>> _cells = new();
+        private readonly float _cellSize;
+        private SplineContainer[] _items;
+
+        public int CellCount => _cells.Count;
+
+        public SplineContainerSpatialGrid(float cellSize)
+        {
+            _cellSize = cellSize;
+        }
+
+        public void Initialize(SplineContainer[] items)
+        {
+            _cells.Clear();
+            _items = items;
+
+            for (int i = 0; i < items.Length; i++)
+            {
+                if (items[i] == null)
+                    continue;
+
+                var cellKey = GetCellKey(items[i].transform.position);
+
+                if (!_cells.TryGetValue(cellKey, out var list))
+                {
+                    list = new List<int>();
+                    _cells[cellKey] = list;
+                }
+
+                list.Add(i);
+            }
+        }
+
+        public void GetItemsInRadius(Vector3 center, float radius, List<int> results)
+        {
+            results.Clear();
+
+            if (_items == null)
+                return;
+
+            var minCell = GetCellKey(center - new Vector3(radius, 0, radius));
+            var maxCell = GetCellKey(center + new Vector3(radius, 0, radius));
+            var radiusSq = radius * radius;
+
+            for (int x = minCell.x; x <= maxCell.x; x++)
+            {
+                for (int z = minCell.y; z <= maxCell.y; z++)
+                {
+                    var cellKey = new Vector2Int(x, z);
+
+                    if (_cells.TryGetValue(cellKey, out var itemIndices))
+                    {
+                        foreach (var index in itemIndices)
+                        {
+                            var itemPos = _items[index].transform.position;
+                            var dx = itemPos.x - center.x;
+                            var dz = itemPos.z - center.z;
+                            var distSq = dx * dx + dz * dz;
+
+                            if (distSq <= radiusSq)
+                            {
+                                results.Add(index);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        private Vector2Int GetCellKey(Vector3 worldPosition)
+        {
+            int x = Mathf.FloorToInt(worldPosition.x / _cellSize);
+            int z = Mathf.FloorToInt(worldPosition.z / _cellSize);
+            return new Vector2Int(x, z);
+        }
+    }
+
     /// <summary>
     /// Direction of travel along a spline.
     /// </summary>
@@ -44,8 +127,15 @@ namespace Unity.Splines.Examples
         [field: SerializeField] public Transform NearestPoint { get; private set; }
         [SerializeField, Tooltip("Minimum change in spline parameter to detect direction (prevents noise)")]
         private float _directionThreshold = 0.001f;
+        [SerializeField, Tooltip("Search radius for finding nearby splines (smaller = faster, but may miss distant splines)")]
+        private float _searchRadius = 50f;
+        [SerializeField, Tooltip("Cell size for spatial grid (smaller = more cells, larger = more items per cell)")]
+        private float _gridCellSize = 30f;
 
         private SplineContainer[] _splineContainers;
+        private SplineContainerSpatialGrid _splineGrid;
+        private List<int> _nearbyIndices = new List<int>();
+        private SplineContainer[] _nearbyContainersBuffer = new SplineContainer[64];
         private LineRenderer _lineRenderer;
         private float _previousSplineParameter = -1f;
         private SplineContainer _previousContainer = null;
@@ -249,11 +339,39 @@ namespace Unity.Splines.Examples
         public void RefreshSplineContainers()
         {
             _splineContainers = FindObjectsByType<SplineContainer>(FindObjectsSortMode.None);
-            Debug.Log($"ShowNearestPoint: Refreshed spline cache, found {_splineContainers.Length} containers");
+
+            // Build spatial grid for fast radius queries
+            _splineGrid = new SplineContainerSpatialGrid(_gridCellSize);
+            _splineGrid.Initialize(_splineContainers);
+
+            Debug.Log($"ShowNearestPoint: Refreshed spline cache, found {_splineContainers.Length} containers, grid has {_splineGrid.CellCount} cells");
         }
 
         private void Update()
         {
+            // DISABLED: This debug visualization was causing 35ms/frame overhead
+            // The player controller has its own grind detection - this is not needed for gameplay
+            return;
+
+            // Get only nearby containers using spatial grid
+            _nearbyIndices.Clear();
+            _splineGrid?.GetItemsInRadius(transform.position, _searchRadius, _nearbyIndices);
+
+            // Build filtered array (resize buffer if needed)
+            int nearbyCount = _nearbyIndices.Count;
+            if (_nearbyContainersBuffer.Length < nearbyCount)
+            {
+                _nearbyContainersBuffer = new SplineContainer[nearbyCount * 2];
+            }
+            for (int i = 0; i < nearbyCount; i++)
+            {
+                _nearbyContainersBuffer[i] = _splineContainers[_nearbyIndices[i]];
+            }
+
+            // Create array segment for the query methods
+            var nearbyContainers = new SplineContainer[nearbyCount];
+            Array.Copy(_nearbyContainersBuffer, nearbyContainers, nearbyCount);
+
             NearestPointResult result;
 
             if (_hasValidPreviousState)
@@ -264,11 +382,11 @@ namespace Unity.Splines.Examples
                     _previousContainer,
                     _previousWorldPosition,
                     _directionThreshold,
-                    _splineContainers);
+                    nearbyContainers);
             }
             else
             {
-                result = GetNearestPointOnSplines(transform.position, _splineContainers);
+                result = GetNearestPointOnSplines(transform.position, nearbyContainers);
                 _hasValidPreviousState = true;
             }
 

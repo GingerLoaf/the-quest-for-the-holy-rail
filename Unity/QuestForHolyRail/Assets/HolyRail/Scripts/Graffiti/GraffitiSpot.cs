@@ -12,11 +12,11 @@ namespace HolyRail.Graffiti
 
         [Header("References")]
         [field: SerializeField] public DecalProjector DecalProjector { get; private set; }
-        [field: SerializeField] public GameObject Reticle { get; private set; }
         [field: SerializeField] public GraffitiProgressUI ProgressUI { get; private set; }
         [field: SerializeField] public ParticleSystem CompletionEffect { get; private set; }
 
         private static readonly int BlendAmountProperty = Shader.PropertyToID("_BlendAmount");
+        private static readonly int FrameEnabledProperty = Shader.PropertyToID("_FrameEnabled");
 
         private Material _decalMaterial;
         private float _currentProgress;
@@ -33,11 +33,7 @@ namespace HolyRail.Graffiti
                 _decalMaterial = new Material(DecalProjector.material);
                 DecalProjector.material = _decalMaterial;
                 _decalMaterial.SetFloat(BlendAmountProperty, 0f);
-            }
-
-            if (Reticle != null)
-            {
-                Reticle.SetActive(false);
+                _decalMaterial.SetFloat(FrameEnabledProperty, 0f);
             }
         }
 
@@ -124,9 +120,9 @@ namespace HolyRail.Graffiti
                 _playerTransform = other.transform;
                 _playerController = other.GetComponent<ThirdPersonController_RailGrinder>();
 
-                if (Reticle != null)
+                if (_decalMaterial != null)
                 {
-                    Reticle.SetActive(true);
+                    _decalMaterial.SetFloat(FrameEnabledProperty, 1f);
                 }
 
                 if (ProgressUI != null)
@@ -147,9 +143,9 @@ namespace HolyRail.Graffiti
             {
                 _isPlayerInRange = false;
 
-                if (Reticle != null)
+                if (_decalMaterial != null)
                 {
-                    Reticle.SetActive(false);
+                    _decalMaterial.SetFloat(FrameEnabledProperty, 0f);
                 }
 
                 if (ProgressUI != null)
@@ -183,9 +179,9 @@ namespace HolyRail.Graffiti
                 CompletionEffect.Play();
             }
 
-            if (Reticle != null)
+            if (_decalMaterial != null)
             {
-                Reticle.SetActive(false);
+                _decalMaterial.SetFloat(FrameEnabledProperty, 0f);
             }
 
             if (ProgressUI != null)
@@ -221,16 +217,12 @@ namespace HolyRail.Graffiti
             if (_decalMaterial != null)
             {
                 _decalMaterial.SetFloat(BlendAmountProperty, 0f);
+                _decalMaterial.SetFloat(FrameEnabledProperty, 0f);
             }
 
             if (ProgressUI != null)
             {
                 ProgressUI.Hide();
-            }
-
-            if (Reticle != null)
-            {
-                Reticle.SetActive(false);
             }
 
             _isPlayerInRange = false;

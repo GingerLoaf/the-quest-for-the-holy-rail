@@ -9,6 +9,11 @@ Shader "HolyRail/BillboardInstanced"
         _TextureArray ("Texture Array", 2DArray) = "" {}
         _TextureCount ("Texture Count", Float) = 1
         _UseTextures ("Use Textures", Float) = 0
+        _TextureBlend ("Texture Blend", Range(0, 1)) = 0
+        _PaletteColor1 ("Palette Color 1", Color) = (1, 0.2, 0.4, 1)
+        _PaletteColor2 ("Palette Color 2", Color) = (0.2, 0.8, 1, 1)
+        _PaletteColor3 ("Palette Color 3", Color) = (1, 0.8, 0.2, 1)
+        _PaletteColor4 ("Palette Color 4", Color) = (0.4, 1, 0.6, 1)
     }
 
     SubShader
@@ -58,6 +63,11 @@ Shader "HolyRail/BillboardInstanced"
                 float _EmissionIntensity;
                 float _TextureCount;
                 float _UseTextures;
+                float _TextureBlend;
+                float4 _PaletteColor1;
+                float4 _PaletteColor2;
+                float4 _PaletteColor3;
+                float4 _PaletteColor4;
                 float3 _HalfAOffset;
                 float3 _HalfBOffset;
                 int _HalfBStartIndex;
@@ -164,20 +174,26 @@ Shader "HolyRail/BillboardInstanced"
                 // Hash for randomization
                 float hash = frac(sin(input.instanceID * 12.9898) * 43758.5453);
 
-                half3 baseColor = _BaseColor.rgb;
+                // Pick palette color based on instance ID
+                uint colorIndex = uint(input.instanceID) % 4;
+                half3 paletteColor;
+                if (colorIndex == 0) paletteColor = _PaletteColor1.rgb;
+                else if (colorIndex == 1) paletteColor = _PaletteColor2.rgb;
+                else if (colorIndex == 2) paletteColor = _PaletteColor3.rgb;
+                else paletteColor = _PaletteColor4.rgb;
 
-                // Sample texture if enabled
-                if (_UseTextures > 0.5 && _TextureCount > 0)
+                // Apply slight variation to palette color
+                paletteColor += (hash - 0.5) * _ColorVariation * 2.0;
+
+                half3 baseColor = paletteColor;
+
+                // Blend with texture if enabled and blend > 0
+                if (_TextureBlend > 0 && _TextureCount > 0)
                 {
                     // Pick texture index based on instance ID
                     uint texIndex = uint(input.instanceID * 7 + 3) % uint(_TextureCount);
                     half4 texColor = SAMPLE_TEXTURE2D_ARRAY(_TextureArray, sampler_TextureArray, input.uv, texIndex);
-                    baseColor = texColor.rgb;
-                }
-                else
-                {
-                    // Fallback: color variation per instance
-                    baseColor = _BaseColor.rgb + (hash - 0.5) * _ColorVariation * 2.0;
+                    baseColor = lerp(paletteColor, texColor.rgb, _TextureBlend);
                 }
 
                 // Simple lighting
@@ -187,12 +203,9 @@ Shader "HolyRail/BillboardInstanced"
 
                 half3 diffuse = baseColor * (ambient + mainLight.color * NdotL * 0.8);
 
-                // Emissive glow (tinted by texture color if using textures)
+                // Emissive glow (tinted by base color)
                 half3 emission = _EmissionColor.rgb * _EmissionIntensity;
-                if (_UseTextures > 0.5)
-                {
-                    emission *= baseColor; // Tint emission by texture
-                }
+                emission *= baseColor; // Tint emission by base color
 
                 half3 finalColor = diffuse + emission;
 

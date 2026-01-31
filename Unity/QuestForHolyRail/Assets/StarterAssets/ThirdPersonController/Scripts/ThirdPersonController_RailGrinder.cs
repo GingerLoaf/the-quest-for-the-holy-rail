@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Art.PickUps;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -50,20 +51,104 @@ namespace StarterAssets
             }
         }
 
-        private NearestPointResult GetNearestPointOnSplines(float3 worldPosition, SplineContainer[] splineContainers = null)
+        private struct SplineSamplePoint
         {
-            if (splineContainers == null || splineContainers.Length == 0)
+            public int ContainerIndex;
+            public float T;  // Parameter along spline (0-1)
+        }
+
+        private class SplineContainerSpatialGrid
+        {
+            private readonly Dictionary<Vector2Int, List<SplineSamplePoint>> _cells = new();
+            private readonly float _cellSize;
+            private readonly float _sampleInterval;
+            private readonly HashSet<int> _tempIndices = new();
+            private SplineContainer[] _items;
+
+            public SplineContainerSpatialGrid(float cellSize, float sampleInterval = 5f)
             {
-                splineContainers = FindObjectsByType<SplineContainer>(FindObjectsSortMode.None);
+                _cellSize = cellSize;
+                _sampleInterval = sampleInterval;
             }
 
+            public void Initialize(SplineContainer[] items)
+            {
+                _cells.Clear();
+                _items = items;
+
+                for (int i = 0; i < items.Length; i++)
+                {
+                    if (items[i] == null) continue;
+                    var spline = items[i].Spline;
+                    if (spline == null || spline.Count < 2) continue;
+
+                    // Sample spline at regular world-space intervals
+                    float length = spline.GetLength();
+                    int numSamples = Mathf.Max(2, Mathf.CeilToInt(length / _sampleInterval));
+
+                    for (int s = 0; s <= numSamples; s++)
+                    {
+                        float t = s / (float)numSamples;
+                        var localPos = spline.EvaluatePosition(t);
+                        var worldPos = items[i].transform.TransformPoint(localPos);
+                        var cellKey = GetCellKey(worldPos);
+
+                        if (!_cells.TryGetValue(cellKey, out var list))
+                        {
+                            list = new List<SplineSamplePoint>();
+                            _cells[cellKey] = list;
+                        }
+                        list.Add(new SplineSamplePoint { ContainerIndex = i, T = t });
+                    }
+                }
+            }
+
+            public void GetItemsInRadius(Vector3 center, float radius, List<int> results)
+            {
+                results.Clear();
+                if (_items == null) return;
+
+                var minCell = GetCellKey(center - new Vector3(radius, 0, radius));
+                var maxCell = GetCellKey(center + new Vector3(radius, 0, radius));
+
+                // Collect unique container indices
+                _tempIndices.Clear();
+                for (int x = minCell.x; x <= maxCell.x; x++)
+                {
+                    for (int z = minCell.y; z <= maxCell.y; z++)
+                    {
+                        if (_cells.TryGetValue(new Vector2Int(x, z), out var samples))
+                        {
+                            foreach (var sample in samples)
+                                _tempIndices.Add(sample.ContainerIndex);
+                        }
+                    }
+                }
+
+                foreach (var idx in _tempIndices)
+                    results.Add(idx);
+            }
+
+            private Vector2Int GetCellKey(Vector3 pos) =>
+                new Vector2Int(Mathf.FloorToInt(pos.x / _cellSize), Mathf.FloorToInt(pos.z / _cellSize));
+        }
+
+        /// <summary>
+        /// Finds the nearest point on any spline within the provided buffer.
+        /// </summary>
+        /// <param name="worldPosition">The world position to find nearest point from</param>
+        /// <param name="splineContainers">Buffer containing spline containers to search</param>
+        /// <param name="count">Number of valid containers in the buffer</param>
+        private NearestPointResult GetNearestPointOnSplinesNonAlloc(float3 worldPosition, SplineContainer[] splineContainers, int count)
+        {
             var nearestPosition = float3.zero;
             var nearestDistance = float.PositiveInfinity;
             var nearestT = 0f;
             SplineContainer nearestContainer = null;
 
-            foreach (var container in splineContainers)
+            for (int i = 0; i < count; i++)
             {
+                var container = splineContainers[i];
                 if (container == null)
                     continue;
 
@@ -71,10 +156,17 @@ namespace StarterAssets
                 if (splines == null || splines.Count == 0)
                     continue;
 
-                foreach (var spline in splines)
+                // Use indexed access instead of foreach to avoid enumerator allocation
+                int splineCount = splines.Count;
+                for (int j = 0; j < splineCount; j++)
                 {
+                    var spline = splines[j];
                     if (spline == null || spline.Count < 2)
                         continue;
+
+                    // Early-out: if we already found a spline within grind threshold, skip expensive checks
+                    if (nearestDistance <= GrindDistanceThreshold)
+                        break;
 
                     using var native = new NativeSpline(spline, container.transform.localToWorldMatrix);
                     float distance = SplineUtility.GetNearestPoint(native, worldPosition, out float3 point, out float t);
@@ -87,9 +179,64 @@ namespace StarterAssets
                         nearestContainer = container;
                     }
                 }
+
+                // Early-out at container level too
+                if (nearestDistance <= GrindDistanceThreshold)
+                    break;
             }
 
             return new NearestPointResult(nearestPosition, nearestDistance, nearestT, nearestContainer);
+        }
+
+        /// <summary>
+        /// Fallback method that searches all cached spline containers.
+        /// Used when the spatial grid doesn't find nearby splines (e.g., spline geometry is far from transform.position).
+        /// Also auto-refreshes the spatial grid if it appears stale (with cooldown to prevent spam).
+        /// </summary>
+        private NearestPointResult GetNearestPointOnAllSplines(float3 worldPosition)
+        {
+            // Check if we should try to refresh the spline cache (with cooldown)
+            if (_splineRefreshCooldown <= 0f)
+            {
+                _splineRefreshCooldown = SplineRefreshInterval;
+                var currentSplines = FindObjectsByType<SplineContainer>(FindObjectsSortMode.None);
+                if (_splineContainers == null || currentSplines.Length != _splineContainers.Length)
+                {
+                    // Refresh the cached splines and spatial grid
+                    _splineContainers = currentSplines;
+                    _splineGrid?.Initialize(_splineContainers);
+                }
+            }
+            else
+            {
+                _splineRefreshCooldown -= Time.deltaTime;
+            }
+
+            if (_splineContainers == null || _splineContainers.Length == 0)
+            {
+                return new NearestPointResult(float3.zero, float.PositiveInfinity, 0f, null);
+            }
+
+            return GetNearestPointOnSplinesNonAlloc(worldPosition, _splineContainers, _splineContainers.Length);
+        }
+
+        /// <summary>
+        /// Fills the provided buffer with nearby spline containers and returns the count.
+        /// This method avoids GC allocations by reusing the buffer.
+        /// </summary>
+        private int GetNearbySplineContainersNonAlloc(SplineContainer[] buffer)
+        {
+            _nearbySplineIndices.Clear();
+            _splineGrid?.GetItemsInRadius(transform.position, SplineSearchRadius, _nearbySplineIndices);
+
+            int count = _nearbySplineIndices.Count;
+            if (count == 0) return 0;
+
+            int copyCount = Mathf.Min(count, buffer.Length);
+            for (int i = 0; i < copyCount; i++)
+                buffer[i] = _splineContainers[_nearbySplineIndices[i]];
+
+            return copyCount;
         }
 
         public InputAction grindInput;
@@ -99,7 +246,20 @@ namespace StarterAssets
         public InputAction jumpSideflipInput;
         public bool lookBack;
         private SplineContainer[] _splineContainers;
-        
+        private SplineContainerSpatialGrid _splineGrid;
+        private List<int> _nearbySplineIndices = new List<int>();
+        private SplineContainer[] _nearbyContainersBuffer = new SplineContainer[64];
+        private const float SplineSearchRadius = 50f;
+        private const float SplineGridCellSize = 30f;
+
+        // Pre-allocated physics buffers to avoid GC allocations
+        private static readonly Collider[] _wallRideHitBuffer = new Collider[32];
+        private static readonly Collider[] _rampHitBuffer = new Collider[8];
+
+        // Cooldown for auto-refreshing spline cache (prevents expensive FindObjectsByType spam)
+        private float _splineRefreshCooldown;
+        private const float SplineRefreshInterval = 1f;
+
         [Header("Player")]
         [Tooltip("Move speed of the character in m/s")]
         public float MoveSpeed = 2.0f;
@@ -299,9 +459,19 @@ namespace StarterAssets
 
         // Boost state
         private bool _isBoosting;
+        public bool IsBoosting => _isBoosting;
         private float _boostTimer;
         private float _boostCooldownTimer;
         private Vector3 _boostDirection;
+
+        // Knockback state
+        private bool _isKnockedBack;
+        private float _knockbackTimer;
+        private Vector3 _knockbackVelocity;
+        private const float KnockbackDuration = 0.3f;
+
+        // Frame skipping for expensive airborne checks
+        private int _airborneCheckFrame;
 
         [Header("Grind Camera Effects")]
         [Tooltip("Reference to the Cinemachine Virtual Camera")]
@@ -405,6 +575,8 @@ namespace StarterAssets
                 _mainCamera = GameObject.FindGameObjectWithTag("MainCamera");
             }
             _splineContainers = FindObjectsByType<SplineContainer>(FindObjectsSortMode.None);
+            _splineGrid = new SplineContainerSpatialGrid(SplineGridCellSize, 5f);  // 5 unit sample interval
+            _splineGrid.Initialize(_splineContainers);
         }
 
         /// <summary>
@@ -415,6 +587,7 @@ namespace StarterAssets
         public void RefreshSplineContainers()
         {
             _splineContainers = FindObjectsByType<SplineContainer>(FindObjectsSortMode.None);
+            _splineGrid?.Initialize(_splineContainers);
         }
 
         private void OnEnable()
@@ -500,7 +673,6 @@ namespace StarterAssets
 
         private void Update()
         {
-            _hasAnimator = TryGetComponent(out _animator);
             bool gamepadLookBack = Gamepad.current != null && Gamepad.current.leftShoulder.isPressed;
             lookBack = gamepadLookBack || Input.GetKey(KeyCode.Q);
 
@@ -513,7 +685,6 @@ namespace StarterAssets
             if (jumpPressed)
             {
                 _jumpBufferTimer = JumpBufferTime;
-                Debug.Log($"Jump buffered! Timer set to {JumpBufferTime}");
             }
             if (_jumpBufferTimer > 0f)
             {
@@ -545,6 +716,9 @@ namespace StarterAssets
 
             // Update boost state (must run every frame regardless of player state)
             UpdateBoost();
+
+            // Update knockback state
+            UpdateKnockback();
 
             // Check for dash input (requires ability unlock)
             if (_input.dash)
@@ -594,8 +768,12 @@ namespace StarterAssets
                 // Run GroundedCheck FIRST to have accurate grounded state for wall ride detection
                 GroundedCheck();
 
+                // Frame skip for expensive airborne checks (every 3 frames)
+                _airborneCheckFrame++;
+                bool shouldCheckAirborne = _airborneCheckFrame % 3 == 0;
+
                 // Auto-grind: cooldown prevents immediate re-attach after jumping off
-                if (AutoGrind && !Grounded && _grindExitCooldownTimer <= 0f)
+                if (shouldCheckAirborne && AutoGrind && !Grounded && _grindExitCooldownTimer <= 0f)
                 {
                     if (TryStartGrind())
                     {
@@ -604,7 +782,7 @@ namespace StarterAssets
                 }
 
                 // Wall ride detection: only when airborne and not grinding
-                if (EnableWallRide && !Grounded && _wallRideExitCooldownTimer <= 0f)
+                if (shouldCheckAirborne && EnableWallRide && !Grounded && _wallRideExitCooldownTimer <= 0f)
                 {
                     if (TryStartWallRide())
                     {
@@ -615,7 +793,6 @@ namespace StarterAssets
                 // Wall ride coyote time - allow jump even after leaving wall
                 if (_wallRideCoyoteTimer > 0f)
                 {
-                    Debug.Log($"Coyote time active: {_wallRideCoyoteTimer:F3}s remaining, jumpBuffer={_jumpBufferTimer:F3}");
                     _wallRideCoyoteTimer -= Time.deltaTime;
 
                     if (_jumpBufferTimer > 0f)
@@ -630,8 +807,6 @@ namespace StarterAssets
                         {
                             _animator.SetBool(_animIDJump, true);
                         }
-
-                        Debug.Log("Wall ride coyote jump GRANTED!");
                     }
                 }
 
@@ -788,8 +963,6 @@ namespace StarterAssets
 
             // Add horizontal boost to current speed
             _speed += RampBoostAmount;
-
-            Debug.Log($"Ramp boost applied! Speed: {_speed}");
         }
 
         private void CameraRotation()
@@ -840,16 +1013,36 @@ namespace StarterAssets
         {
             if (_isGrinding) return false;
 
-            var result = GetNearestPointOnSplines(
-                transform.position,
-                _splineContainers);
+            int nearbyCount = GetNearbySplineContainersNonAlloc(_nearbyContainersBuffer);
 
-            if (result.Container == null) return false;
+            NearestPointResult result;
+            if (nearbyCount > 0)
+            {
+                // Use spatial grid results
+                result = GetNearestPointOnSplinesNonAlloc(
+                    transform.position,
+                    _nearbyContainersBuffer,
+                    nearbyCount);
+            }
+            else
+            {
+                // Fallback: spatial grid found nothing, search all splines
+                // This handles splines whose transform.position is far from their geometry
+                result = GetNearestPointOnAllSplines(transform.position);
+            }
+
+            if (result.Container == null)
+            {
+                return false;
+            }
 
             // Hemisphere check: only grind if player is above the rail (with offset)
             float playerY = transform.position.y;
             float railY = result.Position.y;
-            if (playerY < railY + GrindTriggerOffset) return false;
+            if (playerY < railY + GrindTriggerOffset)
+            {
+                return false;
+            }
 
             if (result.Distance <= GrindDistanceThreshold)
             {
@@ -1187,8 +1380,8 @@ namespace StarterAssets
             transform.position = position;
 
             // Check for ramp collision while grinding - derail if we hit one
-            Collider[] rampHits = Physics.OverlapSphere(transform.position, _controller.radius, RampLayers);
-            if (rampHits.Length > 0)
+            int rampHitCount = Physics.OverlapSphereNonAlloc(transform.position, _controller.radius, _rampHitBuffer, RampLayers);
+            if (rampHitCount > 0)
             {
                 // Derail - exit grind with a small hop
                 ExitGrindWithJump(JumpHeight * 0.5f);
@@ -1232,20 +1425,12 @@ namespace StarterAssets
             }
 
             // SphereCast to find nearby billboard colliders
-            var hits = Physics.OverlapSphere(transform.position, WallRideDetectionRadius, effectiveLayers);
+            int hitCount = Physics.OverlapSphereNonAlloc(transform.position, WallRideDetectionRadius, _wallRideHitBuffer, effectiveLayers);
 
-            if (hits.Length == 0)
+            if (hitCount == 0)
             {
-                // Debug: Check if we're finding anything without the layer mask
-                var allHits = Physics.OverlapSphere(transform.position, WallRideDetectionRadius);
-                if (allHits.Length > 0 && Time.frameCount % 30 == 0)
-                {
-                    Debug.Log($"WallRide: No hits on WallRideLayers (mask={effectiveLayers.value}), but found {allHits.Length} colliders nearby. First: {allHits[0].gameObject.name} on layer {allHits[0].gameObject.layer}");
-                }
                 return false;
             }
-
-            Debug.Log($"WallRide: Found {hits.Length} billboard colliders nearby");
 
             // Find the closest billboard we can wall ride on
             float closestDistance = float.MaxValue;
@@ -1254,8 +1439,9 @@ namespace StarterAssets
             Vector3 closestCenter = Vector3.zero;
             Vector3 closestScale = Vector3.zero;
 
-            foreach (var hit in hits)
+            for (int i = 0; i < hitCount; i++)
             {
+                var hit = _wallRideHitBuffer[i];
                 // Calculate closest point first to determine the wall normal dynamically
                 var closestPoint = hit.ClosestPoint(transform.position);
                 float distance = Vector3.Distance(transform.position, closestPoint);
@@ -1292,7 +1478,6 @@ namespace StarterAssets
 
                     if (horizontalVelocity.magnitude < 0.5f)
                     {
-                        Debug.Log($"WallRide: {hit.name} failed velocity check (vel={horizontalVelocity.magnitude:F2})");
                         continue;
                     }
                 }
@@ -1311,7 +1496,6 @@ namespace StarterAssets
 
             if (closestCollider == null)
             {
-                Debug.Log("WallRide: No valid collider found (all failed distance or velocity checks)");
                 return false;
             }
 
@@ -1328,12 +1512,9 @@ namespace StarterAssets
             }
             var projectedVelocity = horizontalVel - Vector3.Dot(horizontalVel, closestNormal) * closestNormal;
 
-            Debug.Log($"WallRide: Closest collider found. HorizVel={horizontalVel.magnitude:F2}, ProjectedVel={projectedVelocity.magnitude:F2}");
-
             // Need meaningful velocity along wall
             if (projectedVelocity.magnitude < 0.5f)
             {
-                Debug.Log("WallRide: Not enough projected velocity along wall");
                 return false;
             }
 
@@ -1391,7 +1572,6 @@ namespace StarterAssets
                 }
             }
 
-            Debug.Log($"Wall ride started! Scale={billboardScale}, Center={billboardCenter}, Normal={wallNormal}, Right={_wallRideRight}");
         }
 
         private void WallRide()
@@ -1410,7 +1590,6 @@ namespace StarterAssets
 
                 if (jumpThisFrame)
                 {
-                    Debug.Log("WallRide: Jump detected, exiting!");
                     _jumpBufferTimer = 0f;
                     _input.jump = false;
                     ExitWallRideWithJump();
@@ -1489,7 +1668,6 @@ namespace StarterAssets
 
             // Apply jump velocity (vertical) - jump away from wall
             _verticalVelocity = Mathf.Sqrt(WallRideJumpHeight * -2f * Gravity);
-            Debug.Log($"Wall ride jump applied! verticalVelocity={_verticalVelocity:F2}, jumpHeight={WallRideJumpHeight}");
 
             // Preserve horizontal momentum in travel direction plus some push away from wall
             var exitDirection = _wallRideVelocity + _wallRideNormal * 0.3f;
@@ -1520,8 +1698,6 @@ namespace StarterAssets
                     emission.enabled = false;
                 }
             }
-
-            Debug.Log("Wall ride exit with jump!");
         }
 
         private void ExitWallRideAtEdge()
@@ -1566,8 +1742,6 @@ namespace StarterAssets
                     emission.enabled = false;
                 }
             }
-
-            Debug.Log("Wall ride exit at edge!");
         }
 
         private void TryStartDash()
@@ -1658,7 +1832,6 @@ namespace StarterAssets
                 AudioSource.PlayClipAtPoint(DashAudioClip, transform.position, 1f);
             }
 
-            Debug.Log($"Dash started! Direction: {direction}, Speed: {_speed}");
         }
 
         private void UpdateDash()
@@ -1760,7 +1933,6 @@ namespace StarterAssets
                 AudioSource.PlayClipAtPoint(BoostAudioClip, transform.position, 1f);
             }
 
-            Debug.Log($"Boost started! Direction: {direction}, Speed: {_speed}");
         }
 
         private void UpdateBoost()
@@ -1771,6 +1943,65 @@ namespace StarterAssets
             if (_boostTimer <= 0f)
             {
                 _isBoosting = false;
+            }
+        }
+
+        private void OnControllerColliderHit(ControllerColliderHit hit)
+        {
+            // Check if we hit a LaserBot's force field
+            var laserFieldTrigger = hit.collider.GetComponent<LaserFieldTrigger>();
+            if (laserFieldTrigger != null)
+            {
+                var laserBot = laserFieldTrigger.GetLaserBot();
+                if (laserBot != null)
+                {
+                    laserBot.OnPlayerHitForceField(this);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Apply knockback force to the player, pushing them in the specified direction.
+        /// Cancels boost/dash and exits grind if active.
+        /// </summary>
+        public void ApplyKnockback(Vector3 direction, float force)
+        {
+            // Cancel boost and dash
+            _isBoosting = false;
+            _isDashing = false;
+            _boostTimer = 0f;
+            _dashTimer = 0f;
+
+            // Exit grind if grinding
+            if (_isGrinding)
+            {
+                StopGrind();
+            }
+
+            // Set knockback state
+            _isKnockedBack = true;
+            _knockbackTimer = KnockbackDuration;
+
+            // Calculate knockback velocity
+            Vector3 knockbackDir = direction.normalized;
+            _knockbackVelocity = knockbackDir * force;
+
+            // Add slight upward component for more visible knockback
+            _verticalVelocity = force * 0.5f;
+
+            // Reset speed to prevent fighting the knockback
+            _speed = 0f;
+        }
+
+        private void UpdateKnockback()
+        {
+            if (!_isKnockedBack) return;
+
+            _knockbackTimer -= Time.deltaTime;
+            if (_knockbackTimer <= 0f)
+            {
+                _isKnockedBack = false;
+                _knockbackVelocity = Vector3.zero;
             }
         }
 
@@ -1851,8 +2082,17 @@ namespace StarterAssets
             Vector3 targetDirection = Quaternion.Euler(0.0f, _targetRotation, 0.0f) * Vector3.forward;
 
             // move the player
-            _controller.Move(targetDirection.normalized * (_speed * Time.deltaTime) +
-                             new Vector3(0.0f, _verticalVelocity, 0.0f) * Time.deltaTime);
+            if (_isKnockedBack)
+            {
+                // During knockback, use knockback velocity instead of normal movement
+                _controller.Move(_knockbackVelocity * Time.deltaTime +
+                                 new Vector3(0.0f, _verticalVelocity, 0.0f) * Time.deltaTime);
+            }
+            else
+            {
+                _controller.Move(targetDirection.normalized * (_speed * Time.deltaTime) +
+                                 new Vector3(0.0f, _verticalVelocity, 0.0f) * Time.deltaTime);
+            }
 
             // update animator if using character
             if (_hasAnimator)
@@ -1922,7 +2162,6 @@ namespace StarterAssets
                     // Check for wall ride immediately when jumping near a wall
                     if (EnableWallRide && _wallRideExitCooldownTimer <= 0f)
                     {
-                        Debug.Log("Jump triggered - checking for wall ride");
                         TryStartWallRide();
                     }
                 }
@@ -2023,7 +2262,6 @@ namespace StarterAssets
             MoveSpeed += amount;
             GrindSpeed += amount;
 
-            Debug.Log($"Speed increased! New speeds - Move: {MoveSpeed}, Grind: {GrindSpeed}");
         }
 
         private void TryDeflectBullet()

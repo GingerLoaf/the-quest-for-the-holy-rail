@@ -22,7 +22,7 @@ namespace HolyRail.City
 
         private static readonly Vector3 InactivePosition = new(0, -1000f, 0);
 
-        private GraffitiSpotSpatialGrid _spatialGrid;
+        private SpatialGrid<GraffitiSpotData> _spatialGrid;
         private readonly List<GraffitiSpot> _pool = new();
         private readonly List<int> _activeIndices = new();
         private readonly List<int> _queryResults = new();
@@ -70,9 +70,11 @@ namespace HolyRail.City
                 return;
 
             var currentPosition = TrackingTarget.position;
-            var distanceMoved = Vector3.Distance(currentPosition, _lastUpdatePosition);
+            var delta = currentPosition - _lastUpdatePosition;
+            var distanceMovedSq = delta.sqrMagnitude;
+            var thresholdSq = UpdateDistanceThreshold * UpdateDistanceThreshold;
 
-            if (distanceMoved >= UpdateDistanceThreshold)
+            if (distanceMovedSq >= thresholdSq)
             {
                 if (_initialized)
                     UpdateActiveSpots(currentPosition);
@@ -94,7 +96,10 @@ namespace HolyRail.City
                 return;
             }
 
-            _spatialGrid = new GraffitiSpotSpatialGrid(DefaultCellSize, CityManager.transform.position);
+            _spatialGrid = new SpatialGrid<GraffitiSpotData>(
+                DefaultCellSize,
+                CityManager.transform.position,
+                g => g.Position);
             _spatialGrid.Initialize(CityManager.GraffitiSpots);
 
             CreatePool();
@@ -220,7 +225,7 @@ namespace HolyRail.City
             if (_spatialGrid == null)
                 return;
 
-            _spatialGrid.GetGraffitiSpotsInRadius(center, ActivationRadius, _queryResults);
+            _spatialGrid.GetItemsInRadius(center, ActivationRadius, _queryResults);
             ActivateSpotsForIndices(_queryResults);
         }
 

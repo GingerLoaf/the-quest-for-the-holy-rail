@@ -10,6 +10,11 @@ Shader "HolyRail/GraffitiBlendDecal"
         _EmissionIntensity("Emission Intensity", Range(0, 10)) = 2
         _BlacknessThreshold("Blackness Threshold", Range(0, 1)) = 0.1
 
+        [Header(Frame Outline)]
+        _FrameEnabled("Frame Enabled", Float) = 0
+        [HDR] _FrameColor("Frame Color", Color) = (0, 1, 0, 1)
+        _FrameWidth("Frame Width", Range(0.01, 0.15)) = 0.04
+
         // Decal properties
         [HideInInspector] _DecalMeshDepthBias("Depth Bias", Float) = 0
         [HideInInspector] _DecalMeshViewBias("View Bias", Float) = 0
@@ -36,6 +41,7 @@ Shader "HolyRail/GraffitiBlendDecal"
 
             ZWrite Off
             ZTest LEqual
+            Cull Off
             Blend SrcAlpha OneMinusSrcAlpha, Zero One
             BlendOp Add, Add
 
@@ -61,10 +67,24 @@ Shader "HolyRail/GraffitiBlendDecal"
                 half4 _PlayerColor;
                 half _EmissionIntensity;
                 half _BlacknessThreshold;
+                half _FrameEnabled;
+                half4 _FrameColor;
+                half _FrameWidth;
                 float _DecalMeshDepthBias;
                 float _DecalMeshViewBias;
                 float _DecalMeshBiasType;
             CBUFFER_END
+
+            half CalculateFrameMask(float2 uv, half frameWidth)
+            {
+                float distFromLeft = uv.x;
+                float distFromRight = 1.0 - uv.x;
+                float distFromBottom = uv.y;
+                float distFromTop = 1.0 - uv.y;
+                float minDistToEdge = min(min(distFromLeft, distFromRight), min(distFromBottom, distFromTop));
+                half frameMask = 1.0 - smoothstep(frameWidth * 0.8, frameWidth, minDistToEdge);
+                return frameMask;
+            }
 
             struct Attributes
             {
@@ -136,7 +156,12 @@ Shader "HolyRail/GraffitiBlendDecal"
                 half blackMask = step(_BlacknessThreshold, luminance);
 
                 // Apply black mask to alpha
-                finalColor.a = blendedTex.a * blendedColor.a * blackMask;
+                half baseAlpha = blendedTex.a * blendedColor.a * blackMask;
+
+                // Calculate frame outline
+                half frameMask = CalculateFrameMask(uv, _FrameWidth) * _FrameEnabled;
+                finalColor.rgb = lerp(finalColor.rgb, _FrameColor.rgb * 2.0, frameMask * _FrameColor.a);
+                finalColor.a = max(baseAlpha, frameMask * _FrameColor.a);
 
                 // Clip fully transparent pixels
                 clip(finalColor.a - 0.01);
@@ -154,6 +179,7 @@ Shader "HolyRail/GraffitiBlendDecal"
 
             ZWrite Off
             ZTest LEqual
+            Cull Off
             Blend SrcAlpha OneMinusSrcAlpha, Zero One
             BlendOp Add, Add
 
@@ -179,10 +205,24 @@ Shader "HolyRail/GraffitiBlendDecal"
                 half4 _PlayerColor;
                 half _EmissionIntensity;
                 half _BlacknessThreshold;
+                half _FrameEnabled;
+                half4 _FrameColor;
+                half _FrameWidth;
                 float _DecalMeshDepthBias;
                 float _DecalMeshViewBias;
                 float _DecalMeshBiasType;
             CBUFFER_END
+
+            half CalculateFrameMask(float2 uv, half frameWidth)
+            {
+                float distFromLeft = uv.x;
+                float distFromRight = 1.0 - uv.x;
+                float distFromBottom = uv.y;
+                float distFromTop = 1.0 - uv.y;
+                float minDistToEdge = min(min(distFromLeft, distFromRight), min(distFromBottom, distFromTop));
+                half frameMask = 1.0 - smoothstep(frameWidth * 0.8, frameWidth, minDistToEdge);
+                return frameMask;
+            }
 
             struct Attributes
             {
@@ -244,7 +284,12 @@ Shader "HolyRail/GraffitiBlendDecal"
                 half blackMask = step(_BlacknessThreshold, luminance);
 
                 // Apply black mask to alpha
-                finalColor.a = blendedTex.a * blendedColor.a * blackMask;
+                half baseAlpha = blendedTex.a * blendedColor.a * blackMask;
+
+                // Calculate frame outline
+                half frameMask = CalculateFrameMask(uv, _FrameWidth) * _FrameEnabled;
+                finalColor.rgb = lerp(finalColor.rgb, _FrameColor.rgb * 2.0, frameMask * _FrameColor.a);
+                finalColor.a = max(baseAlpha, frameMask * _FrameColor.a);
 
                 // Clip fully transparent pixels
                 clip(finalColor.a - 0.01);
@@ -262,6 +307,7 @@ Shader "HolyRail/GraffitiBlendDecal"
 
             ZWrite Off
             ZTest LEqual
+            Cull Off
             Blend 0 SrcAlpha OneMinusSrcAlpha, Zero One
             BlendOp Add
 
@@ -288,10 +334,24 @@ Shader "HolyRail/GraffitiBlendDecal"
                 half4 _PlayerColor;
                 half _EmissionIntensity;
                 half _BlacknessThreshold;
+                half _FrameEnabled;
+                half4 _FrameColor;
+                half _FrameWidth;
                 float _DecalMeshDepthBias;
                 float _DecalMeshViewBias;
                 float _DecalMeshBiasType;
             CBUFFER_END
+
+            half CalculateFrameMask(float2 uv, half frameWidth)
+            {
+                float distFromLeft = uv.x;
+                float distFromRight = 1.0 - uv.x;
+                float distFromBottom = uv.y;
+                float distFromTop = 1.0 - uv.y;
+                float minDistToEdge = min(min(distFromLeft, distFromRight), min(distFromBottom, distFromTop));
+                half frameMask = 1.0 - smoothstep(frameWidth * 0.8, frameWidth, minDistToEdge);
+                return frameMask;
+            }
 
             struct Attributes
             {
@@ -361,7 +421,12 @@ Shader "HolyRail/GraffitiBlendDecal"
                 half blackMask = step(_BlacknessThreshold, luminance);
 
                 // Apply black mask to alpha
-                half alpha = blendedTex.a * blendedColor.a * blackMask;
+                half baseAlpha = blendedTex.a * blendedColor.a * blackMask;
+
+                // Calculate frame outline
+                half frameMask = CalculateFrameMask(uv, _FrameWidth) * _FrameEnabled;
+                finalColor.rgb = lerp(finalColor.rgb, _FrameColor.rgb * 2.0, frameMask * _FrameColor.a);
+                half alpha = max(baseAlpha, frameMask * _FrameColor.a);
 
                 // Clip fully transparent pixels
                 clip(alpha - 0.01);

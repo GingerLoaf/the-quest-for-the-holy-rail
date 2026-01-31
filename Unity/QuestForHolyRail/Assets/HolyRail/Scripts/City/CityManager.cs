@@ -839,6 +839,49 @@ namespace HolyRail.City
             return path;
         }
 
+        private bool IsNearPlazaOrJunction(Vector3 position)
+        {
+            var convergencePos = ConvergencePoint.position;
+            var convergenceRadiusSq = ConvergenceRadius * ConvergenceRadius;
+            var junctionRadiusSq = JunctionRadius * JunctionRadius;
+            var endRadiusSq = ConvergenceEndRadius * ConvergenceEndRadius;
+            var finalRadiusSq = FinalEndPointRadius * FinalEndPointRadius;
+
+            // Start convergence plaza
+            if ((position - convergencePos).sqrMagnitude < convergenceRadiusSq)
+                return true;
+
+            // End convergence plaza
+            if (ConvergenceEndPoint != null && EnableConvergenceEndPlaza)
+            {
+                if ((position - ConvergenceEndPoint.position).sqrMagnitude < endRadiusSq)
+                    return true;
+            }
+
+            // JunctionAB
+            if (EnableJunctionAB && JunctionAB != null)
+            {
+                if ((position - JunctionAB.position).sqrMagnitude < junctionRadiusSq)
+                    return true;
+            }
+
+            // JunctionBC
+            if (EnableJunctionBC && JunctionBC != null)
+            {
+                if ((position - JunctionBC.position).sqrMagnitude < junctionRadiusSq)
+                    return true;
+            }
+
+            // FinalEndPoint
+            if (EnableFinalEndPoint && FinalEndPoint != null)
+            {
+                if ((position - FinalEndPoint.position).sqrMagnitude < finalRadiusSq)
+                    return true;
+            }
+
+            return false;
+        }
+
         private List<Vector3> GenerateStraightPathSegment(Vector3 start, Vector3 end)
         {
             var path = new List<Vector3>();
@@ -865,71 +908,14 @@ namespace HolyRail.City
             return path;
         }
 
-        private List<Vector3> GenerateJunctionPath(Vector3 start, Vector3 waypoint, Vector3 junction, Vector3 end, int corridorIndex, int branchIndex = 0)
-        {
-            var path = new List<Vector3>();
-            int baseOffset = branchIndex * 3; // Offset noise for branch uniqueness
-
-            // Segment 1: Start to Waypoint
-            var segment1 = GenerateCurvedPathSegment(start, waypoint, corridorIndex, baseOffset);
-            path.AddRange(segment1);
-
-            // Segment 2: Waypoint to Junction
-            var junctionPos = junction;
-            junctionPos.y = start.y;
-            var segment2 = GenerateCurvedPathSegment(waypoint, junctionPos, corridorIndex, baseOffset + 1);
-            for (int i = 1; i < segment2.Count; i++)
-                path.Add(segment2[i]);
-
-            // Segment 3: Junction to End
-            var endPos = end;
-            endPos.y = start.y;
-            var segment3 = GenerateCurvedPathSegment(junctionPos, endPos, corridorIndex, baseOffset + 2);
-            for (int i = 1; i < segment3.Count; i++)
-                path.Add(segment3[i]);
-
-            return path;
-        }
-
         private void GenerateCorridorBuildings(List<Vector3> path, List<List<Vector3>> allPaths, int currentPathIndex)
         {
-            var convergencePos = ConvergencePoint.position;
-
             for (int i = 0; i < path.Count; i++)
             {
                 var point = path[i];
 
-                // Skip buildings near start convergence plaza
-                if (Vector3.Distance(point, convergencePos) < ConvergenceRadius)
+                if (IsNearPlazaOrJunction(point))
                     continue;
-
-                // Skip buildings near end convergence plaza (if enabled)
-                if (ConvergenceEndPoint != null && EnableConvergenceEndPlaza)
-                {
-                    if (Vector3.Distance(point, ConvergenceEndPoint.position) < ConvergenceEndRadius)
-                        continue;
-                }
-
-                // Skip buildings near JunctionAB
-                if (EnableJunctionAB && JunctionAB != null)
-                {
-                    if (Vector3.Distance(point, JunctionAB.position) < JunctionRadius)
-                        continue;
-                }
-
-                // Skip buildings near JunctionBC
-                if (EnableJunctionBC && JunctionBC != null)
-                {
-                    if (Vector3.Distance(point, JunctionBC.position) < JunctionRadius)
-                        continue;
-                }
-
-                // Skip buildings near FinalEndPoint
-                if (EnableFinalEndPoint && FinalEndPoint != null)
-                {
-                    if (Vector3.Distance(point, FinalEndPoint.position) < FinalEndPointRadius)
-                        continue;
-                }
 
                 // Calculate tangent direction from path
                 Vector3 tangent;
@@ -1394,8 +1380,6 @@ namespace HolyRail.City
             if (path.Count < 2)
                 return;
 
-            var convergencePos = ConvergencePoint.position;
-
             // Calculate total path length for ramp distribution
             float totalLength = 0f;
             for (int i = 1; i < path.Count; i++)
@@ -1425,56 +1409,12 @@ namespace HolyRail.City
                         float t = (segmentProgress + accumulatedDistance) / segmentLength;
                         var rampPos = Vector3.Lerp(path[pathIndex], path[pathIndex + 1], t);
 
-                        // Skip if too close to start convergence plaza
-                        if (Vector3.Distance(rampPos, convergencePos) < ConvergenceRadius)
+                        // Skip if near any plaza or junction
+                        if (IsNearPlazaOrJunction(rampPos))
                         {
                             accumulatedDistance = rampSpacing;
                             segmentProgress += accumulatedDistance;
                             continue;
-                        }
-
-                        // Skip if too close to end convergence plaza
-                        if (ConvergenceEndPoint != null && EnableConvergenceEndPlaza)
-                        {
-                            if (Vector3.Distance(rampPos, ConvergenceEndPoint.position) < ConvergenceEndRadius)
-                            {
-                                accumulatedDistance = rampSpacing;
-                                segmentProgress += accumulatedDistance;
-                                continue;
-                            }
-                        }
-
-                        // Skip if too close to JunctionAB
-                        if (EnableJunctionAB && JunctionAB != null)
-                        {
-                            if (Vector3.Distance(rampPos, JunctionAB.position) < JunctionRadius)
-                            {
-                                accumulatedDistance = rampSpacing;
-                                segmentProgress += accumulatedDistance;
-                                continue;
-                            }
-                        }
-
-                        // Skip if too close to JunctionBC
-                        if (EnableJunctionBC && JunctionBC != null)
-                        {
-                            if (Vector3.Distance(rampPos, JunctionBC.position) < JunctionRadius)
-                            {
-                                accumulatedDistance = rampSpacing;
-                                segmentProgress += accumulatedDistance;
-                                continue;
-                            }
-                        }
-
-                        // Skip if too close to FinalEndPoint
-                        if (EnableFinalEndPoint && FinalEndPoint != null)
-                        {
-                            if (Vector3.Distance(rampPos, FinalEndPoint.position) < FinalEndPointRadius)
-                            {
-                                accumulatedDistance = rampSpacing;
-                                segmentProgress += accumulatedDistance;
-                                continue;
-                            }
                         }
 
                         // Calculate tangent at this point
@@ -1603,8 +1543,6 @@ namespace HolyRail.City
             if (path.Count < 2)
                 return;
 
-            var convergencePos = ConvergencePoint.position;
-
             // Calculate total path length for billboard distribution
             float totalLength = 0f;
             for (int i = 1; i < path.Count; i++)
@@ -1634,56 +1572,12 @@ namespace HolyRail.City
                         float t = (segmentProgress + accumulatedDistance) / segmentLength;
                         var billboardPos = Vector3.Lerp(path[pathIndex], path[pathIndex + 1], t);
 
-                        // Skip if too close to start convergence plaza
-                        if (Vector3.Distance(billboardPos, convergencePos) < ConvergenceRadius)
+                        // Skip if near any plaza or junction
+                        if (IsNearPlazaOrJunction(billboardPos))
                         {
                             accumulatedDistance = billboardSpacing;
                             segmentProgress += accumulatedDistance;
                             continue;
-                        }
-
-                        // Skip if too close to end convergence plaza
-                        if (ConvergenceEndPoint != null && EnableConvergenceEndPlaza)
-                        {
-                            if (Vector3.Distance(billboardPos, ConvergenceEndPoint.position) < ConvergenceEndRadius)
-                            {
-                                accumulatedDistance = billboardSpacing;
-                                segmentProgress += accumulatedDistance;
-                                continue;
-                            }
-                        }
-
-                        // Skip if too close to JunctionAB
-                        if (EnableJunctionAB && JunctionAB != null)
-                        {
-                            if (Vector3.Distance(billboardPos, JunctionAB.position) < JunctionRadius)
-                            {
-                                accumulatedDistance = billboardSpacing;
-                                segmentProgress += accumulatedDistance;
-                                continue;
-                            }
-                        }
-
-                        // Skip if too close to JunctionBC
-                        if (EnableJunctionBC && JunctionBC != null)
-                        {
-                            if (Vector3.Distance(billboardPos, JunctionBC.position) < JunctionRadius)
-                            {
-                                accumulatedDistance = billboardSpacing;
-                                segmentProgress += accumulatedDistance;
-                                continue;
-                            }
-                        }
-
-                        // Skip if too close to FinalEndPoint
-                        if (EnableFinalEndPoint && FinalEndPoint != null)
-                        {
-                            if (Vector3.Distance(billboardPos, FinalEndPoint.position) < FinalEndPointRadius)
-                            {
-                                accumulatedDistance = billboardSpacing;
-                                segmentProgress += accumulatedDistance;
-                                continue;
-                            }
                         }
 
                         // Calculate tangent at this point
@@ -1776,8 +1670,6 @@ namespace HolyRail.City
             if (path.Count < 2)
                 return;
 
-            var convergencePos = ConvergencePoint.position;
-
             // Calculate total path length for graffiti distribution
             float totalLength = 0f;
             for (int i = 1; i < path.Count; i++)
@@ -1814,56 +1706,12 @@ namespace HolyRail.City
                         float t = (segmentProgress + accumulatedDistance) / segmentLength;
                         var graffitiPos = Vector3.Lerp(path[pathIndex], path[pathIndex + 1], t);
 
-                        // Skip if too close to start convergence plaza
-                        if (Vector3.Distance(graffitiPos, convergencePos) < ConvergenceRadius)
+                        // Skip if near any plaza or junction
+                        if (IsNearPlazaOrJunction(graffitiPos))
                         {
                             accumulatedDistance = graffitiSpacing;
                             segmentProgress += accumulatedDistance;
                             continue;
-                        }
-
-                        // Skip if too close to end convergence plaza
-                        if (ConvergenceEndPoint != null && EnableConvergenceEndPlaza)
-                        {
-                            if (Vector3.Distance(graffitiPos, ConvergenceEndPoint.position) < ConvergenceEndRadius)
-                            {
-                                accumulatedDistance = graffitiSpacing;
-                                segmentProgress += accumulatedDistance;
-                                continue;
-                            }
-                        }
-
-                        // Skip if too close to JunctionAB
-                        if (EnableJunctionAB && JunctionAB != null)
-                        {
-                            if (Vector3.Distance(graffitiPos, JunctionAB.position) < JunctionRadius)
-                            {
-                                accumulatedDistance = graffitiSpacing;
-                                segmentProgress += accumulatedDistance;
-                                continue;
-                            }
-                        }
-
-                        // Skip if too close to JunctionBC
-                        if (EnableJunctionBC && JunctionBC != null)
-                        {
-                            if (Vector3.Distance(graffitiPos, JunctionBC.position) < JunctionRadius)
-                            {
-                                accumulatedDistance = graffitiSpacing;
-                                segmentProgress += accumulatedDistance;
-                                continue;
-                            }
-                        }
-
-                        // Skip if too close to FinalEndPoint
-                        if (EnableFinalEndPoint && FinalEndPoint != null)
-                        {
-                            if (Vector3.Distance(graffitiPos, FinalEndPoint.position) < FinalEndPointRadius)
-                            {
-                                accumulatedDistance = graffitiSpacing;
-                                segmentProgress += accumulatedDistance;
-                                continue;
-                            }
                         }
 
                         // Calculate tangent at this point

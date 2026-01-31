@@ -33,7 +33,7 @@ namespace HolyRail.Scripts
             get
             {
                 var val = GetUpgradeValue(UpgradeType.PlayerHealth);
-                return val > 0 ? Mathf.RoundToInt(val) : 3;
+                return val > 0 ? Mathf.RoundToInt(val) : 5;
             }
         }
 
@@ -114,6 +114,9 @@ namespace HolyRail.Scripts
 
         private void Start()
         {
+            // Initialize health to max
+            ResetHealth();
+
             // Initial inventory generation
             RegenerateShopInventory();
         }

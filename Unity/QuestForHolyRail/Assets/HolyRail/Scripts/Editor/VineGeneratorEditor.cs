@@ -120,7 +120,26 @@ namespace HolyRail.Vines.Editor
                     EditorGUILayout.PropertyField(serializedObject.FindProperty("<GroundStartDepth>k__BackingField"));
                     EditorGUI.indentLevel--;
                 }
-                EditorGUILayout.HelpBox("Vines are clamped to stay above ground (Y >= 0)", MessageType.None);
+                // Ground Avoidance
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Ground Avoidance", EditorStyles.boldLabel);
+                EditorGUILayout.PropertyField(
+                    serializedObject.FindProperty("<EnableGroundAvoidance>k__BackingField"),
+                    new GUIContent("Enable", "Raycast to detect ground and keep vines above it")
+                );
+                if (generator.EnableGroundAvoidance)
+                {
+                    EditorGUI.indentLevel++;
+                    EditorGUILayout.PropertyField(
+                        serializedObject.FindProperty("<GroundLayers>k__BackingField"),
+                        new GUIContent("Ground Layers", "Physics layers to detect as ground (auto-detects 'Ground' or 'Default' if not set)")
+                    );
+                    EditorGUILayout.PropertyField(
+                        serializedObject.FindProperty("<MinHeightAboveGround>k__BackingField"),
+                        new GUIContent("Min Height Above Ground", "Minimum distance vines stay above detected ground")
+                    );
+                    EditorGUI.indentLevel--;
+                }
 
                 // Ramp Avoidance
                 EditorGUILayout.Space();
@@ -135,6 +154,10 @@ namespace HolyRail.Vines.Editor
                     EditorGUILayout.PropertyField(
                         serializedObject.FindProperty("<RampAvoidanceDistance>k__BackingField"),
                         new GUIContent("Avoidance Distance", "How far vines stay from ramps")
+                    );
+                    EditorGUILayout.PropertyField(
+                        serializedObject.FindProperty("<RampLayers>k__BackingField"),
+                        new GUIContent("Ramp Layers", "Physics layers to check for ramp colliders (manual or generated)")
                     );
                     if (generator.CityManager != null && generator.CityManager.HasRampData)
                     {
@@ -177,6 +200,47 @@ namespace HolyRail.Vines.Editor
                 EditorGUILayout.PropertyField(
                     serializedObject.FindProperty("<PathEnableBillboardVines>k__BackingField"),
                     new GUIContent("Enable Billboard Vines", "Also generate sagging cable vines connecting billboards")
+                );
+
+                // Direction Flow
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Direction Flow", EditorStyles.boldLabel);
+                EditorGUILayout.PropertyField(
+                    serializedObject.FindProperty("<ForwardDirection>k__BackingField"),
+                    new GUIContent("Forward Direction", "Primary direction vines should flow (typically Vector3.forward)")
+                );
+                EditorGUILayout.PropertyField(
+                    serializedObject.FindProperty("<ForwardBias>k__BackingField"),
+                    new GUIContent("Forward Bias", "How strongly to push vines in the forward direction (0=none, 1=strong)")
+                );
+
+                // Rail Connectivity
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Rail Connectivity", EditorStyles.boldLabel);
+                EditorGUILayout.PropertyField(
+                    serializedObject.FindProperty("_enableRailBridges"),
+                    new GUIContent("Enable Rail Bridges", "Connect nearby rail endpoints with bridge splines")
+                );
+                if (generator.EnableRailBridges)
+                {
+                    EditorGUI.indentLevel++;
+                    EditorGUILayout.PropertyField(
+                        serializedObject.FindProperty("_bridgeMaxDistance"),
+                        new GUIContent("Max Bridge Distance", "Maximum gap to bridge between endpoints")
+                    );
+                    EditorGUILayout.PropertyField(
+                        serializedObject.FindProperty("_bridgeMinDistance"),
+                        new GUIContent("Min Bridge Distance", "Minimum gap (avoid overlapping geometry)")
+                    );
+                    EditorGUILayout.PropertyField(
+                        serializedObject.FindProperty("_stitchDistance"),
+                        new GUIContent("Stitch Distance", "Endpoints closer than this get a simple straight stitch")
+                    );
+                    EditorGUI.indentLevel--;
+                }
+                EditorGUILayout.PropertyField(
+                    serializedObject.FindProperty("_enableConnectorRails"),
+                    new GUIContent("Enable Connector Rails", "Create rails to unreachable objectives")
                 );
 
             }
