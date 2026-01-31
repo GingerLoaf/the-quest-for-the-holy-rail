@@ -1,17 +1,20 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
-public class SceneController : MonoBehaviour
+namespace HolyRail.Scripts
 {
-    private void Update()
+    public class SceneController : MonoBehaviour
     {
-        if (Input.GetKeyDown(KeyCode.Alpha1))
+        private void Update()
         {
-            SceneManager.LoadScene("Main");
-        }
-        else if (Input.GetKeyDown(KeyCode.Alpha2))
-        {
-            SceneManager.LoadScene("VineTest");
+            if (Input.GetKeyDown(KeyCode.Alpha1))
+            {
+                SceneManager.LoadScene("Main");
+            }
+            else if (Input.GetKeyDown(KeyCode.Alpha2))
+            {
+                SceneManager.LoadScene("VineTest");
+            }
         }
     }
 }

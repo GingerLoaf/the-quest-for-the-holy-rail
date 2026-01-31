@@ -1,10 +1,10 @@
+using Art.PickUps;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.Splines;
 using Unity.Mathematics;
 using HolyRail.Scripts;
 using HolyRail.Scripts.Enemies;
-using HolyRail.Scripts.FX;
 using HolyRail.Graffiti;
 using Random = UnityEngine.Random;
 
