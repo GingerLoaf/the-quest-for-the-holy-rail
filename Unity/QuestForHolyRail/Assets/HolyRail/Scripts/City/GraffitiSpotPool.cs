@@ -191,6 +191,33 @@ namespace HolyRail.City
             ActiveSpotCount = 0;
         }
 
+        /// <summary>
+        /// Resets all graffiti spots for soft reset on death.
+        /// Clears completion tracking and resets all active graffiti spots.
+        /// </summary>
+        public void ResetAllGraffiti()
+        {
+            // Clear completion tracking so graffiti can be collected again
+            _completedSpotIndices.Clear();
+
+            // Reset all active graffiti spots in the pool
+            foreach (var spot in _pool)
+            {
+                if (spot != null && spot.gameObject.activeInHierarchy)
+                {
+                    spot.ResetForPoolReuse();
+                }
+            }
+
+            // Force update active spots to refresh state
+            if (_initialized && TrackingTarget != null)
+            {
+                UpdateActiveSpots(TrackingTarget.position);
+            }
+
+            Debug.Log("[GraffitiSpotPool] Reset all graffiti for soft reset.");
+        }
+
         private void CreatePool()
         {
             const string containerName = "GraffitiSpots_Pool";

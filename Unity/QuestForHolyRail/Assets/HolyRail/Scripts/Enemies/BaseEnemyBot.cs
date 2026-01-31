@@ -23,6 +23,13 @@ namespace HolyRail.Scripts.Enemies
         [field: SerializeField]
         public float RotationSmoothTime { get; private set; } = 0.12f;
 
+        [Header("Transition Audio")]
+        [Tooltip("Sound effect played when bot flies in")]
+        [SerializeField] protected AudioClip _enterAudioClip;
+        [Tooltip("Sound effect played when bot flies out")]
+        [SerializeField] protected AudioClip _exitAudioClip;
+        [Range(0, 1)] [SerializeField] protected float _transitionAudioVolume = 0.6f;
+
         protected Camera MainCamera { get; private set; }
 
         // State management
@@ -73,6 +80,12 @@ namespace HolyRail.Scripts.Enemies
             {
                 EnemyController.Instance.OnEnemySpawned(this);
             }
+
+            // Play enter sound
+            if (_enterAudioClip != null)
+            {
+                AudioSource.PlayClipAtPoint(_enterAudioClip, transform.position, _transitionAudioVolume);
+            }
         }
 
         public virtual void OnRecycle()
@@ -101,6 +114,12 @@ namespace HolyRail.Scripts.Enemies
 
             // Disable attacks while exiting
             _isIdle = true;
+
+            // Play exit sound
+            if (_exitAudioClip != null)
+            {
+                AudioSource.PlayClipAtPoint(_exitAudioClip, transform.position, _transitionAudioVolume);
+            }
         }
 
         /// <summary>

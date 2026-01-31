@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using HolyRail.Scripts;
 using StarterAssets;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -174,10 +175,22 @@ namespace Art.PickUps
                 Destroy(_pickupVFX.gameObject, _pickupVFX.main.duration + 1f);
             }
 
-            // Play SFX
+            // Play SFX (limited to 0.5 seconds)
             if (_pickupSFX != null)
             {
-                AudioSource.PlayClipAtPoint(_pickupSFX, transform.position, _pickupVolume);
+                var tempGO = new GameObject("AbilityPickupAudio");
+                var audioSource = tempGO.AddComponent<AudioSource>();
+                audioSource.clip = _pickupSFX;
+                audioSource.volume = _pickupVolume;
+                audioSource.spatialBlend = 0f; // 2D sound for clarity
+                audioSource.Play();
+                Object.Destroy(tempGO, 0.5f);
+            }
+
+            // Trigger haptic feedback for ability unlock
+            if (GamepadHaptics.Instance != null)
+            {
+                GamepadHaptics.Instance.TriggerHaptic(HapticType.AbilityUnlock);
             }
 
             // Hide/destroy the pickup

@@ -19,6 +19,15 @@ namespace HolyRail.Scripts.Enemies
         [Tooltip("Emission intensity multiplier for deflected bullet")]
         public float DeflectedIntensity = 5f;
 
+        [Header("Audio")]
+        [Tooltip("Sound played when bullet is fired/spawned")]
+        [SerializeField] private AudioClip _fireClip;
+        [Tooltip("Sound played when bullet hits the player")]
+        [SerializeField] private AudioClip _hitPlayerClip;
+        [Tooltip("Sound played when bullet is deflected")]
+        [SerializeField] private AudioClip _deflectClip;
+        [Range(0, 1)] [SerializeField] private float _audioVolume = 0.6f;
+
         private EnemySpawner _spawner;
         private Vector3 _direction;
         private float _lifetime;
@@ -81,6 +90,12 @@ namespace HolyRail.Scripts.Enemies
                 _propertyBlock.SetColor(EmissionColorID, _originalEmissionColor);
                 _renderer.SetPropertyBlock(_propertyBlock);
             }
+
+            // Play fire sound
+            if (_fireClip != null)
+            {
+                AudioSource.PlayClipAtPoint(_fireClip, transform.position, _audioVolume);
+            }
         }
 
         public void OnRecycle()
@@ -127,6 +142,12 @@ namespace HolyRail.Scripts.Enemies
                 emission.enabled = true;
                 ParryEffectParticles.Play();
             }
+
+            // Play deflect sound
+            if (_deflectClip != null)
+            {
+                AudioSource.PlayClipAtPoint(_deflectClip, transform.position, _audioVolume);
+            }
         }
 
         private void SetBrightness(float multiplier)
@@ -156,6 +177,12 @@ namespace HolyRail.Scripts.Enemies
             if (PlayerHitFlash.Instance != null)
             {
                 PlayerHitFlash.Instance.Flash();
+            }
+
+            // Play hit sound
+            if (_hitPlayerClip != null)
+            {
+                AudioSource.PlayClipAtPoint(_hitPlayerClip, transform.position, _audioVolume);
             }
 
             // Apply damage to player

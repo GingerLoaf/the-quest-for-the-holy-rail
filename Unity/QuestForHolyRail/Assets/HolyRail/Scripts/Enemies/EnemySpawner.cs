@@ -89,22 +89,27 @@ namespace HolyRail.Scripts.Enemies
         [field: SerializeField]
         public float ParryFlashMax { get; private set; } = 8f;
 
-        [Header("ShooterBot Overrides")]
-        [field: Tooltip("If enabled, all ShooterBots use the fire rate below instead of their prefab values")]
+        [Header("ShooterBot Settings")]
+        [field: Tooltip("Seconds between each shot fired by ShooterBots")]
         [field: SerializeField]
-        public bool OverrideFireRate { get; private set; } = false;
+        public float ShooterBotFireRate { get; private set; } = 1.5f;
 
-        [field: Tooltip("Global fire rate override for all ShooterBots (seconds between shots)")]
+        [field: Tooltip("ShooterBots only fire when player is within this distance")]
         [field: SerializeField]
-        public float GlobalFireRate { get; private set; } = 1.5f;
+        public float ShooterBotFiringRange { get; private set; } = 30f;
 
-        [field: Tooltip("If enabled, all ShooterBots use the firing range below instead of their prefab values")]
+        [Header("Constant Spawn Mode")]
+        [field: Tooltip("Enable to spawn enemies continuously without using EnemyController")]
         [field: SerializeField]
-        public bool OverrideFiringRange { get; private set; } = false;
+        public bool UseConstantSpawnMode { get; private set; } = false;
 
-        [field: Tooltip("Global firing range override for all ShooterBots")]
+        [field: Tooltip("Seconds between spawns in constant mode")]
         [field: SerializeField]
-        public float GlobalFiringRange { get; private set; } = 30f;
+        public float SpawnInterval { get; private set; } = 2f;
+
+        [field: Tooltip("Maximum number of active enemies in constant mode")]
+        [field: SerializeField]
+        public int MaxActiveEnemies { get; private set; } = 7;
 
         [Header("Parry Settings")]
         [field: Tooltip("Distance from player at which bullets can be parried (should be larger than hit radius)")]
@@ -125,6 +130,7 @@ namespace HolyRail.Scripts.Enemies
         private List<BaseEnemyBot> _activeBots;
         private List<EnemyBullet> _activeBullets = new();
         private float _totalSpawnWeight;
+        private float _spawnTimer;
 
         private void Awake()
         {
@@ -165,15 +171,7 @@ namespace HolyRail.Scripts.Enemies
             // Log parameter changes during runtime for debugging
             if (Application.isPlaying)
             {
-                Debug.Log($"EnemySpawner: Parameters updated - BulletSpeed={BulletSpeed}");
-                if (OverrideFireRate)
-                {
-                    Debug.Log($"EnemySpawner: Global FireRate override active = {GlobalFireRate}s");
-                }
-                if (OverrideFiringRange)
-                {
-                    Debug.Log($"EnemySpawner: Global FiringRange override active = {GlobalFiringRange}m");
-                }
+                Debug.Log($"EnemySpawner: Parameters updated - BulletSpeed={BulletSpeed}, ShooterBotFireRate={ShooterBotFireRate}s, ShooterBotFiringRange={ShooterBotFiringRange}m");
             }
         }
 
@@ -307,6 +305,17 @@ namespace HolyRail.Scripts.Enemies
                 if (bullet == null || !bullet.gameObject.activeInHierarchy) continue;
                 float dist = Vector3.Distance(bullet.transform.position, Player.position);
                 bullet.SetInParryThreshold(dist <= ParryThresholdDistance);
+            }
+
+            // Constant spawn mode
+            if (UseConstantSpawnMode)
+            {
+                _spawnTimer -= Time.deltaTime;
+                if (_spawnTimer <= 0f && _activeBots.Count < MaxActiveEnemies)
+                {
+                    SpawnBot();
+                    _spawnTimer = SpawnInterval;
+                }
             }
         }
 
@@ -531,6 +540,37 @@ namespace HolyRail.Scripts.Enemies
         public IReadOnlyList<BaseEnemyBot> GetActiveBots()
         {
             return _activeBots;
+        }
+
+        /// <summary>
+        /// Recycles all active enemies and bullets back to their pools for soft reset on death.
+        /// </summary>
+        public void ResetAllEnemies()
+        {
+            // Recycle all active bots back to pool
+            for (int i = _activeBots.Count - 1; i >= 0; i--)
+            {
+                var bot = _activeBots[i];
+                if (bot != null)
+                {
+                    RecycleBot(bot);
+                }
+            }
+
+            // Recycle all active bullets back to pool
+            for (int i = _activeBullets.Count - 1; i >= 0; i--)
+            {
+                var bullet = _activeBullets[i];
+                if (bullet != null)
+                {
+                    RecycleBullet(bullet);
+                }
+            }
+
+            // Reset spawn timer
+            _spawnTimer = SpawnInterval;
+
+            Debug.Log("[EnemySpawner] Reset all enemies and bullets for soft reset.");
         }
 
         /// <summary>

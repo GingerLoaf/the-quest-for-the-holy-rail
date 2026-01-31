@@ -8,17 +8,8 @@ namespace HolyRail.Scripts.Enemies
     {
         private float? _fireTimer = null;
 
-        [Header("Shooter Settings")]
-        [field: Tooltip("Seconds between each shot fired by a bot (can be overridden by EnemySpawner)")]
-        [field: SerializeField]
-        public float FireRate { get; private set; } = 1.5f;
-
-        [field: Tooltip("Bots only fire when player is within this distance (can be overridden by EnemySpawner)")]
-        [field: SerializeField]
-        public float FiringRange { get; private set; } = 30f;
-
-        private float EffectiveFireRate => Spawner && Spawner.OverrideFireRate ? Spawner.GlobalFireRate : FireRate;
-        private float EffectiveFiringRange => Spawner && Spawner.OverrideFiringRange ? Spawner.GlobalFiringRange : FiringRange;
+        private float EffectiveFireRate => Spawner ? Spawner.ShooterBotFireRate : 1.5f;
+        private float EffectiveFiringRange => Spawner ? Spawner.ShooterBotFiringRange : 30f;
 
         [Header("Flash Settings")]
         [field: Tooltip("Duration of the flash warning before firing")]
@@ -71,27 +62,55 @@ namespace HolyRail.Scripts.Enemies
         [field: Range(0f, 1.5f)]
         public float LeadFactor { get; private set; } = 0.8f;
 
+        [Header("Audio")]
+        [Tooltip("Looping motor/hover sound")]
+        [SerializeField] private AudioClip _motorLoopClip;
+        [Tooltip("Warning beep before firing")]
+        [SerializeField] private AudioClip _warningClip;
+        [Tooltip("Sound when firing")]
+        [SerializeField] private AudioClip _fireClip;
+        [Range(0, 1)] [SerializeField] private float _audioVolume = 0.6f;
+        [Range(0, 1)] [SerializeField] private float _warningAudioVolume = 0.3f;
+
+        private AudioSource _motorAudioSource;
         private Vector3 _lastPlayerPos;
         private Vector3 _playerVelocity;
         private Renderer _renderer;
         private MaterialPropertyBlock _propertyBlock;
         private static readonly int EmissionColorID = Shader.PropertyToID("_EmissionColor");
-        private Color _originalEmissionColor;
+        private static readonly int FresnelPowerID = Shader.PropertyToID("_FresnelPower");
+
+        // Fresnel power values for warning flash
+        private const float WarningFresnelPower = 0.1f;
+        private const float NormalFresnelPower = 6f;
 
         // Update-based flash system (replaces coroutines for reliability)
         private bool _isFlashing;
         private float _flashTimer;
-        private Color _currentFlashColor;
+        private bool _isFresnelFlash; // true = fresnel warning flash, false = emission fire flash
 
         protected override void Awake()
         {
             base.Awake();
-            _renderer = GetComponentInChildren<Renderer>();
+            // Find the first enabled renderer (skip disabled placeholder renderers)
+            foreach (var r in GetComponentsInChildren<Renderer>())
+            {
+                if (r.enabled)
+                {
+                    _renderer = r;
+                    break;
+                }
+            }
             if (_renderer != null)
             {
                 _propertyBlock = new MaterialPropertyBlock();
-                _originalEmissionColor = _renderer.sharedMaterial.GetColor(EmissionColorID);
             }
+
+            // Initialize motor audio source
+            _motorAudioSource = gameObject.AddComponent<AudioSource>();
+            _motorAudioSource.loop = true;
+            _motorAudioSource.playOnAwake = false;
+            _motorAudioSource.spatialBlend = 1f; // 3D sound
         }
 
         public override void OnSpawn()
@@ -112,6 +131,21 @@ namespace HolyRail.Scripts.Enemies
             {
                 _lastPlayerPos = Spawner.Player.position;
                 _playerVelocity = Vector3.zero;
+            }
+
+            // Clear any property block overrides to use material's default emission
+            if (_renderer != null && _propertyBlock != null)
+            {
+                _propertyBlock.Clear();
+                _renderer.SetPropertyBlock(_propertyBlock);
+            }
+
+            // Start motor loop sound
+            if (_motorLoopClip != null && _motorAudioSource != null)
+            {
+                _motorAudioSource.clip = _motorLoopClip;
+                _motorAudioSource.volume = _audioVolume;
+                _motorAudioSource.Play();
             }
         }
 
@@ -192,12 +226,19 @@ namespace HolyRail.Scripts.Enemies
                 _propertyBlock.Clear();
                 _renderer.SetPropertyBlock(_propertyBlock);
             }
+
+            // Stop motor sound
+            if (_motorAudioSource != null && _motorAudioSource.isPlaying)
+            {
+                _motorAudioSource.Stop();
+            }
         }
 
         public void ResetFireTimer()
         {
-            _fireTimer = 0f;
-            Debug.Log($"ShooterBot [{name}]: Fire timer reset, will fire immediately");
+            // Use actual fire rate, with FlashDuration as minimum (for warning flash)
+            _fireTimer = Mathf.Max(EffectiveFireRate, FlashDuration);
+            Debug.Log($"ShooterBot [{name}]: Fire timer reset, will fire in {_fireTimer}s");
         }
 
         protected override void Update()
@@ -229,23 +270,35 @@ namespace HolyRail.Scripts.Enemies
             _flashTimer -= Time.deltaTime;
             if (_flashTimer <= 0f)
             {
-                // Flash complete - reset to original color
+                // Flash complete - clear property block to return to material's default state
                 _isFlashing = false;
                 if (_renderer != null && _propertyBlock != null)
                 {
-                    _propertyBlock.SetColor(EmissionColorID, _originalEmissionColor);
+                    _propertyBlock.Clear();
                     _renderer.SetPropertyBlock(_propertyBlock);
                 }
             }
         }
 
-        private void StartFlash(Color color, float duration)
+        private void StartWarningFlash(float duration)
         {
             if (_renderer == null || _propertyBlock == null) return;
 
             _isFlashing = true;
             _flashTimer = duration;
-            _currentFlashColor = color;
+            _isFresnelFlash = true;
+            _propertyBlock.SetFloat(FresnelPowerID, WarningFresnelPower);
+            _renderer.SetPropertyBlock(_propertyBlock);
+        }
+
+        private void StartFireFlash(Color color, float duration)
+        {
+            if (_renderer == null || _propertyBlock == null) return;
+
+            _isFlashing = true;
+            _flashTimer = duration;
+            _isFresnelFlash = false;
+            _propertyBlock.Clear(); // Clear fresnel override first
             _propertyBlock.SetColor(EmissionColorID, color);
             _renderer.SetPropertyBlock(_propertyBlock);
         }
@@ -284,13 +337,19 @@ namespace HolyRail.Scripts.Enemies
             float effectiveRange = EffectiveFiringRange;
             float effectiveRate = EffectiveFireRate;
 
-            // Start flash warning before firing (only if not already flashing)
+            // Start warning flash before firing (only if not already flashing)
             if (_fireTimer <= FlashDuration && !_isFlashing)
             {
                 float dist = Vector3.Distance(transform.position, Spawner.Player.position);
                 if (dist <= effectiveRange)
                 {
-                    StartFlash(Color.red * FlashIntensity, FlashDuration);
+                    StartWarningFlash(FlashDuration);
+
+                    // Play warning sound (limited to 0.5 seconds)
+                    if (_warningClip != null)
+                    {
+                        PlayClipForDuration(_warningClip, 0.5f, _warningAudioVolume);
+                    }
                 }
             }
 
@@ -310,14 +369,20 @@ namespace HolyRail.Scripts.Enemies
                     Spawner.SpawnBullet(transform.position, direction, this);
 
                     // Trigger fire flash at moment of shooting (overrides any current flash)
-                    StartFlash(FireFlashColor * FireFlashIntensity, FireFlashDuration);
+                    StartFireFlash(FireFlashColor * FireFlashIntensity, FireFlashDuration);
+
+                    // Play fire sound (limited to 0.15 seconds)
+                    if (_fireClip != null)
+                    {
+                        PlayClipForDuration(_fireClip, 0.15f, _audioVolume);
+                    }
                 }
                 else
                 {
                     Debug.Log($"ShooterBot [{name}]: Player out of range ({distanceToPlayer:F1}m > {effectiveRange}m), not firing.");
                 }
 
-                _fireTimer = null;
+                _fireTimer = EffectiveFireRate;  // Auto-reload for continuous firing
             }
         }
 
@@ -339,8 +404,19 @@ namespace HolyRail.Scripts.Enemies
             base.OnValidate();
             if (Application.isPlaying)
             {
-                Debug.Log($"ShooterBot [{name}]: Parameters updated - FireRate={FireRate}, FiringRange={FiringRange}");
+                Debug.Log($"ShooterBot [{name}]: Parameters updated - EffectiveFireRate={EffectiveFireRate}, EffectiveFiringRange={EffectiveFiringRange}");
             }
+        }
+
+        private void PlayClipForDuration(AudioClip clip, float duration, float volume)
+        {
+            var tempGO = new GameObject("TempAudio");
+            tempGO.transform.position = transform.position;
+            var audioSource = tempGO.AddComponent<AudioSource>();
+            audioSource.clip = clip;
+            audioSource.volume = volume;
+            audioSource.Play();
+            Destroy(tempGO, duration);
         }
     }
 }

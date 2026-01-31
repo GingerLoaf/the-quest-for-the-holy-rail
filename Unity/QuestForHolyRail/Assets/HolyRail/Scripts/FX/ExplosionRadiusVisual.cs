@@ -1,0 +1,33 @@
+using UnityEngine;
+
+namespace HolyRail.Scripts.FX
+{
+    public class ExplosionRadiusVisual : MonoBehaviour
+    {
+        [field: SerializeField]
+        public float ScaleDuration { get; private set; } = 0.3f;
+
+        private float _targetRadius;
+        private float _timer;
+
+        public void Initialize(float radius)
+        {
+            _targetRadius = radius;
+            _timer = 0f;
+            transform.localScale = Vector3.zero;
+        }
+
+        private void Update()
+        {
+            _timer += Time.deltaTime;
+            float t = Mathf.Clamp01(_timer / ScaleDuration);
+            float scale = _targetRadius * 2f * t;  // diameter = radius * 2
+            transform.localScale = Vector3.one * scale;
+
+            if (_timer >= ScaleDuration)
+            {
+                Destroy(gameObject);
+            }
+        }
+    }
+}

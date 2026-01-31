@@ -301,17 +301,12 @@ namespace HolyRail.Scripts
             {
                 Debug.Log($"<color=red>Player Killed!</color> <color=yellow>Current Speed: {_playerCurrentSpeed:F2} m/s</color> | <color=cyan>Max Speed Reached: {_playerMaxSpeed:F2} m/s</color> | <color=orange>Death Wall Speed: {CurrentSpeed:F2} m/s</color>", gameObject);
 
-                // Reset score on death
-                if (ScoreManager.Instance != null)
-                {
-                    ScoreManager.Instance.ResetScore();
-                }
-
 #if UNITY_EDITOR
                 RecordDeathAnalytics_EditorOnly();
 #endif
 
-                SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+                // Trigger player death event (soft reset instead of scene reload)
+                GameSessionManager.Instance?.TakeDamage(1000);
                 return;
             }
 

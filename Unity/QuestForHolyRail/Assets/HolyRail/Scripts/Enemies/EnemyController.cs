@@ -426,6 +426,23 @@ namespace HolyRail.Scripts.Enemies
             }
         }
 
+        /// <summary>
+        /// Resets the controller to idle state for soft reset on death.
+        /// </summary>
+        public void ResetToIdle()
+        {
+            _state = PlanState.Idle;
+            _cooldownTimer = _planCooldown;
+            _activePlan = null;
+            _spawnedEnemies.Clear();
+            _enteredEnemies.Clear();
+            _exitedEnemies.Clear();
+            _currentActionIndex = 0;
+            _actionTimer = 0f;
+
+            Debug.Log("[EnemyController] Reset to idle state for soft reset.");
+        }
+
         [ContextMenu("Debug: Force Start Plan")]
         public void DebugForceStartPlan()
         {

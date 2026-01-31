@@ -28,6 +28,15 @@ namespace HolyRail.Scripts
         public Action<int> OnHealthChanged;
         public Action OnPlayerDeath;
 
+        [Header("Audio")]
+        [Tooltip("Sound played when player takes damage")]
+        [SerializeField] private AudioClip _damageClip;
+        [Tooltip("Sound played when player dies")]
+        [SerializeField] private AudioClip _deathClip;
+        [Tooltip("Sound played when player acquires an upgrade")]
+        [SerializeField] private AudioClip _upgradeClip;
+        [Range(0, 1)] [SerializeField] private float _audioVolume = 0.8f;
+
         public int MaxHealth
         {
             get
@@ -81,8 +90,34 @@ namespace HolyRail.Scripts
 
             if (CurrentHealth <= 0)
             {
+                // Play death sound (limited to 0.5 seconds)
+                if (_deathClip != null)
+                {
+                    PlayClipForDuration(_deathClip, 0.5f, _audioVolume);
+                }
+
                 OnPlayerDeath?.Invoke();
             }
+            else
+            {
+                // Play damage sound (only if not dead) - limited to 0.25 seconds, pitched down
+                if (_damageClip != null)
+                {
+                    PlayClipForDuration(_damageClip, 0.25f, _audioVolume, 0.75f);
+                }
+            }
+        }
+
+        private void PlayClipForDuration(AudioClip clip, float duration, float volume, float pitch = 1f)
+        {
+            var tempGO = new GameObject("TempAudio");
+            tempGO.transform.position = Camera.main != null ? Camera.main.transform.position : Vector3.zero;
+            var audioSource = tempGO.AddComponent<AudioSource>();
+            audioSource.clip = clip;
+            audioSource.volume = volume;
+            audioSource.pitch = pitch;
+            audioSource.Play();
+            Destroy(tempGO, duration);
         }
 
         private void Awake()
@@ -105,6 +140,20 @@ namespace HolyRail.Scripts
                 // Health starts at Tier 1 (Base Health)
                 int initialTier = upgrade.Type == UpgradeType.PlayerHealth ? 1 : 0;
                 _upgradeTiers.Add(upgrade, initialTier);
+            }
+
+            // Load audio clips from Resources (since this object is created dynamically)
+            if (_damageClip == null)
+            {
+                _damageClip = Resources.Load<AudioClip>("DamageSound");
+            }
+            if (_deathClip == null)
+            {
+                _deathClip = Resources.Load<AudioClip>("DeathSound");
+            }
+            if (_upgradeClip == null)
+            {
+                _upgradeClip = Resources.Load<AudioClip>("UpgradeSound");
             }
         }
 
@@ -235,6 +284,12 @@ namespace HolyRail.Scripts
             catch(Exception ex)
             {
                 Debug.LogException(ex);
+            }
+
+            // Play upgrade acquisition sound (limited to 0.5 seconds)
+            if (_upgradeClip != null)
+            {
+                PlayClipForDuration(_upgradeClip, 0.5f, _audioVolume);
             }
 
             return true;

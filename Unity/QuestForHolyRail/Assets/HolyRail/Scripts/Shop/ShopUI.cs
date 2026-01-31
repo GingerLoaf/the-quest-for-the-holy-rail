@@ -39,6 +39,17 @@ namespace HolyRail.Scripts.Shop
         [field: SerializeField]
         public string MoneyFormat { get; private set; } = "${0:N0}";
 
+        [Header("Audio")]
+        [Tooltip("Sound played when shop opens")]
+        [SerializeField] private AudioClip _shopOpenClip;
+        [Tooltip("Sound played when shop closes")]
+        [SerializeField] private AudioClip _shopCloseClip;
+        [Tooltip("Sound played on successful purchase")]
+        [SerializeField] private AudioClip _purchaseSuccessClip;
+        [Tooltip("Sound played when purchase fails (not enough money or maxed)")]
+        [SerializeField] private AudioClip _purchaseFailClip;
+        [Range(0, 1)] [SerializeField] private float _audioVolume = 0.7f;
+
         private List<UpgradeItemUI> _upgradeItems = new();
         private PlayerUpgrade[] _availableUpgrades;
 
@@ -119,6 +130,12 @@ namespace HolyRail.Scripts.Shop
 
             RefreshUI();
             SelectFirstUpgrade();
+
+            // Play shop open sound
+            if (_shopOpenClip != null)
+            {
+                AudioSource.PlayClipAtPoint(_shopOpenClip, Camera.main != null ? Camera.main.transform.position : Vector3.zero, _audioVolume);
+            }
         }
 
         /// <summary>
@@ -128,11 +145,17 @@ namespace HolyRail.Scripts.Shop
         {
             if (ShopPanel != null)
                 ShopPanel.SetActive(false);
-            
+
             // If prompt is also hidden, hide the whole canvas
             if (PromptPanel == null || !PromptPanel.activeSelf)
             {
                 gameObject.SetActive(false);
+            }
+
+            // Play shop close sound
+            if (_shopCloseClip != null)
+            {
+                AudioSource.PlayClipAtPoint(_shopCloseClip, Camera.main != null ? Camera.main.transform.position : Vector3.zero, _audioVolume);
             }
         }
 
@@ -274,11 +297,17 @@ namespace HolyRail.Scripts.Shop
 
             // Check tier
             int currentTier = GameSessionManager.Instance.GetUpgradeTier(upgrade);
-            
+
             // Check if maxed
             if (currentTier >= upgrade.MaxTier)
             {
                 Debug.Log($"<color=yellow>[Shop]</color> Upgrade maxed out: {upgrade.DisplayName}", gameObject);
+
+                // Play fail sound
+                if (_purchaseFailClip != null)
+                {
+                    AudioSource.PlayClipAtPoint(_purchaseFailClip, Camera.main != null ? Camera.main.transform.position : Vector3.zero, _audioVolume);
+                }
                 return;
             }
 
@@ -288,6 +317,12 @@ namespace HolyRail.Scripts.Shop
             if (GameSessionManager.Instance.Money < cost)
             {
                 Debug.Log($"<color=red>[Shop]</color> Cannot afford upgrade: {upgrade.DisplayName} (need ${cost}, have ${GameSessionManager.Instance.Money})", gameObject);
+
+                // Play fail sound
+                if (_purchaseFailClip != null)
+                {
+                    AudioSource.PlayClipAtPoint(_purchaseFailClip, Camera.main != null ? Camera.main.transform.position : Vector3.zero, _audioVolume);
+                }
                 return;
             }
 
@@ -296,6 +331,18 @@ namespace HolyRail.Scripts.Shop
             {
                 GameSessionManager.Instance.Money -= cost;
                 Debug.Log($"<color=green>[Shop]</color> Purchased upgrade: {upgrade.DisplayName} (Tier {currentTier + 1}) for ${cost}", gameObject);
+
+                // Play success sound
+                if (_purchaseSuccessClip != null)
+                {
+                    AudioSource.PlayClipAtPoint(_purchaseSuccessClip, Camera.main != null ? Camera.main.transform.position : Vector3.zero, _audioVolume);
+                }
+
+                // Trigger haptic feedback for upgrade purchase
+                if (GamepadHaptics.Instance != null)
+                {
+                    GamepadHaptics.Instance.TriggerHaptic(HapticType.UpgradePurchase);
+                }
             }
         }
     }

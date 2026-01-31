@@ -7,6 +7,7 @@ namespace HolyRail.Graffiti
 {
     public class GraffitiSpot : MonoBehaviour
     {
+        private bool _wasSprayingLastFrame;
         [Header("Settings")]
         [field: SerializeField] public float SprayTime { get; private set; } = 2f;
 
@@ -14,6 +15,13 @@ namespace HolyRail.Graffiti
         [field: SerializeField] public DecalProjector DecalProjector { get; private set; }
         [field: SerializeField] public GraffitiProgressUI ProgressUI { get; private set; }
         [field: SerializeField] public ParticleSystem CompletionEffect { get; private set; }
+
+        [Header("Audio")]
+        [Tooltip("Sound played when player enters graffiti range")]
+        [SerializeField] private AudioClip _enterRangeClip;
+        [Tooltip("Sound played when graffiti is completed")]
+        [SerializeField] private AudioClip _completionClip;
+        [Range(0, 1)] [SerializeField] private float _audioVolume = 0.6f;
 
         private static readonly int BlendAmountProperty = Shader.PropertyToID("_BlendAmount");
         private static readonly int FrameEnabledProperty = Shader.PropertyToID("_FrameEnabled");
@@ -75,6 +83,12 @@ namespace HolyRail.Graffiti
 
             if (isSpraying)
             {
+                // Start haptic feedback when spraying begins
+                if (!_wasSprayingLastFrame && GamepadHaptics.Instance != null)
+                {
+                    GamepadHaptics.Instance.StartContinuousHaptic(HapticType.GraffitiProgress);
+                }
+
                 _currentProgress += Time.deltaTime / SprayTime;
                 _currentProgress = Mathf.Clamp01(_currentProgress);
 
@@ -100,11 +114,19 @@ namespace HolyRail.Graffiti
             }
             else
             {
+                // Stop haptic feedback when spraying stops
+                if (_wasSprayingLastFrame && GamepadHaptics.Instance != null)
+                {
+                    GamepadHaptics.Instance.StopContinuousHaptic();
+                }
+
                 if (_playerController != null)
                 {
                     _playerController.SetSprayTarget(transform.position, false);
                 }
             }
+
+            _wasSprayingLastFrame = isSpraying;
         }
 
         private void OnTriggerEnter(Collider other)
@@ -134,6 +156,12 @@ namespace HolyRail.Graffiti
                 {
                     _playerController.SetActiveGraffiti(this);
                 }
+
+                // Play enter range sound
+                if (_enterRangeClip != null)
+                {
+                    AudioSource.PlayClipAtPoint(_enterRangeClip, transform.position, _audioVolume);
+                }
             }
         }
 
@@ -142,6 +170,13 @@ namespace HolyRail.Graffiti
             if (other.CompareTag("Player"))
             {
                 _isPlayerInRange = false;
+
+                // Stop haptic feedback if player was spraying when they left
+                if (_wasSprayingLastFrame && GamepadHaptics.Instance != null)
+                {
+                    GamepadHaptics.Instance.StopContinuousHaptic();
+                }
+                _wasSprayingLastFrame = false;
 
                 if (_decalMaterial != null)
                 {
@@ -197,6 +232,19 @@ namespace HolyRail.Graffiti
             if (_scoreManager != null)
             {
                 _scoreManager.AddGraffitiScore();
+            }
+
+            // Trigger haptic feedback for completion
+            if (GamepadHaptics.Instance != null)
+            {
+                GamepadHaptics.Instance.StopContinuousHaptic();
+                GamepadHaptics.Instance.TriggerHaptic(HapticType.GraffitiComplete);
+            }
+
+            // Play completion sound
+            if (_completionClip != null)
+            {
+                AudioSource.PlayClipAtPoint(_completionClip, transform.position, _audioVolume);
             }
         }
 

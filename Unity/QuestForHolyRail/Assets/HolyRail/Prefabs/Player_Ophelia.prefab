@@ -14389,6 +14389,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   <NearestPoint>k__BackingField: {fileID: 3993024292477530654}
   _directionThreshold: 0.001
+  _searchRadius: 50
+  _gridCellSize: 30
 --- !u!120 &9036209721217961772
 LineRenderer:
   serializedVersion: 3
@@ -32858,21 +32860,6 @@ CharacterController:
   m_SkinWidth: 0.02
   m_MinMoveDistance: 0
   m_Center: {x: 0, y: 0.93, z: 0}
---- !u!114 &1234567890123456789
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 6777233405495993488}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d0b9aa97376b94e60872e594e08cb695, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
-  <LeftMotorIntensity>k__BackingField: 0.4
-  <RightMotorIntensity>k__BackingField: 0.6
-  <VibrationDuration>k__BackingField: 0.2
 --- !u!114 &1001937875815145407
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -33161,15 +33148,31 @@ MonoBehaviour:
   RampBoostCooldown: 0.5
   GrindObstacleLayers:
     serializedVersion: 2
-    m_Bits: 64
-  DashSpeedBoost: 77
+    m_Bits: 384
+  DashSpeedBoost: 111
   DashDuration: 0.1
   DashCooldown: 1
-  DashAudioClip: {fileID: 8300000, guid: a59c1e578ad6c1e45bc42f7a453f19be, type: 3}
+  DashAudioClip: {fileID: 8300000, guid: 83d2560cfc1f04a18b85c15d1c3d7252, type: 3}
   BoostSpeedBoost: 55
-  BoostDuration: 2
+  BoostDuration: 1
   BoostCooldown: 4
   BoostAudioClip: {fileID: 8300000, guid: 72f526a6a9890f643a88e85a61c86c8a, type: 3}
+  JumpAudioClips:
+  - {fileID: 8300000, guid: e4551fca0912cc047aacf644df52166b, type: 3}
+  JumpAudioVolume: 0.5
+  WallRideStartAudioClip: {fileID: 8300000, guid: a59c1e578ad6c1e45bc42f7a453f19be, type: 3}
+  WallRideLoopAudioClip: {fileID: 8300000, guid: a59c1e578ad6c1e45bc42f7a453f19be, type: 3}
+  WallRideAudioVolume: 0.5
+  KnockbackAudioClip: {fileID: 0}
+  ParryActivateAudioClip: {fileID: 8300000, guid: 789e6323af1bd49339c3f472159f0cc2, type: 3}
+  ParrySuccessAudioClip: {fileID: 8300000, guid: 6ba62a6db53ef40a7bf23541fa82fbf8, type: 3}
+  CombatAudioVolume: 0.7
+  RampBoostAudioClip: {fileID: 8300000, guid: 83d2560cfc1f04a18b85c15d1c3d7252, type: 3}
+  RampBoostAudioVolume: 0.5
+  SprayShakeAudioClip: {fileID: 8300000, guid: 02efe3f176cc44a8d94147562430526e, type: 3}
+  SprayLoopAudioClips:
+  - {fileID: 8300000, guid: 44d2f452fba6b430e9bad8560f050478, type: 3}
+  SprayAudioVolume: 0.5
   GrindStartAudioClips:
   - {fileID: 8300000, guid: e4551fca0912cc047aacf644df52166b, type: 3}
   - {fileID: 8300000, guid: a59c1e578ad6c1e45bc42f7a453f19be, type: 3}
@@ -33199,7 +33202,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 6777233405495993488}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: da0d5849292b54a219ef6c4984039135, type: 3}
   m_Name: 
@@ -33252,6 +33255,28 @@ MonoBehaviour:
   <MinPulseScale>k__BackingField: 0.5
   <ExpiringColor>k__BackingField: {r: 1, g: 0.3, b: 0.1, a: 1}
   <FadeOutDuration>k__BackingField: 0.3
+--- !u!114 &1234567890123456789
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6777233405495993488}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d0b9aa97376b94e60872e594e08cb695, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  <EnableDebugLogging>k__BackingField: 1
+  <GlobalIntensityMultiplier>k__BackingField: 1
+  <GrindLoopLeftMotor>k__BackingField: 0
+  <GrindLoopRightMotor>k__BackingField: 0.005
+  <GrindStartLeftMotor>k__BackingField: 0.1
+  <GrindStartRightMotor>k__BackingField: 0.15
+  <GrindStartDuration>k__BackingField: 0.08
+  <GrindJumpLeftMotor>k__BackingField: 0.15
+  <GrindJumpRightMotor>k__BackingField: 0.2
+  <GrindJumpDuration>k__BackingField: 0.08
 --- !u!1 &6778990951623778557
 GameObject:
   m_ObjectHideFlags: 0

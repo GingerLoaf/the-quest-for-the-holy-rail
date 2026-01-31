@@ -139,6 +139,15 @@ namespace HolyRail.Scripts
         [field: SerializeField]
         public Color PopupFlashColor { get; private set; } = Color.yellow;
 
+        [Header("Audio")]
+        [Tooltip("Sound played when score popup is shown")]
+        [SerializeField] private AudioClip _scorePopupClip;
+        [Tooltip("Sound played for near miss bonus")]
+        [SerializeField] private AudioClip _nearMissClip;
+        [Tooltip("Sound played when enemy is destroyed")]
+        [SerializeField] private AudioClip _enemyKillClip;
+        [Range(0, 1)] [SerializeField] private float _audioVolume = 0.6f;
+
         public Action<int> OnScoreChanged;
 
         public int CurrentScore
@@ -524,6 +533,12 @@ namespace HolyRail.Scripts
             CurrentScore += NearMissPoints;
             ShowPopup(NearMissPopupText);
             Debug.Log($"<color=yellow>[Near Miss!]</color> +{NearMissPoints} points!", gameObject);
+
+            // Play near miss sound
+            if (_nearMissClip != null)
+            {
+                AudioSource.PlayClipAtPoint(_nearMissClip, Camera.main != null ? Camera.main.transform.position : Vector3.zero, _audioVolume);
+            }
         }
 
         public void AwardEnemyDestroyed()
@@ -531,6 +546,12 @@ namespace HolyRail.Scripts
             CurrentScore += EnemyDestroyedPoints;
             ShowPopup(EnemyDestroyedPopupText);
             Debug.Log($"<color=red>[Enemy Destroyed!]</color> +{EnemyDestroyedPoints} points!", gameObject);
+
+            // Play enemy kill sound
+            if (_enemyKillClip != null)
+            {
+                AudioSource.PlayClipAtPoint(_enemyKillClip, Camera.main != null ? Camera.main.transform.position : Vector3.zero, _audioVolume);
+            }
         }
 
         public void AddGraffitiScore()

@@ -53,6 +53,12 @@ namespace HolyRail.Scripts
             //     ThirdPersonController_RailGrinder.Instance.AddTemporarySpeedBoost(SpeedIncrease, BoostDuration);
             // }
 
+            // Trigger haptic feedback
+            if (GamepadHaptics.Instance != null)
+            {
+                GamepadHaptics.Instance.TriggerHaptic(HapticType.Pickup);
+            }
+
             // Hide or destroy the pickup
             if (VisualObject != null)
             {

@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.Splines;
 using Unity.Mathematics;
+using HolyRail.City;
 using HolyRail.Scripts;
 using HolyRail.Scripts.Enemies;
 using HolyRail.Graffiti;
@@ -366,6 +367,10 @@ namespace StarterAssets
         [Tooltip("Cooldown before ramp boost can trigger again")]
         public float RampBoostCooldown = 0.5f;
 
+        [Header("Grind Collision")]
+        [Tooltip("Layers that will knock the player off the rail when touched")]
+        public LayerMask GrindObstacleLayers;
+
         [Header("Dash")]
         [Tooltip("Speed boost applied when dashing")]
         public float DashSpeedBoost = 8f;
@@ -385,6 +390,39 @@ namespace StarterAssets
         public float BoostCooldown = 2.0f;
         [Tooltip("Sound effect played when boosting")]
         public AudioClip BoostAudioClip;
+
+        [Header("Jump Audio")]
+        [Tooltip("Sound effects played when jumping (random selection)")]
+        public AudioClip[] JumpAudioClips;
+        [Range(0, 1)] public float JumpAudioVolume = 0.5f;
+
+        [Header("Wall Ride Audio")]
+        [Tooltip("Sound effect played when starting a wall ride")]
+        public AudioClip WallRideStartAudioClip;
+        [Tooltip("Looping sound effect while wall riding")]
+        public AudioClip WallRideLoopAudioClip;
+        [Range(0, 1)] public float WallRideAudioVolume = 0.5f;
+
+        [Header("Combat Audio")]
+        [Tooltip("Sound effect played when taking knockback damage")]
+        public AudioClip KnockbackAudioClip;
+        [Tooltip("Sound effect played when activating parry")]
+        public AudioClip ParryActivateAudioClip;
+        [Tooltip("Sound effect played on successful parry deflection")]
+        public AudioClip ParrySuccessAudioClip;
+        [Range(0, 1)] public float CombatAudioVolume = 0.7f;
+
+        [Header("Ramp Audio")]
+        [Tooltip("Sound effect played when getting a ramp boost")]
+        public AudioClip RampBoostAudioClip;
+        [Range(0, 1)] public float RampBoostAudioVolume = 0.5f;
+
+        [Header("Spray Audio")]
+        [Tooltip("Sound effect played when starting to spray")]
+        public AudioClip SprayShakeAudioClip;
+        [Tooltip("Looping sound effects while spraying (random selection)")]
+        public AudioClip[] SprayLoopAudioClips;
+        [Range(0, 1)] public float SprayAudioVolume = 0.5f;
 
         [Space(10)]
         [Tooltip("Sound effects played when landing on a rail (random selection)")]
@@ -411,6 +449,9 @@ namespace StarterAssets
 
         private AudioSource _grindLoopAudioSource;
         private AudioSource _skateLoopAudioSource;
+        private AudioSource _wallRideLoopAudioSource;
+        private AudioSource _sprayLoopAudioSource;
+        private bool _wasSprayingLastFrame;
         private bool _isGrinding;
         private float _grindExitCooldownTimer;
         private float _momentumPreservationTimer;
@@ -450,6 +491,10 @@ namespace StarterAssets
 
         // Ramp boost state
         private float _rampBoostCooldownTimer;
+
+        // Spawn position for soft reset
+        private Vector3 _spawnPosition;
+        private Quaternion _spawnRotation;
 
         // Dash state
         private bool _isDashing;
@@ -657,11 +702,27 @@ namespace StarterAssets
             _skateLoopAudioSource.playOnAwake = false;
             _skateLoopAudioSource.spatialBlend = 0f; // 2D sound
 
+            // Initialize wall ride loop audio source
+            _wallRideLoopAudioSource = gameObject.AddComponent<AudioSource>();
+            _wallRideLoopAudioSource.loop = true;
+            _wallRideLoopAudioSource.playOnAwake = false;
+            _wallRideLoopAudioSource.spatialBlend = 0f; // 2D sound
+
+            // Initialize spray loop audio source
+            _sprayLoopAudioSource = gameObject.AddComponent<AudioSource>();
+            _sprayLoopAudioSource.loop = true;
+            _sprayLoopAudioSource.playOnAwake = false;
+            _sprayLoopAudioSource.spatialBlend = 0f; // 2D sound
+
             // Ensure parry trail renderers start disabled
             foreach (var trail in _parryTrailRenderers)
             {
                 if (trail != null) trail.emitting = false;
             }
+
+            // Store spawn position for soft reset
+            _spawnPosition = transform.position;
+            _spawnRotation = transform.rotation;
 
             if (GameSessionManager.Instance != null)
             {
@@ -832,6 +893,12 @@ namespace StarterAssets
                     {
                         if (trail != null) trail.emitting = true;
                     }
+
+                    // Play parry activate sound
+                    if (ParryActivateAudioClip != null)
+                    {
+                        AudioSource.PlayClipAtPoint(ParryActivateAudioClip, transform.position, CombatAudioVolume);
+                    }
                 }
             }
 
@@ -884,6 +951,34 @@ namespace StarterAssets
             {
                 _sprayPivot.LookAt(_sprayTargetPosition);
             }
+
+            // Handle spray audio
+            if (wantSpray && !_wasSprayingLastFrame)
+            {
+                // Just started spraying - play shake sound and start loop
+                if (SprayShakeAudioClip != null)
+                {
+                    AudioSource.PlayClipAtPoint(SprayShakeAudioClip, transform.position, SprayAudioVolume);
+                }
+
+                // Start spray loop sound
+                if (SprayLoopAudioClips != null && SprayLoopAudioClips.Length > 0 && _sprayLoopAudioSource != null)
+                {
+                    _sprayLoopAudioSource.clip = SprayLoopAudioClips[Random.Range(0, SprayLoopAudioClips.Length)];
+                    _sprayLoopAudioSource.volume = SprayAudioVolume;
+                    _sprayLoopAudioSource.Play();
+                }
+            }
+            else if (!wantSpray && _wasSprayingLastFrame)
+            {
+                // Just stopped spraying - stop loop
+                if (_sprayLoopAudioSource != null && _sprayLoopAudioSource.isPlaying)
+                {
+                    _sprayLoopAudioSource.Stop();
+                }
+            }
+
+            _wasSprayingLastFrame = wantSpray;
         }
 
         private void LateUpdate()
@@ -963,6 +1058,12 @@ namespace StarterAssets
 
             // Add horizontal boost to current speed
             _speed += RampBoostAmount;
+
+            // Play ramp boost sound
+            if (RampBoostAudioClip != null)
+            {
+                AudioSource.PlayClipAtPoint(RampBoostAudioClip, transform.position, RampBoostAudioVolume);
+            }
         }
 
         private void CameraRotation()
@@ -1151,6 +1252,13 @@ namespace StarterAssets
             {
                 ScoreManager.Instance.OnGrindStarted();
             }
+
+            // Trigger haptic feedback
+            if (GamepadHaptics.Instance != null)
+            {
+                GamepadHaptics.Instance.TriggerHaptic(HapticType.GrindStart);
+                GamepadHaptics.Instance.StartContinuousHaptic(HapticType.GrindLoop);
+            }
         }
 
         private void SetGrindParticleEmission(bool enabled)
@@ -1220,6 +1328,12 @@ namespace StarterAssets
                 ScoreManager.Instance.OnGrindEnded();
             }
 
+            // Stop haptic feedback
+            if (GamepadHaptics.Instance != null)
+            {
+                GamepadHaptics.Instance.StopContinuousHaptic();
+            }
+
             // Preserve horizontal momentum from grind
             _speed = _grindSpeedCurrent * GrindJumpMomentumMultiplier;
             _targetRotation = Mathf.Atan2(exitDirection.x, exitDirection.z) * Mathf.Rad2Deg;
@@ -1283,6 +1397,16 @@ namespace StarterAssets
             {
                 ScoreManager.Instance.OnGrindEnded();
             }
+
+            // Trigger haptic feedback for grind jump
+            if (GamepadHaptics.Instance != null)
+            {
+                GamepadHaptics.Instance.StopContinuousHaptic();
+                GamepadHaptics.Instance.TriggerHaptic(HapticType.GrindJump);
+            }
+
+            // Play jump sound
+            PlayRandomClip(JumpAudioClips, JumpAudioVolume);
 
             // Apply jump velocity (vertical)
             _verticalVelocity = Mathf.Sqrt(actualJumpHeight * -2f * Gravity);
@@ -1386,6 +1510,39 @@ namespace StarterAssets
                 // Derail - exit grind with a small hop
                 ExitGrindWithJump(JumpHeight * 0.5f);
                 return;
+            }
+
+            // Check for obstacle collision while grinding - derail if we hit one
+            if (GrindObstacleLayers != 0)
+            {
+                int obstacleHitCount = Physics.OverlapSphereNonAlloc(
+                    transform.position,
+                    _controller.radius * 1.5f,
+                    _rampHitBuffer,
+                    GrindObstacleLayers
+                );
+
+                if (obstacleHitCount > 0)
+                {
+                    var obstacle = _rampHitBuffer[0];
+                    Vector3 knockbackDir = (transform.position - obstacle.ClosestPoint(transform.position)).normalized;
+
+                    // If direction is too vertical, use grind travel direction instead
+                    if (Mathf.Abs(knockbackDir.y) > 0.7f)
+                    {
+                        knockbackDir = GrindSpline.transform.TransformDirection(
+                            (Vector3)GrindSpline.Spline.EvaluateTangent(_grindT)
+                        ).normalized;
+                        if (_grindDirection == SplineTravelDirection.EndToStart)
+                            knockbackDir = -knockbackDir;
+                    }
+                    knockbackDir.y = 0f;
+                    knockbackDir.Normalize();
+
+                    StopGrind();
+                    ApplyKnockback(-knockbackDir, 8f);
+                    return;
+                }
             }
 
             // Rotate toward spline direction
@@ -1572,6 +1729,26 @@ namespace StarterAssets
                 }
             }
 
+            // Trigger haptic feedback
+            if (GamepadHaptics.Instance != null)
+            {
+                GamepadHaptics.Instance.TriggerHaptic(HapticType.WallRideStart);
+                GamepadHaptics.Instance.StartContinuousHaptic(HapticType.WallRideLoop);
+            }
+
+            // Play wall ride start sound
+            if (WallRideStartAudioClip != null)
+            {
+                AudioSource.PlayClipAtPoint(WallRideStartAudioClip, transform.position, WallRideAudioVolume);
+            }
+
+            // Start wall ride loop sound
+            if (WallRideLoopAudioClip != null && _wallRideLoopAudioSource != null)
+            {
+                _wallRideLoopAudioSource.clip = WallRideLoopAudioClip;
+                _wallRideLoopAudioSource.volume = WallRideAudioVolume;
+                _wallRideLoopAudioSource.Play();
+            }
         }
 
         private void WallRide()
@@ -1698,6 +1875,22 @@ namespace StarterAssets
                     emission.enabled = false;
                 }
             }
+
+            // Trigger haptic feedback for wall ride jump
+            if (GamepadHaptics.Instance != null)
+            {
+                GamepadHaptics.Instance.StopContinuousHaptic();
+                GamepadHaptics.Instance.TriggerHaptic(HapticType.WallRideJump);
+            }
+
+            // Stop wall ride loop sound
+            if (_wallRideLoopAudioSource != null && _wallRideLoopAudioSource.isPlaying)
+            {
+                _wallRideLoopAudioSource.Stop();
+            }
+
+            // Play jump sound
+            PlayRandomClip(JumpAudioClips, JumpAudioVolume);
         }
 
         private void ExitWallRideAtEdge()
@@ -1741,6 +1934,18 @@ namespace StarterAssets
                     var emission = ps.emission;
                     emission.enabled = false;
                 }
+            }
+
+            // Stop continuous haptic feedback (edge exit doesn't have a special haptic)
+            if (GamepadHaptics.Instance != null)
+            {
+                GamepadHaptics.Instance.StopContinuousHaptic();
+            }
+
+            // Stop wall ride loop sound
+            if (_wallRideLoopAudioSource != null && _wallRideLoopAudioSource.isPlaying)
+            {
+                _wallRideLoopAudioSource.Stop();
             }
         }
 
@@ -1832,6 +2037,11 @@ namespace StarterAssets
                 AudioSource.PlayClipAtPoint(DashAudioClip, transform.position, 1f);
             }
 
+            // Trigger haptic feedback
+            if (GamepadHaptics.Instance != null)
+            {
+                GamepadHaptics.Instance.TriggerHaptic(HapticType.Dash);
+            }
         }
 
         private void UpdateDash()
@@ -1933,6 +2143,11 @@ namespace StarterAssets
                 AudioSource.PlayClipAtPoint(BoostAudioClip, transform.position, 1f);
             }
 
+            // Start continuous haptic feedback
+            if (GamepadHaptics.Instance != null)
+            {
+                GamepadHaptics.Instance.StartContinuousHaptic(HapticType.Boost);
+            }
         }
 
         private void UpdateBoost()
@@ -1943,6 +2158,12 @@ namespace StarterAssets
             if (_boostTimer <= 0f)
             {
                 _isBoosting = false;
+
+                // Stop continuous haptic feedback when boost ends
+                if (GamepadHaptics.Instance != null)
+                {
+                    GamepadHaptics.Instance.StopContinuousHaptic();
+                }
             }
         }
 
@@ -1991,6 +2212,18 @@ namespace StarterAssets
 
             // Reset speed to prevent fighting the knockback
             _speed = 0f;
+
+            // Trigger haptic feedback
+            if (GamepadHaptics.Instance != null)
+            {
+                GamepadHaptics.Instance.TriggerHaptic(HapticType.Knockback);
+            }
+
+            // Play knockback sound
+            if (KnockbackAudioClip != null)
+            {
+                AudioSource.PlayClipAtPoint(KnockbackAudioClip, transform.position, CombatAudioVolume);
+            }
         }
 
         private void UpdateKnockback()
@@ -2159,6 +2392,15 @@ namespace StarterAssets
                         _animator.SetBool(_animIDJump, true);
                     }
 
+                    // Play jump sound
+                    PlayRandomClip(JumpAudioClips, JumpAudioVolume);
+
+                    // Trigger haptic feedback for jump
+                    if (GamepadHaptics.Instance != null)
+                    {
+                        GamepadHaptics.Instance.TriggerHaptic(HapticType.Jump);
+                    }
+
                     // Check for wall ride immediately when jumping near a wall
                     if (EnableWallRide && _wallRideExitCooldownTimer <= 0f)
                     {
@@ -2225,15 +2467,72 @@ namespace StarterAssets
 
         private void HandlePlayerDeath()
         {
-            Debug.Log("<color=red>Player died!</color>");
+            Debug.Log("<color=red>Player died! Performing soft reset...</color>");
 
-            if (ScoreManager.Instance != null)
+            // Reset score
+            ScoreManager.Instance?.ResetScore();
+
+            // Stop any grinding
+            if (_isGrinding)
             {
-                ScoreManager.Instance.ResetScore();
+                StopGrind();
             }
 
-            // Reload the current scene
-            SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+            // Stop wall riding
+            if (_isWallRiding)
+            {
+                _controller.enabled = true;
+                _isWallRiding = false;
+                _wallRideExitCooldownTimer = WallRideExitCooldown;
+
+                // Stop wall ride audio
+                if (_wallRideLoopAudioSource != null && _wallRideLoopAudioSource.isPlaying)
+                {
+                    _wallRideLoopAudioSource.Stop();
+                }
+
+                // Disable wall ride particles
+                foreach (var ps in WallRideParticleSystems)
+                {
+                    if (ps != null)
+                    {
+                        var emission = ps.emission;
+                        emission.enabled = false;
+                    }
+                }
+
+                // Stop haptics
+                GamepadHaptics.Instance?.StopContinuousHaptic();
+            }
+
+            // Teleport to spawn position
+            _controller.enabled = false;
+            transform.position = _spawnPosition;
+            transform.rotation = _spawnRotation;
+            _controller.enabled = true;
+
+            // Reset velocity and movement state
+            _verticalVelocity = 0f;
+            _speed = 0f;
+            _grindExitCooldownTimer = 0f;
+            _momentumPreservationTimer = 0f;
+            _wallRideExitCooldownTimer = 0f;
+            _wallRideCoyoteTimer = 0f;
+            _jumpBufferTimer = 0f;
+
+            // Reset health
+            GameSessionManager.Instance?.ResetHealth();
+
+            // Reset graffiti spots
+            var graffitiPool = FindAnyObjectByType<GraffitiSpotPool>();
+            graffitiPool?.ResetAllGraffiti();
+
+            // Reset enemies
+            EnemySpawner.Instance?.ResetAllEnemies();
+            EnemyController.Instance?.ResetToIdle();
+
+            // Reset death wall position
+            DeathWall.Instance?.ResetToPosition(_spawnPosition);
         }
 
         private void OnFootstep(AnimationEvent animationEvent)
@@ -2249,6 +2548,12 @@ namespace StarterAssets
                 {
                     var index = Random.Range(0, SkateLandingAudioClips.Length);
                     AudioSource.PlayClipAtPoint(SkateLandingAudioClips[index], transform.TransformPoint(_controller.center), SkateAudioVolume);
+                }
+
+                // Trigger haptic feedback for landing
+                if (GamepadHaptics.Instance != null)
+                {
+                    GamepadHaptics.Instance.TriggerHaptic(HapticType.Land);
                 }
             }
         }
@@ -2284,6 +2589,18 @@ namespace StarterAssets
                 {
                     cameraEffects.PunchTime(.3f);
                 }
+
+                // Trigger haptic feedback for successful parry
+                if (GamepadHaptics.Instance != null)
+                {
+                    GamepadHaptics.Instance.TriggerHaptic(HapticType.Parry);
+                }
+
+                // Play parry success sound
+                if (ParrySuccessAudioClip != null)
+                {
+                    AudioSource.PlayClipAtPoint(ParrySuccessAudioClip, transform.position, CombatAudioVolume);
+                }
             }
         }
 
@@ -2301,5 +2618,12 @@ namespace StarterAssets
         public GraffitiSpot ActiveGraffiti => _activeGraffiti;
         public bool IsSpraying => _isSpraying;
         public bool IsSprayInputPressed => sprayInput.IsPressed();
+
+        private void PlayRandomClip(AudioClip[] clips, float volume = 1f)
+        {
+            if (clips == null || clips.Length == 0) return;
+            var clip = clips[Random.Range(0, clips.Length)];
+            AudioSource.PlayClipAtPoint(clip, transform.position, volume);
+        }
     }
 }

@@ -60,6 +60,15 @@ namespace HolyRail.Scripts.Enemies
         [SerializeField]
         private float _knockbackForce = 15f;
 
+        [Header("Audio")]
+        [Tooltip("Looping hum sound for the laser field")]
+        [SerializeField] private AudioClip _idleHumClip;
+        [Tooltip("Sound played when player hits the force field")]
+        [SerializeField] private AudioClip _hitClip;
+        [Tooltip("Explosion sounds (random selection)")]
+        [SerializeField] private AudioClip[] _explosionClips;
+        [Range(0, 1)] [SerializeField] private float _audioVolume = 0.7f;
+
         [Header("References")]
         [Tooltip("The transform for the laser field object")]
         [SerializeField]
@@ -79,6 +88,7 @@ namespace HolyRail.Scripts.Enemies
 
         private MaterialPropertyBlock _propertyBlock;
         private float _lastDamageTime;
+        private AudioSource _humAudioSource;
 
         // Continuous collision detection
         private Transform _playerTransform;
@@ -105,6 +115,12 @@ namespace HolyRail.Scripts.Enemies
         {
             base.Awake();
             _lastDamageTime = -_damageCooldown;
+
+            // Initialize hum audio source
+            _humAudioSource = gameObject.AddComponent<AudioSource>();
+            _humAudioSource.loop = true;
+            _humAudioSource.playOnAwake = false;
+            _humAudioSource.spatialBlend = 1f; // 3D sound
         }
 
         public override void OnSpawn()
@@ -114,6 +130,14 @@ namespace HolyRail.Scripts.Enemies
             _isDestroyed = false;
             UpdateLaserField();
             CachePlayerReference();
+
+            // Start idle hum sound
+            if (_idleHumClip != null && _humAudioSource != null)
+            {
+                _humAudioSource.clip = _idleHumClip;
+                _humAudioSource.volume = _audioVolume;
+                _humAudioSource.Play();
+            }
         }
 
         private void CachePlayerReference()
@@ -196,6 +220,12 @@ namespace HolyRail.Scripts.Enemies
                 PlayerHitFlash.Instance.Flash();
 
             GameSessionManager.Instance.TakeDamage(_damageAmount);
+
+            // Play hit sound
+            if (_hitClip != null)
+            {
+                AudioSource.PlayClipAtPoint(_hitClip, transform.position, _audioVolume);
+            }
 
             Debug.Log($"LaserBot [{name}]: Player hit force field via CharacterController - knockback + damage!");
         }
@@ -423,6 +453,29 @@ namespace HolyRail.Scripts.Enemies
 
             _isDestroyed = true;
             Debug.Log($"LaserBot [{name}]: Destroyed by player boost!");
+
+            // Stop hum sound
+            if (_humAudioSource != null && _humAudioSource.isPlaying)
+            {
+                _humAudioSource.Stop();
+            }
+
+            // Play explosion sound with large 3D range
+            if (_explosionClips != null && _explosionClips.Length > 0)
+            {
+                var clip = _explosionClips[Random.Range(0, _explosionClips.Length)];
+                var tempGO = new GameObject("ExplosionAudio");
+                tempGO.transform.position = transform.position;
+                var audioSource = tempGO.AddComponent<AudioSource>();
+                audioSource.clip = clip;
+                audioSource.volume = _audioVolume;
+                audioSource.spatialBlend = 1f;
+                audioSource.minDistance = 5f;
+                audioSource.maxDistance = 500f;
+                audioSource.rolloffMode = AudioRolloffMode.Linear;
+                audioSource.Play();
+                Destroy(tempGO, clip.length);
+            }
 
             if (Spawner != null)
             {
