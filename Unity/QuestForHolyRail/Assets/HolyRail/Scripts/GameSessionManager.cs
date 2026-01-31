@@ -41,14 +41,14 @@ namespace HolyRail.Scripts
 
         public int Money
         {
-            get => m_money;
+            get => _money;
             set
             {
-                m_money = value;
+                _money = value;
 
                 try
                 {
-                    OnMoneyChanged?.Invoke(m_money);
+                    OnMoneyChanged?.Invoke(_money);
                 }
                 catch (Exception ex)
                 {
@@ -57,13 +57,13 @@ namespace HolyRail.Scripts
             }
         }
 
-        private int m_money = 0;
+        private int _money = 0;
 
-        public IReadOnlyList<PlayerUpgrade> Upgrades => new List<PlayerUpgrade>(m_upgradeTiers.Keys);
+        public IReadOnlyList<PlayerUpgrade> Upgrades => new List<PlayerUpgrade>(_upgradeTiers.Keys);
 
-        private Dictionary<PlayerUpgrade, int> m_upgradeTiers = new Dictionary<PlayerUpgrade, int>();
+        private readonly Dictionary<PlayerUpgrade, int> _upgradeTiers = new Dictionary<PlayerUpgrade, int>();
 
-        private List<ItemPickup> m_activePickups = new List<ItemPickup>();
+        private readonly List<ItemPickup> _activePickups = new List<ItemPickup>();
 
 
 
@@ -104,7 +104,7 @@ namespace HolyRail.Scripts
             {
                 // Health starts at Tier 1 (Base Health)
                 int initialTier = upgrade.Type == UpgradeType.PlayerHealth ? 1 : 0;
-                m_upgradeTiers.Add(upgrade, initialTier);
+                _upgradeTiers.Add(upgrade, initialTier);
             }
         }
 
@@ -152,7 +152,7 @@ namespace HolyRail.Scripts
 
         public int GetUpgradeTier(PlayerUpgrade upgrade)
         {
-            if (upgrade != null && m_upgradeTiers.TryGetValue(upgrade, out int tier))
+            if (upgrade != null && _upgradeTiers.TryGetValue(upgrade, out int tier))
             {
                 return tier;
             }
@@ -163,7 +163,7 @@ namespace HolyRail.Scripts
         public float GetUpgradeValue(UpgradeType upgrade)
         {
             var amount = 0f;
-            foreach (var kvp in m_upgradeTiers)
+            foreach (var kvp in _upgradeTiers)
             {
                 if (kvp.Key.Type != upgrade)
                 {
@@ -171,14 +171,6 @@ namespace HolyRail.Scripts
                 }
                 
                 amount += kvp.Key.GetValueForTier(kvp.Value);
-            }
-
-            foreach (var pickup in m_activePickups)
-            {
-                if (pickup.Type == upgrade)
-                {
-                    amount += pickup.Value;
-                }
             }
             
             return amount;
@@ -191,16 +183,16 @@ namespace HolyRail.Scripts
                 return false;
             }
 
-            if (!m_upgradeTiers.ContainsKey(playerUpgrade) || tierLevel > playerUpgrade.MaxTier)
+            if (!_upgradeTiers.ContainsKey(playerUpgrade) || tierLevel > playerUpgrade.MaxTier)
             {
                 return false;
             }
 
-            m_upgradeTiers[playerUpgrade] = tierLevel;
+            _upgradeTiers[playerUpgrade] = tierLevel;
             
             try
             {
-                OnUpgradeListChanged?.Invoke(new List<PlayerUpgrade>(m_upgradeTiers.Keys).ToArray());
+                OnUpgradeListChanged?.Invoke(new List<PlayerUpgrade>(_upgradeTiers.Keys).ToArray());
             }
             catch(Exception ex)
             {
@@ -214,12 +206,12 @@ namespace HolyRail.Scripts
         {
             Assert.IsNotNull(upgrade);
 
-            if (m_upgradeTiers.ContainsKey(upgrade))
+            if (_upgradeTiers.ContainsKey(upgrade))
             {
                 // Already owned, try to increase tier
-                if (m_upgradeTiers[upgrade] < upgrade.MaxTier)
+                if (_upgradeTiers[upgrade] < upgrade.MaxTier)
                 {
-                    m_upgradeTiers[upgrade]++;
+                    _upgradeTiers[upgrade]++;
                 }
                 else
                 {
@@ -230,12 +222,12 @@ namespace HolyRail.Scripts
             else
             {
                 // New purchase (Tier 1)
-                m_upgradeTiers[upgrade] = 1;
+                _upgradeTiers[upgrade] = 1;
             }
         
             try
             {
-                OnUpgradeListChanged?.Invoke(new List<PlayerUpgrade>(m_upgradeTiers.Keys).ToArray());
+                OnUpgradeListChanged?.Invoke(new List<PlayerUpgrade>(_upgradeTiers.Keys).ToArray());
             }
             catch(Exception ex)
             {
@@ -248,13 +240,13 @@ namespace HolyRail.Scripts
         public void AddPickup(ItemPickup pickup)
         {
             if (pickup == null) return;
-            m_activePickups.Add(pickup);
-            Debug.Log($"[GameSessionManager] Collected pickup: {pickup.DisplayName}");
+            _activePickups.Add(pickup);
+            Debug.Log($"[GameSessionManager] Collected pickup: {pickup.displayName}");
         }
 
         public void ClearPickups()
         {
-            m_activePickups.Clear();
+            _activePickups.Clear();
             Debug.Log("[GameSessionManager] Cleared all temporary pickups.");
         }
     }
