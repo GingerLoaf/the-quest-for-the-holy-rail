@@ -116,11 +116,8 @@ namespace HolyRail.Scripts.Enemies
             base.Awake();
             _lastDamageTime = -_damageCooldown;
 
-            // Initialize hum audio source
-            _humAudioSource = gameObject.AddComponent<AudioSource>();
-            _humAudioSource.loop = true;
-            _humAudioSource.playOnAwake = false;
-            _humAudioSource.spatialBlend = 1f; // 3D sound
+            // Get the existing AudioSource from the prefab (configured for looping hum)
+            _humAudioSource = GetComponent<AudioSource>();
         }
 
         public override void OnSpawn()
@@ -248,8 +245,10 @@ namespace HolyRail.Scripts.Enemies
             if (_isIdle)
                 return;
 
-            // Force field ALWAYS damages and knocks back - even if boosting
-            // (Only boosting through CENTER destroys the bot)
+            // Boosting players pass through the force field to reach the center
+            if (IsPlayerBoosting())
+                return;
+
             ApplyKnockbackAndDamage(collision.collider);
         }
 
@@ -287,8 +286,11 @@ namespace HolyRail.Scripts.Enemies
                 // Check if player passed through force field plane
                 else if (CheckLinePlaneIntersection(_playerLastPosition, currentPos))
                 {
-                    // Force field ALWAYS damages - even if boosting
-                    ApplyKnockbackAndDamage(null);
+                    // Boosting players pass through to reach the center
+                    if (!IsPlayerBoosting())
+                    {
+                        ApplyKnockbackAndDamage(null);
+                    }
                 }
             }
 

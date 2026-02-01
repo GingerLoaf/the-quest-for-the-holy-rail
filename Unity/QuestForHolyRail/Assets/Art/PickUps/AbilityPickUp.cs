@@ -59,6 +59,8 @@ namespace Art.PickUps
         [SerializeField] private float _doorAnimDuration = 1.5f;
         [Tooltip("3D audio max distance for door sound")]
         [SerializeField] private float _doorAudioMaxDistance = 50f;
+        [Tooltip("Optional backward door that animates UP to block retreat when collected")]
+        [SerializeField] private GameObject _backwardDoor;
 
         [Header("Audio")]
         [SerializeField] private AudioClip _pickupSFX;
@@ -206,6 +208,13 @@ namespace Art.PickUps
             {
                 var animator = _door.AddComponent<DoorAnimator>();
                 animator.AnimateDown(_doorAnimDuration, _doorUnlockSFX, _doorAudioMaxDistance);
+            }
+
+            // Raise backward door to block retreat
+            if (_backwardDoor != null)
+            {
+                var backwardAnimator = _backwardDoor.AddComponent<DoorAnimator>();
+                backwardAnimator.AnimateUp(_doorAnimDuration, _doorUnlockSFX, _doorAudioMaxDistance);
             }
 
             // Play VFX

@@ -106,9 +106,10 @@ namespace HolyRail.Scripts.UI
             if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space))
                 selected = true;
 
-            // Gamepad: A (joystick button 0), X (joystick button 2), or Submit
+            // Gamepad: A/Cross (button 0 or 1), X (button 2), or Submit
             if (Input.GetButtonDown("Submit") ||
                 Input.GetKeyDown(KeyCode.JoystickButton0) ||
+                Input.GetKeyDown(KeyCode.JoystickButton1) ||
                 Input.GetKeyDown(KeyCode.JoystickButton2))
                 selected = true;
 

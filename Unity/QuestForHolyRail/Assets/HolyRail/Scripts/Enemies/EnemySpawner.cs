@@ -143,6 +143,13 @@ namespace HolyRail.Scripts.Enemies
         [field: SerializeField]
         public GameObject ExplosionEffectPrefab { get; private set; }
 
+        [Header("On All Defeated")]
+        [SerializeField] private bool _moveObjectWhenAllDefeated;
+        [SerializeField] private GameObject _objectToMoveOnDefeat;
+        [SerializeField] private Vector3 _defeatMovePosition;
+        [SerializeField] private GameObject[] _objectsToMoveOnDefeat;
+        [SerializeField] private Vector3 _objectsDefeatMovePosition;
+
         private Dictionary<GameObject, Queue<BaseEnemyBot>> _enemyPools;
         private Dictionary<int, GameObject> _instanceIdToPrefabMap;
         private Queue<EnemyBullet> _bulletPool;
@@ -558,6 +565,33 @@ namespace HolyRail.Scripts.Enemies
             {
                 Debug.LogWarning("Trying to recycle a bot that was not spawned from the pool.", bot.gameObject);
                 Destroy(bot.gameObject);
+            }
+
+            // Check if all enemies have been defeated
+            if (killedByPlayer &&
+                _activeBots.Count == 0 &&
+                _hasBeenTriggered &&
+                !CanSpawnAny())
+            {
+                // Move the target object if configured
+                if (_moveObjectWhenAllDefeated && _objectToMoveOnDefeat != null)
+                {
+                    _objectToMoveOnDefeat.transform.position = _defeatMovePosition;
+                    _moveObjectWhenAllDefeated = false; // Prevent re-triggering
+                    Debug.Log($"[EnemySpawner] All enemies defeated! Moved {_objectToMoveOnDefeat.name} to {_defeatMovePosition}");
+                }
+
+                // Move all objects in the array to the shared target position
+                if (_objectsToMoveOnDefeat != null)
+                {
+                    foreach (var obj in _objectsToMoveOnDefeat)
+                    {
+                        if (obj != null)
+                        {
+                            obj.transform.position = _objectsDefeatMovePosition;
+                        }
+                    }
+                }
             }
         }
 
