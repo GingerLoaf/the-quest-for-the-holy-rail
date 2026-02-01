@@ -197,7 +197,30 @@ namespace HolyRail.Splines
                 containerIdx++;
             }
 
-            InitializeBuffers();
+            UpdateBufferData();
+        }
+
+        /// <summary>
+        /// Update existing buffer data without recreating buffers.
+        /// Use this when only clone transforms have changed.
+        /// </summary>
+        private void UpdateBufferData()
+        {
+            if (!_buffersInitialized || _transformBuffer == null || _cloneData.Count == 0)
+            {
+                InitializeBuffers();
+                return;
+            }
+
+            // Just update the data in the existing buffer
+            _transformBuffer.SetData(_cloneData.ToArray());
+
+            // Update render bounds to follow controller position
+            float maxExtent = CircleRadius + 50f;
+            _renderBounds = new Bounds(
+                transform.position,
+                new Vector3(maxExtent * 2f, 100f, maxExtent * 2f)
+            );
         }
 
 #if UNITY_EDITOR

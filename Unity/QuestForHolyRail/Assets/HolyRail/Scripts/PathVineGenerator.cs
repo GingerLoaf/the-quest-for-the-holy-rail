@@ -102,6 +102,8 @@ namespace HolyRail
 
             GenerateVinesForCorridor(_cityManager.CorridorPathA, "A");
             GenerateVinesForCorridor(_cityManager.CorridorPathB, "B");
+            if (_cityManager.CorridorPathB_ToBC != null && _cityManager.CorridorPathB_ToBC.Count > 1)
+                GenerateVinesForCorridor(_cityManager.CorridorPathB_ToBC, "B_ToBC");
             GenerateVinesForCorridor(_cityManager.CorridorPathC, "C");
 
             CacheSplineSamples();

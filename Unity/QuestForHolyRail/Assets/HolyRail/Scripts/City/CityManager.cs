@@ -243,6 +243,9 @@ namespace HolyRail.City
         private ObstacleData[] _obstacleArrayCache;
         private BillboardData[] _billboardArrayCache;
 
+        // Runtime obstacle colliders container
+        private Transform _obstacleColliderParent;
+
         // Random number generator for deterministic generation
         private System.Random _random;
 
@@ -753,6 +756,7 @@ namespace HolyRail.City
                 if (generateCorridorC && _corridorPathC.Count > 0)
                     GenerateCorridorObstacles(_corridorPathC);
                 InitializeObstacleBuffersFromSerializedData();
+                CreateObstacleColliders();
             }
 
             // Generate billboards if enabled
@@ -2978,6 +2982,44 @@ namespace HolyRail.City
             Debug.Log($"CityManager: Obstacle buffers initialized successfully. Mesh: {ObstacleMesh.name}, Material: {ObstacleMaterial.name}");
         }
 
+        private void CreateObstacleColliders()
+        {
+            // Clean up existing collider parent
+            if (_obstacleColliderParent != null)
+            {
+                if (Application.isPlaying)
+                    Destroy(_obstacleColliderParent.gameObject);
+                else
+                    DestroyImmediate(_obstacleColliderParent.gameObject);
+            }
+
+            if (_generatedObstacles.Count == 0)
+            {
+                return;
+            }
+
+            // Create new parent
+            var parentGO = new GameObject("ObstacleColliders");
+            parentGO.transform.SetParent(transform);
+            _obstacleColliderParent = parentGO.transform;
+
+            foreach (var obstacle in _generatedObstacles)
+            {
+                var colliderGO = new GameObject("ObstacleCollider");
+                colliderGO.transform.SetParent(_obstacleColliderParent);
+                colliderGO.transform.position = obstacle.Position;
+                colliderGO.transform.rotation = obstacle.Rotation;
+
+                var capsule = colliderGO.AddComponent<CapsuleCollider>();
+                // Height is Y scale, radius is average of X and Z
+                capsule.height = obstacle.Scale.y;
+                capsule.radius = Mathf.Max(obstacle.Scale.x, obstacle.Scale.z) * 0.5f;
+                capsule.direction = 1; // Y-axis
+            }
+
+            Debug.Log($"CityManager: Created {_generatedObstacles.Count} obstacle colliders.");
+        }
+
         private void RenderObstacles()
         {
             if (_obstacleArgsBuffer == null || _obstaclePropertyBlock == null)
@@ -3131,6 +3173,16 @@ namespace HolyRail.City
             _corridorPathA.Clear();
             _corridorPathB.Clear();
             _corridorPathC.Clear();
+
+            // Clean up obstacle colliders
+            if (_obstacleColliderParent != null)
+            {
+                if (Application.isPlaying)
+                    Destroy(_obstacleColliderParent.gameObject);
+                else
+                    DestroyImmediate(_obstacleColliderParent.gameObject);
+                _obstacleColliderParent = null;
+            }
 
             // Reset loop state
             _loopState = new LoopModeState();
