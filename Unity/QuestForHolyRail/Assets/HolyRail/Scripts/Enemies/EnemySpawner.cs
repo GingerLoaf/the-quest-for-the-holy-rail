@@ -22,6 +22,13 @@ namespace HolyRail.Scripts.Enemies
         // Static registry of all active spawners for cross-spawner queries
         private static readonly List<EnemySpawner> _allSpawners = new();
 
+        // Clear stale references when entering play mode (handles domain reload disabled)
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ClearStaticReferences()
+        {
+            _allSpawners.Clear();
+        }
+
         /// <summary>
         /// Gets the first active spawner (for backwards compatibility with systems expecting a single spawner).
         /// Prefer using static methods like GetAllBulletsInParryRangeFromAll() for multi-spawner support.

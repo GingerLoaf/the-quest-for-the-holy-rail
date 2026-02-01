@@ -13,6 +13,12 @@ namespace HolyRail.Scripts.Enemies
     {
         public static EnemyController Instance { get; private set; }
 
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ClearStaticReferences()
+        {
+            Instance = null;
+        }
+
         public enum PlanState
         {
             Idle,           // No active plan, cooldown timer running

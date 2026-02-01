@@ -230,10 +230,13 @@ namespace HolyRail.Scripts.Shop
                 MusicController.Instance.FadeOut();
             }
 
-            // Pause enemy spawner
-            if (PauseEnemySpawner && Enemies.EnemySpawner.Instance != null)
+            // Pause all enemy spawners
+            if (PauseEnemySpawner)
             {
-                Enemies.EnemySpawner.Instance.enabled = false;
+                foreach (var spawner in Enemies.EnemySpawner.AllSpawners)
+                {
+                    spawner.enabled = false;
+                }
             }
         }
 
@@ -261,10 +264,13 @@ namespace HolyRail.Scripts.Shop
                 MusicController.Instance.FadeIn();
             }
 
-            // Resume enemy spawner
-            if (PauseEnemySpawner && Enemies.EnemySpawner.Instance != null)
+            // Resume all enemy spawners
+            if (PauseEnemySpawner)
             {
-                Enemies.EnemySpawner.Instance.enabled = true;
+                foreach (var spawner in Enemies.EnemySpawner.AllSpawners)
+                {
+                    spawner.enabled = true;
+                }
             }
         }
     }

@@ -753,42 +753,28 @@ namespace HolyRail.City
                 GenerateFinalPlazaRing();
             }
 
-            // Generate endpoint plazas (A, B, C)
+            // Generate endpoint plazas (A, B, C) using actual path directions
             if (!IsLoopMode && EnableEndpointPlazas)
             {
-                // EndpointA: incoming from ConvergencePoint, outgoing to EndpointB (or ConvergenceEndPoint)
+                // Collect all corridor paths - the method will find which paths pass near each endpoint
+                var allCorridorPaths = new List<List<Vector3>>();
+                if (_corridorPathA.Count > 0) allCorridorPaths.Add(_corridorPathA);
+                if (_corridorPathB.Count > 0) allCorridorPaths.Add(_corridorPathB);
+                if (_corridorPathC.Count > 0) allCorridorPaths.Add(_corridorPathC);
+                // Add branch paths if they exist and aren't duplicates
+                if (_corridorPathB_ToAB.Count > 0 && !allCorridorPaths.Contains(_corridorPathB_ToAB))
+                    allCorridorPaths.Add(_corridorPathB_ToAB);
+                if (_corridorPathB_ToBC.Count > 0 && !allCorridorPaths.Contains(_corridorPathB_ToBC))
+                    allCorridorPaths.Add(_corridorPathB_ToBC);
+
+                // Generate plaza for each endpoint, passing ALL paths
+                // The method will find which paths pass near each endpoint
                 if (EndpointA != null)
-                {
-                    var incoming = ConvergencePoint.position - EndpointA.position;
-                    Vector3? outgoing = null;
-                    if (EndpointB != null)
-                        outgoing = EndpointB.position - EndpointA.position;
-                    else if (ConvergenceEndPoint != null)
-                        outgoing = ConvergenceEndPoint.position - EndpointA.position;
-                    GenerateEndpointPlazaRing(EndpointA, incoming, outgoing);
-                }
-
-                // EndpointB: incoming from EndpointA, outgoing to EndpointC (or ConvergenceEndPoint)
-                if (EndpointB != null && EndpointA != null)
-                {
-                    var incoming = EndpointA.position - EndpointB.position;
-                    Vector3? outgoing = null;
-                    if (EndpointC != null)
-                        outgoing = EndpointC.position - EndpointB.position;
-                    else if (ConvergenceEndPoint != null)
-                        outgoing = ConvergenceEndPoint.position - EndpointB.position;
-                    GenerateEndpointPlazaRing(EndpointB, incoming, outgoing);
-                }
-
-                // EndpointC: incoming from EndpointB, outgoing to ConvergenceEndPoint
-                if (EndpointC != null && EndpointB != null)
-                {
-                    var incoming = EndpointB.position - EndpointC.position;
-                    Vector3? outgoing = ConvergenceEndPoint != null
-                        ? ConvergenceEndPoint.position - EndpointC.position
-                        : (Vector3?)null;
-                    GenerateEndpointPlazaRing(EndpointC, incoming, outgoing);
-                }
+                    GenerateEndpointPlazaRing(EndpointA, allCorridorPaths);
+                if (EndpointB != null)
+                    GenerateEndpointPlazaRing(EndpointB, allCorridorPaths);
+                if (EndpointC != null)
+                    GenerateEndpointPlazaRing(EndpointC, allCorridorPaths);
             }
 
             // Now initialize the rendering buffers from serialized data
@@ -1564,17 +1550,19 @@ namespace HolyRail.City
                 }
             }
 
+            Debug.Log($"GeneratePlazaRing: {allPaths.Count} paths, {corridorAngles.Count} corridor angles");
+
             // Place buildings in a ring, skipping corridor exits
             float circumference = 2 * Mathf.PI * ConvergenceRadius;
             int buildingCount = Mathf.FloorToInt(circumference / (avgBuildingWidth + BuildingSetback));
             float angleStep = 2 * Mathf.PI / buildingCount;
 
-            // Half-width of corridor gap in radians
-            float corridorGapAngle = Mathf.Atan2(CorridorWidth / 2 + BuildingSetback, ConvergenceRadius);
-
             for (int row = 0; row < PlazaRingRows; row++)
             {
                 float ringRadius = ConvergenceRadius + BuildingSetback + row * (avgBuildingWidth + BuildingSetback);
+
+                // Half-width of corridor gap in radians - calculated per row to account for increasing radius
+                float corridorGapAngle = Mathf.Atan2(CorridorWidth / 2 + BuildingSetback, ringRadius);
 
                 for (int i = 0; i < buildingCount; i++)
                 {
@@ -1612,17 +1600,49 @@ namespace HolyRail.City
             endPlazaPos.y = ConvergencePoint.position.y; // Maintain height consistency
             float avgBuildingWidth = (BuildingWidthMin + BuildingWidthMax) * 0.5f;
 
-            // Calculate angular positions of corridor entrances to leave gaps
+            // Calculate corridor angles from path points that pass NEAR the endpoint
+            // Use tolerance-based search since ConvergenceEndPoint may be in the MIDDLE of a path
+            // (e.g., _corridorPathC continues from ConvergenceEndPoint to FinalEndPoint)
             var corridorAngles = new List<float>();
+            float searchRadius = ConvergenceEndRadius + BuildingSpacing;
+
             foreach (var path in allPaths)
             {
-                if (path.Count >= 2)
+                if (path.Count < 2)
+                    continue;
+
+                // Find points in this path that are within searchRadius of the endpoint
+                for (int i = 0; i < path.Count; i++)
                 {
-                    // Get direction from end plaza toward corridor (use second-to-last point to get direction)
-                    var dir = path[path.Count - 2] - endPlazaPos;
-                    dir.y = 0;
-                    float angle = Mathf.Atan2(dir.x, dir.z);
-                    corridorAngles.Add(angle);
+                    float dist = Vector3.Distance(path[i], endPlazaPos);
+                    if (dist < searchRadius)
+                    {
+                        // Get directions from neighbors that are OUTSIDE the search radius
+                        // These represent actual corridor directions, not internal plaza points
+                        if (i > 0)
+                        {
+                            float prevDist = Vector3.Distance(path[i - 1], endPlazaPos);
+                            if (prevDist >= searchRadius * 0.5f)
+                            {
+                                var dir = path[i - 1] - endPlazaPos;
+                                dir.y = 0;
+                                if (dir.sqrMagnitude > 0.01f)
+                                    corridorAngles.Add(Mathf.Atan2(dir.x, dir.z));
+                            }
+                        }
+                        if (i < path.Count - 1)
+                        {
+                            float nextDist = Vector3.Distance(path[i + 1], endPlazaPos);
+                            if (nextDist >= searchRadius * 0.5f)
+                            {
+                                var dir = path[i + 1] - endPlazaPos;
+                                dir.y = 0;
+                                if (dir.sqrMagnitude > 0.01f)
+                                    corridorAngles.Add(Mathf.Atan2(dir.x, dir.z));
+                            }
+                        }
+                        break; // Only process first point found in this path
+                    }
                 }
             }
 
@@ -1631,12 +1651,12 @@ namespace HolyRail.City
             int buildingCount = Mathf.FloorToInt(circumference / (avgBuildingWidth + BuildingSetback));
             float angleStep = 2 * Mathf.PI / buildingCount;
 
-            // Half-width of corridor gap in radians
-            float corridorGapAngle = Mathf.Atan2(CorridorWidth / 2 + BuildingSetback, ConvergenceEndRadius);
-
             for (int row = 0; row < EndPlazaRingRows; row++)
             {
                 float ringRadius = ConvergenceEndRadius + BuildingSetback + row * (avgBuildingWidth + BuildingSetback);
+
+                // Half-width of corridor gap in radians - calculated per row to account for increasing radius
+                float corridorGapAngle = Mathf.Atan2(CorridorWidth / 2 + BuildingSetback, ringRadius);
 
                 for (int i = 0; i < buildingCount; i++)
                 {
@@ -1689,12 +1709,12 @@ namespace HolyRail.City
             int buildingCount = Mathf.FloorToInt(circumference / (avgBuildingWidth + BuildingSetback));
             float angleStep = 2 * Mathf.PI / buildingCount;
 
-            // Half-width of corridor gap in radians
-            float corridorGapAngle = Mathf.Atan2(CorridorWidth / 2 + BuildingSetback, FinalEndPointRadius);
-
             for (int row = 0; row < FinalPlazaRingRows; row++)
             {
                 float ringRadius = FinalEndPointRadius + BuildingSetback + row * (avgBuildingWidth + BuildingSetback);
+
+                // Half-width of corridor gap in radians - calculated per row to account for increasing radius
+                float corridorGapAngle = Mathf.Atan2(CorridorWidth / 2 + BuildingSetback, ringRadius);
 
                 for (int i = 0; i < buildingCount; i++)
                 {
@@ -1723,7 +1743,7 @@ namespace HolyRail.City
             }
         }
 
-        private void GenerateEndpointPlazaRing(Transform endpoint, Vector3? incomingDir, Vector3? outgoingDir)
+        private void GenerateEndpointPlazaRing(Transform endpoint, List<List<Vector3>> relevantPaths)
         {
             if (endpoint == null || !EnableEndpointPlazas)
                 return;
@@ -1732,29 +1752,61 @@ namespace HolyRail.City
             plazaPos.y = ConvergencePoint.position.y;
             float avgBuildingWidth = (BuildingWidthMin + BuildingWidthMax) * 0.5f;
 
-            // Calculate corridor angles to leave gaps
+            // Calculate corridor angles from path points that pass NEAR the endpoint
+            // Use tolerance-based search to find paths that actually reach this endpoint
             var corridorAngles = new List<float>();
-            if (incomingDir.HasValue)
+            float searchRadius = EndpointRadius + BuildingSpacing; // Search within plaza + margin
+
+            foreach (var path in relevantPaths)
             {
-                var dir = incomingDir.Value;
-                dir.y = 0;
-                corridorAngles.Add(Mathf.Atan2(dir.x, dir.z));
-            }
-            if (outgoingDir.HasValue)
-            {
-                var dir = outgoingDir.Value;
-                dir.y = 0;
-                corridorAngles.Add(Mathf.Atan2(dir.x, dir.z));
+                if (path.Count < 2)
+                    continue;
+
+                // Find points in this path that are within searchRadius of the endpoint
+                for (int i = 0; i < path.Count; i++)
+                {
+                    float dist = Vector3.Distance(path[i], plazaPos);
+                    if (dist < searchRadius)
+                    {
+                        // Get directions from neighbors that are OUTSIDE the search radius
+                        // These represent actual corridor directions, not internal plaza points
+                        if (i > 0)
+                        {
+                            float prevDist = Vector3.Distance(path[i - 1], plazaPos);
+                            if (prevDist >= searchRadius * 0.5f)
+                            {
+                                var dir = path[i - 1] - plazaPos;
+                                dir.y = 0;
+                                if (dir.sqrMagnitude > 0.01f)
+                                    corridorAngles.Add(Mathf.Atan2(dir.x, dir.z));
+                            }
+                        }
+                        if (i < path.Count - 1)
+                        {
+                            float nextDist = Vector3.Distance(path[i + 1], plazaPos);
+                            if (nextDist >= searchRadius * 0.5f)
+                            {
+                                var dir = path[i + 1] - plazaPos;
+                                dir.y = 0;
+                                if (dir.sqrMagnitude > 0.01f)
+                                    corridorAngles.Add(Mathf.Atan2(dir.x, dir.z));
+                            }
+                        }
+                        break; // Only process first point found in this path
+                    }
+                }
             }
 
             float circumference = 2 * Mathf.PI * EndpointRadius;
             int buildingCount = Mathf.FloorToInt(circumference / (avgBuildingWidth + BuildingSetback));
             float angleStep = 2 * Mathf.PI / buildingCount;
-            float corridorGapAngle = Mathf.Atan2(CorridorWidth / 2 + BuildingSetback, EndpointRadius);
 
             for (int row = 0; row < EndpointPlazaRingRows; row++)
             {
                 float ringRadius = EndpointRadius + BuildingSetback + row * (avgBuildingWidth + BuildingSetback);
+
+                // Half-width of corridor gap in radians - calculated per row to account for increasing radius
+                float corridorGapAngle = Mathf.Atan2(CorridorWidth / 2 + BuildingSetback, ringRadius);
 
                 for (int i = 0; i < buildingCount; i++)
                 {

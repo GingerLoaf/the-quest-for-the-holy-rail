@@ -319,7 +319,7 @@ namespace HolyRail.Scripts
 
             if (other.TryGetComponent<EnemyBullet>(out var bullet))
             {
-                EnemySpawner.Instance?.RecycleBullet(bullet);
+                bullet.RecycleSelf();
             }
         }
     }

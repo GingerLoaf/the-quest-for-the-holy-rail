@@ -2725,8 +2725,11 @@ namespace StarterAssets
             var graffitiPool = FindAnyObjectByType<GraffitiSpotPool>();
             graffitiPool?.ResetAllGraffiti();
 
-            // Reset enemies
-            EnemySpawner.Instance?.ResetAllEnemies();
+            // Reset enemies (all spawners)
+            foreach (var spawner in EnemySpawner.AllSpawners)
+            {
+                spawner.ResetAllEnemies();
+            }
             EnemyController.Instance?.ResetToIdle();
 
             // Reset death wall position
@@ -2769,11 +2772,14 @@ namespace StarterAssets
 
         private void TryDeflectBullet()
         {
-            var spawner = EnemySpawner.Instance;
-            if (spawner == null) return;
+            // Gather bullets from all spawners
+            var allBullets = new System.Collections.Generic.List<HolyRail.Scripts.Enemies.EnemyBullet>();
+            foreach (var spawner in EnemySpawner.AllSpawners)
+            {
+                allBullets.AddRange(spawner.GetAllBulletsInParryRange());
+            }
 
-            var bullets = spawner.GetAllBulletsInParryRange();
-            foreach (var bullet in bullets)
+            foreach (var bullet in allBullets)
             {
                 bullet.Deflect();
                 

@@ -98,6 +98,11 @@ namespace HolyRail.Scripts.Enemies
             }
         }
 
+        public void RecycleSelf()
+        {
+            _spawner?.RecycleBullet(this);
+        }
+
         public void OnRecycle()
         {
             _direction = Vector3.zero;
