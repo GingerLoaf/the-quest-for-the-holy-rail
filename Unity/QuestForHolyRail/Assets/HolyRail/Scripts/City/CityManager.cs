@@ -1611,37 +1611,78 @@ namespace HolyRail.City
                 if (path.Count < 2)
                     continue;
 
-                // Find points in this path that are within searchRadius of the endpoint
-                for (int i = 0; i < path.Count; i++)
+                // Detect corridor directions by finding where path crosses the search radius boundary
+                bool wasInside = Vector3.Distance(path[0], endPlazaPos) < searchRadius;
+
+                for (int i = 1; i < path.Count; i++)
                 {
-                    float dist = Vector3.Distance(path[i], endPlazaPos);
-                    if (dist < searchRadius)
+                    bool isInside = Vector3.Distance(path[i], endPlazaPos) < searchRadius;
+
+                    if (wasInside != isInside)
                     {
-                        // Get directions from neighbors that are OUTSIDE the search radius
-                        // These represent actual corridor directions, not internal plaza points
-                        if (i > 0)
+                        // Boundary crossing - use the OUTSIDE point for corridor direction
+                        int outsideIndex = isInside ? i - 1 : i;
+                        var dir = path[outsideIndex] - endPlazaPos;
+                        dir.y = 0;
+
+                        if (dir.sqrMagnitude > 0.01f)
                         {
-                            float prevDist = Vector3.Distance(path[i - 1], endPlazaPos);
-                            if (prevDist >= searchRadius * 0.5f)
+                            float angle = Mathf.Atan2(dir.x, dir.z);
+
+                            // Avoid duplicate angles (within 10 degrees)
+                            bool isDuplicate = false;
+                            foreach (float existing in corridorAngles)
                             {
-                                var dir = path[i - 1] - endPlazaPos;
-                                dir.y = 0;
-                                if (dir.sqrMagnitude > 0.01f)
-                                    corridorAngles.Add(Mathf.Atan2(dir.x, dir.z));
+                                if (Mathf.Abs(Mathf.DeltaAngle(existing * Mathf.Rad2Deg, angle * Mathf.Rad2Deg)) < 10f)
+                                {
+                                    isDuplicate = true;
+                                    break;
+                                }
                             }
+
+                            if (!isDuplicate)
+                                corridorAngles.Add(angle);
                         }
-                        if (i < path.Count - 1)
+                    }
+                    wasInside = isInside;
+                }
+
+                // Handle edge case: path starts inside search radius
+                if (path.Count >= 2 && Vector3.Distance(path[0], endPlazaPos) < searchRadius * 0.5f)
+                {
+                    float nextDist = Vector3.Distance(path[1], endPlazaPos);
+                    if (nextDist >= searchRadius * 0.5f)
+                    {
+                        var dir = path[1] - endPlazaPos;
+                        dir.y = 0;
+                        if (dir.sqrMagnitude > 0.01f)
                         {
-                            float nextDist = Vector3.Distance(path[i + 1], endPlazaPos);
-                            if (nextDist >= searchRadius * 0.5f)
-                            {
-                                var dir = path[i + 1] - endPlazaPos;
-                                dir.y = 0;
-                                if (dir.sqrMagnitude > 0.01f)
-                                    corridorAngles.Add(Mathf.Atan2(dir.x, dir.z));
-                            }
+                            float angle = Mathf.Atan2(dir.x, dir.z);
+                            bool isDuplicate = corridorAngles.Exists(a =>
+                                Mathf.Abs(Mathf.DeltaAngle(a * Mathf.Rad2Deg, angle * Mathf.Rad2Deg)) < 10f);
+                            if (!isDuplicate)
+                                corridorAngles.Add(angle);
                         }
-                        break; // Only process first point found in this path
+                    }
+                }
+
+                // Handle edge case: path ends inside search radius
+                int lastIdx = path.Count - 1;
+                if (path.Count >= 2 && Vector3.Distance(path[lastIdx], endPlazaPos) < searchRadius * 0.5f)
+                {
+                    float prevDist = Vector3.Distance(path[lastIdx - 1], endPlazaPos);
+                    if (prevDist >= searchRadius * 0.5f)
+                    {
+                        var dir = path[lastIdx - 1] - endPlazaPos;
+                        dir.y = 0;
+                        if (dir.sqrMagnitude > 0.01f)
+                        {
+                            float angle = Mathf.Atan2(dir.x, dir.z);
+                            bool isDuplicate = corridorAngles.Exists(a =>
+                                Mathf.Abs(Mathf.DeltaAngle(a * Mathf.Rad2Deg, angle * Mathf.Rad2Deg)) < 10f);
+                            if (!isDuplicate)
+                                corridorAngles.Add(angle);
+                        }
                     }
                 }
             }
@@ -1762,37 +1803,78 @@ namespace HolyRail.City
                 if (path.Count < 2)
                     continue;
 
-                // Find points in this path that are within searchRadius of the endpoint
-                for (int i = 0; i < path.Count; i++)
+                // Detect corridor directions by finding where path crosses the search radius boundary
+                bool wasInside = Vector3.Distance(path[0], plazaPos) < searchRadius;
+
+                for (int i = 1; i < path.Count; i++)
                 {
-                    float dist = Vector3.Distance(path[i], plazaPos);
-                    if (dist < searchRadius)
+                    bool isInside = Vector3.Distance(path[i], plazaPos) < searchRadius;
+
+                    if (wasInside != isInside)
                     {
-                        // Get directions from neighbors that are OUTSIDE the search radius
-                        // These represent actual corridor directions, not internal plaza points
-                        if (i > 0)
+                        // Boundary crossing - use the OUTSIDE point for corridor direction
+                        int outsideIndex = isInside ? i - 1 : i;
+                        var dir = path[outsideIndex] - plazaPos;
+                        dir.y = 0;
+
+                        if (dir.sqrMagnitude > 0.01f)
                         {
-                            float prevDist = Vector3.Distance(path[i - 1], plazaPos);
-                            if (prevDist >= searchRadius * 0.5f)
+                            float angle = Mathf.Atan2(dir.x, dir.z);
+
+                            // Avoid duplicate angles (within 10 degrees)
+                            bool isDuplicate = false;
+                            foreach (float existing in corridorAngles)
                             {
-                                var dir = path[i - 1] - plazaPos;
-                                dir.y = 0;
-                                if (dir.sqrMagnitude > 0.01f)
-                                    corridorAngles.Add(Mathf.Atan2(dir.x, dir.z));
+                                if (Mathf.Abs(Mathf.DeltaAngle(existing * Mathf.Rad2Deg, angle * Mathf.Rad2Deg)) < 10f)
+                                {
+                                    isDuplicate = true;
+                                    break;
+                                }
                             }
+
+                            if (!isDuplicate)
+                                corridorAngles.Add(angle);
                         }
-                        if (i < path.Count - 1)
+                    }
+                    wasInside = isInside;
+                }
+
+                // Handle edge case: path starts inside search radius (at the endpoint)
+                if (path.Count >= 2 && Vector3.Distance(path[0], plazaPos) < searchRadius * 0.5f)
+                {
+                    float nextDist = Vector3.Distance(path[1], plazaPos);
+                    if (nextDist >= searchRadius * 0.5f)
+                    {
+                        var dir = path[1] - plazaPos;
+                        dir.y = 0;
+                        if (dir.sqrMagnitude > 0.01f)
                         {
-                            float nextDist = Vector3.Distance(path[i + 1], plazaPos);
-                            if (nextDist >= searchRadius * 0.5f)
-                            {
-                                var dir = path[i + 1] - plazaPos;
-                                dir.y = 0;
-                                if (dir.sqrMagnitude > 0.01f)
-                                    corridorAngles.Add(Mathf.Atan2(dir.x, dir.z));
-                            }
+                            float angle = Mathf.Atan2(dir.x, dir.z);
+                            bool isDuplicate = corridorAngles.Exists(a =>
+                                Mathf.Abs(Mathf.DeltaAngle(a * Mathf.Rad2Deg, angle * Mathf.Rad2Deg)) < 10f);
+                            if (!isDuplicate)
+                                corridorAngles.Add(angle);
                         }
-                        break; // Only process first point found in this path
+                    }
+                }
+
+                // Handle edge case: path ends inside search radius
+                int lastIdx = path.Count - 1;
+                if (path.Count >= 2 && Vector3.Distance(path[lastIdx], plazaPos) < searchRadius * 0.5f)
+                {
+                    float prevDist = Vector3.Distance(path[lastIdx - 1], plazaPos);
+                    if (prevDist >= searchRadius * 0.5f)
+                    {
+                        var dir = path[lastIdx - 1] - plazaPos;
+                        dir.y = 0;
+                        if (dir.sqrMagnitude > 0.01f)
+                        {
+                            float angle = Mathf.Atan2(dir.x, dir.z);
+                            bool isDuplicate = corridorAngles.Exists(a =>
+                                Mathf.Abs(Mathf.DeltaAngle(a * Mathf.Rad2Deg, angle * Mathf.Rad2Deg)) < 10f);
+                            if (!isDuplicate)
+                                corridorAngles.Add(angle);
+                        }
                     }
                 }
             }

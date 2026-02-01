@@ -23,6 +23,10 @@ Material:
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
+    - _CullEdgeNoiseTex:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _MainTex:
         m_Texture: {fileID: 2800000, guid: fc6291517881847ea825b1aca0b06cfa, type: 3}
         m_Scale: {x: 1, y: 1}
@@ -30,6 +34,11 @@ Material:
     m_Ints: []
     m_Floats:
     - _BaseBrightness: 0.25
+    - _CullDistance: 100
+    - _CullEdgeGlowFalloff: 2
+    - _CullEdgeGlowLength: 10
+    - _CullEdgeNoiseAmount: 0.5
+    - _CullEdgeNoiseScale: 1
     - _EdgeAmount: 1
     - _EdgePower: 1.2
     - _EmissionIntensity: 111
@@ -41,9 +50,10 @@ Material:
     - _TexBlend: 0.513
     - _TexRotation: 0
     m_Colors:
-    - _BaseColor: {r: 0.07355822, g: 0.2610146, b: 0.5377358, a: 1}
+    - _BaseColor: {r: 0.0745098, g: 0.5372549, b: 0.13585605, a: 1}
+    - _CullEdgeGlowColor: {r: 0, g: 1, b: 1, a: 1}
     - _EdgeColor: {r: 0, g: 0, b: 0, a: 1}
-    - _GradientColor: {r: 0.8066038, g: 1, b: 1, a: 1}
+    - _GradientColor: {r: 0.28773582, g: 1, b: 0.46336415, a: 1}
     - _TexScrollSpeed: {r: 0.01, g: 0.03, b: 0, a: 0}
     - _TexTiling: {r: 0.1, g: 0.1, b: 0, a: 0}
     - _UniformGlowColor: {r: 0, g: 0, b: 0, a: 0}
