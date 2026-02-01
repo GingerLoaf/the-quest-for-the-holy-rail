@@ -191,15 +191,28 @@ namespace HolyRail.Scripts.Enemies
             if (!Spawner || !Spawner.Player) return;
 
             var playerTransform = Spawner.Player;
+            Vector3 playerPos = playerTransform.position;
 
-            // Calculate target position: camera + offset in world space
-            Vector3 targetPosition = Camera.main.transform.TransformPoint(_targetOffset);
+            // Calculate target position in WORLD SPACE (not camera-relative)
+            // Bots always stay ahead of player in positive Z world space
+            Vector3 targetPosition = new Vector3(
+                playerPos.x + _targetOffset.x,
+                playerPos.y + _targetOffset.y,
+                playerPos.z + Mathf.Abs(_targetOffset.z)  // Always positive Z offset
+            );
 
-            // Smoothly interpolate toward target (keeps up with any player speed)
+            // If bot has fallen behind player (negative Z relative to player),
+            // boost speed to catch up quickly
             Vector3 currentPos = transform.position;
-            
+            float zDiffFromPlayer = currentPos.z - playerPos.z;
+            bool isBehindPlayer = zDiffFromPlayer < 0f;
+
             var distanceMultiplier = Mathf.Min(Mathf.Max(Vector3.Distance(targetPosition, currentPos), 1f), 3f);
-            var adjustedFollowSpeed = FollowSpeed * distanceMultiplier;
+
+            // Triple speed if behind player to catch up quickly
+            float catchUpMultiplier = isBehindPlayer ? 3f : 1f;
+            var adjustedFollowSpeed = FollowSpeed * distanceMultiplier * catchUpMultiplier;
+
             Vector3 newPosition = Vector3.MoveTowards(currentPos, targetPosition, Time.deltaTime * adjustedFollowSpeed);
 
             // Check for wall collision and resolve
@@ -208,7 +221,7 @@ namespace HolyRail.Scripts.Enemies
             transform.position = newPosition;
 
             // Smoothly rotate to face the player
-            var toPlayer = playerTransform.position - transform.position;
+            var toPlayer = playerPos - transform.position;
             if (toPlayer.sqrMagnitude > 0.001f)
             {
                 Quaternion targetRotation = Quaternion.LookRotation(toPlayer);

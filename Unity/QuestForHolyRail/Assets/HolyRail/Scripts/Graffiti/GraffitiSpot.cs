@@ -73,7 +73,7 @@ namespace HolyRail.Graffiti
 
         private void Update()
         {
-            // Distance-based detection as fallback/supplement to triggers
+            // Distance-based detection as primary method (triggers as backup)
             if (!_isCompleted)
             {
                 var player = ThirdPersonController_RailGrinder.Instance;
@@ -82,24 +82,34 @@ namespace HolyRail.Graffiti
                     float detectionRadius = GetColliderRadius();
                     float distance = Vector3.Distance(transform.position, player.transform.position);
 
-                    // Enter check: only use distance when grinding (triggers don't work during grind)
-                    if (player.IsGrinding && distance <= detectionRadius)
+                    // Enter check: use distance for ALL movement states
+                    if (distance <= detectionRadius)
                     {
                         if (!_isPlayerInRange)
                         {
+                            Debug.Log($"[GraffitiSpot] {name} EnterRange via distance check. Distance={distance:F2}, Radius={detectionRadius:F2}, IsGrinding={player.IsGrinding}");
                             EnterRange(player.gameObject);
                         }
                     }
-                    // Exit check: ALWAYS check distance to ensure we exit even if triggers fail
+                    // Exit check: ALWAYS check distance to ensure we exit properly
                     else if (_isPlayerInRange && distance > detectionRadius * 1.1f)
                     {
+                        Debug.Log($"[GraffitiSpot] {name} ExitRange via distance check. Distance={distance:F2}");
                         ExitRange();
                     }
                 }
             }
 
+            // Debug logging for spray attempts that fail
             if (_isCompleted || !_isPlayerInRange || _playerController == null)
             {
+                if (_playerController != null && _playerController.IsSprayInputPressed && !_isCompleted)
+                {
+                    if (!_isPlayerInRange)
+                    {
+                        Debug.Log($"[GraffitiSpot] {name} Spray blocked: player not in range");
+                    }
+                }
                 return;
             }
 
@@ -155,6 +165,8 @@ namespace HolyRail.Graffiti
 
         private void OnTriggerEnter(Collider other)
         {
+            Debug.Log($"[GraffitiSpot] {name} OnTriggerEnter: {other.name}, Tag={other.tag}, IsCompleted={_isCompleted}");
+
             if (_isCompleted)
             {
                 return;
@@ -168,6 +180,8 @@ namespace HolyRail.Graffiti
 
         private void EnterRange(GameObject playerObject)
         {
+            Debug.Log($"[GraffitiSpot] {name} EnterRange called. IsCompleted={_isCompleted}, IsPlayerInRange={_isPlayerInRange}");
+
             if (_isPlayerInRange)
             {
                 return;
@@ -201,6 +215,8 @@ namespace HolyRail.Graffiti
 
         private void OnTriggerExit(Collider other)
         {
+            Debug.Log($"[GraffitiSpot] {name} OnTriggerExit: {other.name}, Tag={other.tag}");
+
             if (other.CompareTag("Player"))
             {
                 ExitRange();
@@ -209,6 +225,8 @@ namespace HolyRail.Graffiti
 
         private void ExitRange()
         {
+            Debug.Log($"[GraffitiSpot] {name} ExitRange called. IsPlayerInRange={_isPlayerInRange}");
+
             if (!_isPlayerInRange)
             {
                 return;

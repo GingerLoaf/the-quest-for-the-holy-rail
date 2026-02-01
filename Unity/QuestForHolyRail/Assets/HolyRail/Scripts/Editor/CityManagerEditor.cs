@@ -115,6 +115,21 @@ namespace HolyRail.City.Editor
 
             EditorGUILayout.Space(5);
 
+            // Regenerate Graffiti Button (Yellow) - disabled if not generated
+            EditorGUI.BeginDisabledGroup(!manager.IsGenerated);
+            GUI.backgroundColor = new Color(1f, 0.9f, 0.3f);
+            if (GUILayout.Button("Regenerate Graffiti", GUILayout.Height(25)))
+            {
+                Undo.RecordObject(manager, "Regenerate Graffiti");
+                manager.RegenerateGraffiti();
+                EditorUtility.SetDirty(manager);
+                SceneView.RepaintAll();
+            }
+            GUI.backgroundColor = Color.white;
+            EditorGUI.EndDisabledGroup();
+
+            EditorGUILayout.Space(5);
+
             // Clear Button (Red) - disabled if not generated
             EditorGUI.BeginDisabledGroup(!manager.IsGenerated);
             GUI.backgroundColor = new Color(1f, 0.3f, 0.3f);

@@ -1,0 +1,112 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &5363567559823129764
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 6923014344802477748}
+  m_Layer: 0
+  m_Name: Root1
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &6923014344802477748
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5363567559823129764}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 7584329156842915002}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &7584329156842915001
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 7584329156842915002}
+  - component: {fileID: 7584329156842915003}
+  m_Layer: 0
+  m_Name: SpaceColonizationTree
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &7584329156842915002
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7584329156842915001}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 6923014344802477748}
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &7584329156842915003
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7584329156842915001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6241bccd232814042b36cc0929dba2fe, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::HolyRail.Trees.SpaceColonizationTree
+  <Seed>k__BackingField: 12345
+  <MaxIterations>k__BackingField: 100
+  <StepSize>k__BackingField: 0.3
+  <AttractionRadius>k__BackingField: 5
+  <KillRadius>k__BackingField: 0.5
+  <AttractorBounds>k__BackingField:
+    m_Center: {x: 0, y: 5, z: 0}
+    m_Extent: {x: 5, y: 5, z: 5}
+  <AttractorCount>k__BackingField: 1000
+  <RootPoints>k__BackingField:
+  - {fileID: 6923014344802477748}
+  <BiasDirection>k__BackingField: {x: 0, y: 1, z: 0}
+  <BiasStrength>k__BackingField: 0.3
+  <NoiseStrength>k__BackingField: 0.15
+  <NoiseScale>k__BackingField: 0.5
+  <BranchDensity>k__BackingField: 0.5
+  <MinBranchSpreadAngle>k__BackingField: 20
+  <MinBranchSeparation>k__BackingField: 1
+  <MinSplineNodeCount>k__BackingField: 2
+  <MinSplineWorldLength>k__BackingField: 1
+  <EnablePathSmoothing>k__BackingField: 1
+  <SmoothingTolerance>k__BackingField: 0.15
+  <TaperedMaterial>k__BackingField: {fileID: 2100000, guid: 5beb3f89a94404447bc95ff93cc34a50, type: 2}
+  <TubeRadius>k__BackingField: 0.08
+  <TubeSides>k__BackingField: 6
+  <SegmentsPerUnit>k__BackingField: 4
+  <EnableEndTapering>k__BackingField: 1
+  <EndTaperDistance>k__BackingField: 1.5
+  <DistanceTaperStrength>k__BackingField: 0.3
+  <ShowAttractors>k__BackingField: 1
+  <ShowNodes>k__BackingField: 1
+  <AttractorColor>k__BackingField: {r: 0, g: 1, b: 1, a: 1}
+  <NodeColor>k__BackingField: {r: 0, g: 1, b: 0, a: 1}
+  <GizmoSize>k__BackingField: 0.1

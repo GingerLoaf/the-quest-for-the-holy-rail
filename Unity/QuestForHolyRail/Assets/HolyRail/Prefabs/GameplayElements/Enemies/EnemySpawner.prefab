@@ -11,6 +11,7 @@ GameObject:
   - component: {fileID: 4779066903883341362}
   - component: {fileID: 4468446077880731019}
   - component: {fileID: 2683270118720389793}
+  - component: {fileID: 2857831605260537837}
   m_Layer: 0
   m_Name: EnemySpawner
   m_TagString: Untagged
@@ -48,10 +49,12 @@ MonoBehaviour:
   <EnemyTypes>k__BackingField:
   - Prefab: {fileID: 1000000000000000000, guid: f1f2f3f4f5f67890f1f2f3f4f5f67890, type: 3}
     PoolSize: 55
-    SpawnWeight: 1
+    SpawnWeight: 0
+    MaxActiveEnemies: 3
   - Prefab: {fileID: 1000000000000000000, guid: 5c6f1f06333d7bf49865e6230569b0e5, type: 3}
     PoolSize: 55
-    SpawnWeight: 0.506
+    SpawnWeight: 0
+    MaxActiveEnemies: 3
   <BulletPrefab>k__BackingField: {fileID: 2000000000000000000, guid: a2a3a4a5a6a78901a2a3a4a5a6a78901, type: 3}
   <Player>k__BackingField: {fileID: 0}
   <SpawnOffsetZ>k__BackingField: 18.5
@@ -71,7 +74,6 @@ MonoBehaviour:
   <ShooterBotFiringRange>k__BackingField: 30
   <UseConstantSpawnMode>k__BackingField: 1
   <SpawnInterval>k__BackingField: 4
-  <MaxActiveEnemies>k__BackingField: 7
   <ParryThresholdDistance>k__BackingField: 1.5
   <ParryWindowDuration>k__BackingField: 1
   <ExplosionEffectPrefab>k__BackingField: {fileID: 8735397256515887857, guid: 49c6e6b1e379e324db8528492827b459, type: 3}
@@ -82,7 +84,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 6558885053267105923}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: f27746cddf45d46239c7228c18364f89, type: 3}
   m_Name: 
@@ -91,3 +93,24 @@ MonoBehaviour:
   - {fileID: 11400000, guid: 915a8009d5ca4461d8b51256a02525b5, type: 2}
   _planCooldown: 3
   _debugLogging: 1
+--- !u!65 &2857831605260537837
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6558885053267105923}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 1
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 13.5, y: 18.8, z: 10.34}
+  m_Center: {x: 0, y: 9.4, z: 0}

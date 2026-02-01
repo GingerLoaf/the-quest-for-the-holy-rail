@@ -5,19 +5,33 @@ using HolyRail.Scripts;
 
 namespace HolyRail.Scripts.Enemies
 {
-    // Refactored for EnemyController - auto-spawning removed
+    // Trigger-based zone spawner - spawns enemies when player enters trigger zone
     [System.Serializable]
     public class SpawnableEnemy
     {
         public GameObject Prefab;
-        public int PoolSize;
+        public int PoolSize;              // Total count to spawn for this spawner instance
         [Range(0f, 1f)]
         public float SpawnWeight;
+        public int MaxActiveEnemies = 3;  // Max concurrent for this enemy type
     }
 
+    [RequireComponent(typeof(BoxCollider))]
     public class EnemySpawner : MonoBehaviour
     {
-        public static EnemySpawner Instance { get; private set; }
+        // Static registry of all active spawners for cross-spawner queries
+        private static readonly List<EnemySpawner> _allSpawners = new();
+
+        /// <summary>
+        /// Gets the first active spawner (for backwards compatibility with systems expecting a single spawner).
+        /// Prefer using static methods like GetAllBulletsInParryRangeFromAll() for multi-spawner support.
+        /// </summary>
+        public static EnemySpawner Instance => _allSpawners.Count > 0 ? _allSpawners[0] : null;
+
+        /// <summary>
+        /// Gets all active EnemySpawner instances in the scene.
+        /// </summary>
+        public static IReadOnlyList<EnemySpawner> AllSpawners => _allSpawners;
 
         [Header("Prefab References")]
         [field: Tooltip("A list of all enemy types that can be spawned.")]
@@ -107,9 +121,6 @@ namespace HolyRail.Scripts.Enemies
         [field: SerializeField]
         public float SpawnInterval { get; private set; } = 2f;
 
-        [field: Tooltip("Maximum number of active enemies in constant mode")]
-        [field: SerializeField]
-        public int MaxActiveEnemies { get; private set; } = 7;
 
         [Header("Parry Settings")]
         [field: Tooltip("Distance from player at which bullets can be parried (should be larger than hit radius)")]
@@ -132,16 +143,30 @@ namespace HolyRail.Scripts.Enemies
         private float _totalSpawnWeight;
         private float _spawnTimer;
 
+        // Trigger-based spawning tracking
+        private bool _hasBeenTriggered = false;
+        private Dictionary<GameObject, int> _totalSpawnedCount;
+        private Dictionary<GameObject, int> _activeCount;
+
         private void Awake()
         {
-            if (Instance != null && Instance != this)
-            {
-                Destroy(gameObject);
-                return;
-            }
-            Instance = this;
+            // Register this spawner in the static registry
+            _allSpawners.Add(this);
 
             InitializePools();
+
+            // Ensure BoxCollider is set as trigger
+            var boxCollider = GetComponent<BoxCollider>();
+            if (boxCollider != null)
+            {
+                boxCollider.isTrigger = true;
+            }
+        }
+
+        private void OnDestroy()
+        {
+            // Unregister this spawner from the static registry
+            _allSpawners.Remove(this);
         }
 
         private void Start()
@@ -158,11 +183,11 @@ namespace HolyRail.Scripts.Enemies
             }
         }
 
-        private void OnDestroy()
+        private void OnTriggerEnter(Collider other)
         {
-            if (Instance == this)
+            if (other.CompareTag("Player"))
             {
-                Instance = null;
+                _hasBeenTriggered = true;
             }
         }
 
@@ -249,6 +274,8 @@ namespace HolyRail.Scripts.Enemies
             _instanceIdToPrefabMap = new Dictionary<int, GameObject>();
             _bulletPool = new Queue<EnemyBullet>();
             _activeBots = new List<BaseEnemyBot>();
+            _totalSpawnedCount = new Dictionary<GameObject, int>();
+            _activeCount = new Dictionary<GameObject, int>();
 
             foreach (var enemyType in EnemyTypes)
             {
@@ -313,16 +340,30 @@ namespace HolyRail.Scripts.Enemies
                 bullet.SetInParryThreshold(dist <= ParryThresholdDistance);
             }
 
-            // Constant spawn mode
-            if (UseConstantSpawnMode)
+            // Constant spawn mode - only spawns after player enters trigger zone
+            if (UseConstantSpawnMode && _hasBeenTriggered)
             {
                 _spawnTimer -= Time.deltaTime;
-                if (_spawnTimer <= 0f && _activeBots.Count < MaxActiveEnemies)
+                if (_spawnTimer <= 0f && CanSpawnAny())
                 {
                     SpawnBot();
                     _spawnTimer = SpawnInterval;
                 }
             }
+        }
+
+        private bool CanSpawnAny()
+        {
+            foreach (var enemyType in EnemyTypes)
+            {
+                if (enemyType.SpawnWeight <= 0f) continue;
+                var prefab = enemyType.Prefab;
+                int spawned = _totalSpawnedCount.GetValueOrDefault(prefab, 0);
+                int active = _activeCount.GetValueOrDefault(prefab, 0);
+                if (spawned < enemyType.PoolSize && active < enemyType.MaxActiveEnemies)
+                    return true;
+            }
+            return false;
         }
 
         public void SpawnBot()
@@ -363,6 +404,10 @@ namespace HolyRail.Scripts.Enemies
 
             var bot = pool.Dequeue();
             _instanceIdToPrefabMap.Add(bot.gameObject.GetInstanceID(), chosenPrefab);
+
+            // Track spawn counts for trigger-based limits
+            _totalSpawnedCount[chosenPrefab] = _totalSpawnedCount.GetValueOrDefault(chosenPrefab, 0) + 1;
+            _activeCount[chosenPrefab] = _activeCount.GetValueOrDefault(chosenPrefab, 0) + 1;
 
             var spawnPos = GetRandomSpawnPosition();
             bot.transform.position = spawnPos;
@@ -410,26 +455,41 @@ namespace HolyRail.Scripts.Enemies
 
         private GameObject GetRandomEnemyPrefab()
         {
-            if (_totalSpawnWeight <= 0) return null;
-
-            float randomValue = Random.Range(0, _totalSpawnWeight);
-            float cumulativeWeight = 0f;
+            // Build list of spawnable types (not exhausted, not at max active)
+            var available = new List<(SpawnableEnemy enemy, float weight)>();
+            float totalWeight = 0f;
 
             foreach (var enemyType in EnemyTypes)
             {
-                cumulativeWeight += enemyType.SpawnWeight;
-                if (randomValue < cumulativeWeight)
+                if (enemyType.SpawnWeight <= 0f) continue;
+                var prefab = enemyType.Prefab;
+                int spawned = _totalSpawnedCount.GetValueOrDefault(prefab, 0);
+                int active = _activeCount.GetValueOrDefault(prefab, 0);
+
+                if (spawned < enemyType.PoolSize && active < enemyType.MaxActiveEnemies)
                 {
-                    return enemyType.Prefab;
+                    available.Add((enemyType, enemyType.SpawnWeight));
+                    totalWeight += enemyType.SpawnWeight;
                 }
             }
 
-            return null; // Should not happen if weights are set up correctly
+            if (available.Count == 0 || totalWeight <= 0) return null;
+
+            float randomValue = Random.Range(0, totalWeight);
+            float cumulative = 0f;
+            foreach (var (enemy, weight) in available)
+            {
+                cumulative += weight;
+                if (randomValue < cumulative)
+                    return enemy.Prefab;
+            }
+            return null;
         }
 
         private Vector3 GetRandomSpawnPosition()
         {
-            float x = Random.Range(-SpawnWidth / 2f, SpawnWidth / 2f);
+            // Spawn box tracks with player position - always spawns ahead of player
+            float x = Player.position.x + Random.Range(-SpawnWidth / 2f, SpawnWidth / 2f);
             float y = Player.position.y + Random.Range(0f, SpawnHeight);
             float z = Player.position.z + SpawnOffsetZ + Random.Range(0f, SpawnDepth);
 
@@ -461,6 +521,9 @@ namespace HolyRail.Scripts.Enemies
             int instanceId = bot.gameObject.GetInstanceID();
             if (_instanceIdToPrefabMap.TryGetValue(instanceId, out GameObject prefab))
             {
+                // Decrement active count for trigger-based limits
+                _activeCount[prefab] = Mathf.Max(0, _activeCount.GetValueOrDefault(prefab, 0) - 1);
+
                 _enemyPools[prefab].Enqueue(bot);
                 _instanceIdToPrefabMap.Remove(instanceId);
             }
@@ -578,8 +641,11 @@ namespace HolyRail.Scripts.Enemies
                 }
             }
 
-            // Reset spawn timer
+            // Reset spawn timer and trigger-based tracking
             _spawnTimer = SpawnInterval;
+            _hasBeenTriggered = false;
+            _totalSpawnedCount?.Clear();
+            _activeCount?.Clear();
 
             Debug.Log("[EnemySpawner] Reset all enemies and bullets for soft reset.");
         }
@@ -610,9 +676,9 @@ namespace HolyRail.Scripts.Enemies
                 return;
             }
 
-            // Draw spawn volume
+            // Draw spawn volume (tracks with player)
             Gizmos.color = new Color(1f, 0f, 0f, 0.3f);
-            var center = new Vector3(0f, Player.position.y + SpawnHeight / 2f, Player.position.z + SpawnOffsetZ + SpawnDepth / 2f);
+            var center = new Vector3(Player.position.x, Player.position.y + SpawnHeight / 2f, Player.position.z + SpawnOffsetZ + SpawnDepth / 2f);
             var size = new Vector3(SpawnWidth, SpawnHeight, SpawnDepth);
             Gizmos.DrawCube(center, size);
             Gizmos.color = Color.red;

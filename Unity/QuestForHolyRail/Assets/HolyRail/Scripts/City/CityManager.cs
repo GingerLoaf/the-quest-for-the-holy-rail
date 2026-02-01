@@ -52,6 +52,7 @@ namespace HolyRail.City
         [field: SerializeField] public float RampAngleMin { get; set; } = 10f;
         [field: SerializeField] public float RampAngleMax { get; set; } = 35f;
         [field: SerializeField] public float RampYOffset { get; set; } = -1f;
+        [field: SerializeField] public float RampBuildingPadding { get; set; } = 2f;
 
         [Header("Billboard Settings")]
         [field: SerializeField] public bool EnableBillboards { get; set; } = true;
@@ -1174,9 +1175,15 @@ namespace HolyRail.City
 
                         var tangent = (path[pathIndex + 1] - path[pathIndex]).normalized;
 
+                        // Random offset left/right within corridor
+                        var right = Vector3.Cross(Vector3.up, tangent).normalized;
+                        float halfWidth = CorridorWidth * 0.5f;
+                        rampPos += right * RandomRange(-halfWidth, halfWidth);
+
                         if (TryPlaceRamp(rampPos, tangent))
                         {
-                            accumulatedDistance = rampSpacing;
+                            // Random spacing for next ramp
+                            accumulatedDistance = rampSpacing * RandomRange(0.5f, 1.5f);
                             segmentProgress += accumulatedDistance;
                         }
                         else
@@ -1508,16 +1515,22 @@ namespace HolyRail.City
                         // Calculate tangent at this point
                         var tangent = (path[pathIndex + 1] - path[pathIndex]).normalized;
 
+                        // Random offset left/right within corridor
+                        var right = Vector3.Cross(Vector3.up, tangent).normalized;
+                        float halfWidth = CorridorWidth * 0.5f;
+                        rampPos += right * RandomRange(-halfWidth, halfWidth);
+
                         // Try to place ramp
                         if (TryPlaceRamp(rampPos, tangent))
                         {
-                            accumulatedDistance = rampSpacing;
+                            // Random spacing for next ramp
+                            accumulatedDistance = rampSpacing * RandomRange(0.5f, 1.5f);
                             segmentProgress += accumulatedDistance;
                         }
                         else
                         {
                             // Skip this position, try next
-                            accumulatedDistance = rampSpacing * 0.5f;
+                            accumulatedDistance = rampSpacing * RandomRange(0.3f, 0.7f);
                             segmentProgress += accumulatedDistance;
                         }
                         break;
@@ -1568,18 +1581,18 @@ namespace HolyRail.City
                 rampPosition.z + rampRun * 0.5f + rampPadding
             );
 
-            // Check if ramp intersects any buildings
+            // Check if ramp intersects any buildings (with building padding)
             foreach (var building in _generatedBuildings)
             {
                 var buildingMin = new Vector3(
-                    building.Position.x - building.Scale.x * 0.5f,
+                    building.Position.x - building.Scale.x * 0.5f - RampBuildingPadding,
                     0f,
-                    building.Position.z - building.Scale.z * 0.5f
+                    building.Position.z - building.Scale.z * 0.5f - RampBuildingPadding
                 );
                 var buildingMax = new Vector3(
-                    building.Position.x + building.Scale.x * 0.5f,
+                    building.Position.x + building.Scale.x * 0.5f + RampBuildingPadding,
                     building.Position.y + building.Scale.y * 0.5f,
-                    building.Position.z + building.Scale.z * 0.5f
+                    building.Position.z + building.Scale.z * 0.5f + RampBuildingPadding
                 );
 
                 if (rampMin.x < buildingMax.x && rampMax.x > buildingMin.x &&
@@ -2040,10 +2053,14 @@ namespace HolyRail.City
                 position += billboardRight * xOffset; // Horizontal offset along billboard
                 position.y = yPos;
 
+                // Left side (normal.x > 0, facing right): Y rotation = 0
+                // Right side (normal.x < 0, facing left): Y rotation = 180
+                var rotation = billboard.Normal.x > 0 ? Quaternion.identity : Quaternion.Euler(0, 180, 0);
+
                 var graffiti = new GraffitiSpotData
                 {
                     Position = position,
-                    Rotation = Quaternion.identity,
+                    Rotation = rotation,
                     Normal = -billboard.Normal, // Direction decal projects (into billboard)
                     BillboardIndex = billboardIndex
                 };
@@ -2290,10 +2307,13 @@ namespace HolyRail.City
 
             _debugWallSuccesses++;
 
+            // Left side: Y rotation = 0, Right side: Y rotation = 180
+            var rotation = placeOnLeft ? Quaternion.identity : Quaternion.Euler(0, 180, 0);
+
             var graffiti = new GraffitiSpotData
             {
                 Position = position,
-                Rotation = Quaternion.identity,
+                Rotation = rotation,
                 Normal = -surfaceNormal, // Normal points INTO wall
                 BillboardIndex = -1 // Not on a billboard
             };
@@ -2778,6 +2798,92 @@ namespace HolyRail.City
                 if (pool.CityManager == this)
                 {
                     pool.Clear();
+                }
+            }
+        }
+
+        [ContextMenu("Regenerate Graffiti")]
+        public void RegenerateGraffiti()
+        {
+            if (!IsGenerated)
+            {
+                Debug.LogWarning("CityManager: Cannot regenerate graffiti - city not generated yet.");
+                return;
+            }
+
+            // Clear existing graffiti
+            _generatedGraffitiSpots.Clear();
+
+            // Clear graffiti pools
+            var graffitiPools = FindObjectsByType<GraffitiSpotPool>(FindObjectsSortMode.None);
+            foreach (var pool in graffitiPools)
+            {
+                if (pool.CityManager == this)
+                {
+                    pool.Clear();
+                }
+            }
+
+            if (!EnableGraffiti)
+            {
+                Debug.Log("CityManager: Graffiti is disabled.");
+                return;
+            }
+
+            // Reset debug counters
+            _debugWallAttempts = 0;
+            _debugWallSuccesses = 0;
+            _debugBuildingSearchFails = 0;
+            _debugWidthFails = 0;
+            _debugHeightFails = 0;
+            _debugYRangeFails = 0;
+            _debugSpacingFails = 0;
+            _debugCornerFails = 0;
+            _debugBuildingIntersectFails = 0;
+            _debugBillboardOverlapFails = 0;
+
+            // Regenerate graffiti using existing path data
+            if (UseSplineBasedGraffiti && VineGenerator != null)
+            {
+                GenerateSplineBasedGraffitiSpots();
+            }
+            else
+            {
+                if (_corridorPathA.Count > 0)
+                {
+                    if (IsLoopMode)
+                    {
+                        int pathMidpointIndex = _corridorPathA.Count / 2;
+                        _loopState.HalfA.GraffitiStartIndex = _generatedGraffitiSpots.Count;
+                        GenerateCorridorGraffitiSpotsForHalf(_corridorPathA, 0, pathMidpointIndex);
+                        _loopState.HalfA.GraffitiCount = _generatedGraffitiSpots.Count - _loopState.HalfA.GraffitiStartIndex;
+
+                        _loopState.HalfB.GraffitiStartIndex = _generatedGraffitiSpots.Count;
+                        GenerateCorridorGraffitiSpotsForHalf(_corridorPathA, pathMidpointIndex, _corridorPathA.Count);
+                        _loopState.HalfB.GraffitiCount = _generatedGraffitiSpots.Count - _loopState.HalfB.GraffitiStartIndex;
+                    }
+                    else
+                    {
+                        GenerateCorridorGraffitiSpots(_corridorPathA);
+                    }
+                }
+                if (_corridorPathB.Count > 0)
+                    GenerateCorridorGraffitiSpots(_corridorPathB);
+                if (_corridorPathB_ToBC.Count > 0)
+                    GenerateCorridorGraffitiSpots(_corridorPathB_ToBC);
+                if (_corridorPathC.Count > 0)
+                    GenerateCorridorGraffitiSpots(_corridorPathC);
+            }
+
+            Debug.Log($"CityManager: Graffiti regenerated. Total graffiti spots: {_generatedGraffitiSpots.Count}");
+            Debug.Log($"CityManager Graffiti Debug: Wall attempts={_debugWallAttempts}, successes={_debugWallSuccesses}");
+
+            // Reinitialize graffiti pools
+            foreach (var pool in graffitiPools)
+            {
+                if (pool.CityManager == this)
+                {
+                    pool.Initialize();
                 }
             }
         }
