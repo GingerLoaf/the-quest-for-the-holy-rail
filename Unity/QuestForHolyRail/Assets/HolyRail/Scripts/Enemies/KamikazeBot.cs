@@ -134,7 +134,8 @@ namespace HolyRail.Scripts.Enemies
 
         protected override void UpdateMovement()
         {
-            if (!Spawner || !Spawner.Player)
+            var player = GetPlayer();
+            if (player == null)
             {
                 return;
             }
@@ -148,23 +149,23 @@ namespace HolyRail.Scripts.Enemies
             // Cache player controller reference
             if (_playerController == null)
             {
-                _playerController = Spawner.Player.GetComponent<StarterAssets.ThirdPersonController_RailGrinder>();
+                _playerController = player.GetComponent<StarterAssets.ThirdPersonController_RailGrinder>();
             }
 
             // Check if player is grinding
             bool playerIsGrinding = _playerController != null && _playerController.IsGrinding;
 
             // Calculate target position - lead the player when grinding for head-on attacks
-            Vector3 targetPosition = Spawner.Player.position;
+            Vector3 targetPosition = player.position;
             if (playerIsGrinding)
             {
                 // Target ahead of the player in their movement direction
-                Vector3 playerForward = Spawner.Player.forward;
-                targetPosition = Spawner.Player.position + playerForward * GrindingLeadDistance;
+                Vector3 playerForward = player.forward;
+                targetPosition = player.position + playerForward * GrindingLeadDistance;
             }
 
             Vector3 direction = (targetPosition - transform.position).normalized;
-            float distanceToPlayer = Vector3.Distance(transform.position, Spawner.Player.position);
+            float distanceToPlayer = Vector3.Distance(transform.position, player.position);
 
             // Only move if we're farther than minimum distance
             if (distanceToPlayer > MinDistanceFromPlayer)
@@ -223,9 +224,10 @@ namespace HolyRail.Scripts.Enemies
 
             if (_isExploding) return;
             if (_isIdle) return;
-            if (!Spawner || !Spawner.Player) return;
+            var player = GetPlayer();
+            if (player == null) return;
 
-            float distanceToPlayer = Vector3.Distance(transform.position, Spawner.Player.position);
+            float distanceToPlayer = Vector3.Distance(transform.position, player.position);
 
             // Check if we should arm the countdown
             if (!_isArmed && distanceToPlayer <= TriggerDistance)
@@ -351,16 +353,25 @@ namespace HolyRail.Scripts.Enemies
                 Debug.LogWarning($"KamikazeBot [{name}]: ExplosionRadiusPrefab is null!");
             }
 
-            if (Spawner && Spawner.Player)
+            var player = GetPlayer();
+            if (player != null)
             {
-                float distanceToPlayer = Vector3.Distance(transform.position, Spawner.Player.position);
+                float distanceToPlayer = Vector3.Distance(transform.position, player.position);
                 if (distanceToPlayer <= ExplosionRadius)
                 {
                     GameSessionManager.Instance.TakeDamage(DamageAmount);
                 }
             }
 
-            if(Spawner) Spawner.RecycleBot(this, true);
+            if (Spawner != null)
+            {
+                Spawner.RecycleBot(this, true);
+            }
+            else
+            {
+                // Pre-placed bot without spawner - just destroy
+                Destroy(gameObject);
+            }
         }
 
         public override void OnCommandReceived(string command, params object[] args)

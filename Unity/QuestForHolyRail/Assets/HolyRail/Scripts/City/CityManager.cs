@@ -2435,6 +2435,9 @@ namespace HolyRail.City
         {
             if (VineGenerator == null) return;
 
+            // Ensure spline cache is valid (may have been lost after domain reload)
+            VineGenerator.EnsureSplineCacheValid();
+
             var candidates = VineGenerator.GetGraffitiCandidatePositions(
                 _generatedBuildings,
                 maxWallDistance: CorridorWidth * 0.5f

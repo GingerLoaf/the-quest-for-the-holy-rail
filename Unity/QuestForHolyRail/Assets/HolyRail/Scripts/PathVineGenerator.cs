@@ -42,8 +42,9 @@ namespace HolyRail
         [SerializeField] private float _groundPadding = 1f;
         [SerializeField] private LayerMask _rampLayer;
         [SerializeField] private float _rampPadding = 2f;
-        [SerializeField] private LayerMask _buildingLayer;
         [SerializeField] private float _buildingPadding = 3f;
+
+        private IReadOnlyList<BuildingData> _buildingCache;
 
         [Header("Waypoint Exclusion")]
         [SerializeField] private bool _excludeConvergencePoint = true;
@@ -129,6 +130,8 @@ namespace HolyRail
                 Debug.LogError("PathVineGenerator: Spline parent reference is not set.");
                 return;
             }
+
+            _buildingCache = _cityManager.Buildings;
 
             GenerateVinesForCorridor(_cityManager.CorridorPathA, "A");
             GenerateVinesForCorridor(_cityManager.CorridorPathB, "B");
@@ -504,22 +507,22 @@ namespace HolyRail
                 }
             }
 
-            // Building avoidance - sphere cast to push away from buildings
-            if (_buildingLayer != 0)
+            // Building avoidance - check against building data directly
+            if (_buildingCache != null && _buildingCache.Count > 0)
             {
-                if (Physics.CheckSphere(point, _buildingPadding, _buildingLayer))
+                foreach (var building in _buildingCache)
                 {
-                    // Find nearest building surface and push away
-                    var colliders = Physics.OverlapSphere(point, _buildingPadding * 2f, _buildingLayer);
-                    foreach (var col in colliders)
+                    float dist = CalculateDistanceToBuildingSurface(point, building);
+                    if (dist < _buildingPadding && dist > -_buildingPadding)
                     {
-                        var closest = col.ClosestPoint(point);
-                        var toPoint = point - closest;
-                        float dist = toPoint.magnitude;
-                        if (dist < _buildingPadding && dist > 0.001f)
+                        // Push away from building - find direction
+                        var toPoint = point - building.Position;
+                        toPoint.y = 0;
+                        if (toPoint.sqrMagnitude > 0.001f)
                         {
-                            // Push point away from building surface
-                            point = closest + toPoint.normalized * _buildingPadding;
+                            point = building.Position + toPoint.normalized *
+                                (GetBuildingHalfExtent(building, toPoint.normalized) + _buildingPadding);
+                            point.y = Mathf.Max(point.y, _groundPadding);
                         }
                     }
                 }
@@ -677,16 +680,29 @@ namespace HolyRail
 
         private bool CheckSegmentIntersectsBuildings(Vector3 a, Vector3 b)
         {
-            if (_buildingLayer == 0)
+            if (_buildingCache == null || _buildingCache.Count == 0)
                 return false;
 
-            var direction = b - a;
-            float distance = direction.magnitude;
-            if (distance < 0.001f)
-                return false;
+            // Check midpoint and endpoints against buildings
+            var mid = (a + b) * 0.5f;
+            foreach (var building in _buildingCache)
+            {
+                if (CalculateDistanceToBuildingSurface(a, building) < _buildingPadding * 0.5f)
+                    return true;
+                if (CalculateDistanceToBuildingSurface(b, building) < _buildingPadding * 0.5f)
+                    return true;
+                if (CalculateDistanceToBuildingSurface(mid, building) < _buildingPadding * 0.5f)
+                    return true;
+            }
+            return false;
+        }
 
-            // SphereCast along segment to detect building intersections
-            return Physics.SphereCast(a, _buildingPadding * 0.5f, direction.normalized, out _, distance, _buildingLayer);
+        private float GetBuildingHalfExtent(BuildingData building, Vector3 direction)
+        {
+            var localDir = Quaternion.Inverse(building.Rotation) * direction;
+            float halfWidth = building.Scale.x * 0.5f;
+            float halfDepth = building.Scale.z * 0.5f;
+            return Mathf.Abs(localDir.x) * halfWidth + Mathf.Abs(localDir.z) * halfDepth;
         }
 
         private SplineContainer CreateSpline(List<Vector3> points, string name)
@@ -731,7 +747,21 @@ namespace HolyRail
             _cachedSplineSamples.Clear();
             _totalSplineLength = 0f;
 
-            foreach (var vineGO in _generatedVines)
+            // If _generatedVines is empty (e.g., after domain reload), rebuild from _splineParent children
+            IEnumerable<GameObject> vinesToProcess = _generatedVines;
+            if (_generatedVines.Count == 0 && _splineParent != null)
+            {
+                var childVines = new List<GameObject>();
+                for (int i = 0; i < _splineParent.childCount; i++)
+                {
+                    var child = _splineParent.GetChild(i).gameObject;
+                    if (child.GetComponent<SplineContainer>() != null)
+                        childVines.Add(child);
+                }
+                vinesToProcess = childVines;
+            }
+
+            foreach (var vineGO in vinesToProcess)
             {
                 var container = vineGO.GetComponent<SplineContainer>();
                 if (container == null) continue;
@@ -752,6 +782,12 @@ namespace HolyRail
 
                 _totalSplineLength += length;
             }
+        }
+
+        public void EnsureSplineCacheValid()
+        {
+            if (_cachedSplineSamples.Count == 0)
+                CacheSplineSamples();
         }
 
         public List<GraffitiCandidate> GetGraffitiCandidatePositions(

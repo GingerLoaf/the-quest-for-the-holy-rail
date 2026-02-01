@@ -13,6 +13,7 @@ namespace HolyRail.Scripts.UI
         private const float AxisThreshold = 0.5f;
 
         [field: SerializeField] public AudioClip TransitionSfx { get; private set; }
+        [field: SerializeField] public AudioClip NavigationSfx { get; private set; }
         [field: SerializeField] public Image FadeOverlay { get; private set; }
         [field: SerializeField] public AudioSource MusicSource { get; private set; }
         [field: SerializeField] public Text NewGameText { get; private set; }
@@ -85,9 +86,15 @@ namespace HolyRail.Scripts.UI
 
             if (direction != 0)
             {
+                int previousIndex = _selectedIndex;
                 _selectedIndex = Mathf.Clamp(_selectedIndex + direction, 0, 1);
                 _lastInputTime = Time.time;
-                UpdateMenuVisuals();
+
+                if (_selectedIndex != previousIndex)
+                {
+                    PlayNavigationSound();
+                    UpdateMenuVisuals();
+                }
             }
         }
 
@@ -115,6 +122,23 @@ namespace HolyRail.Scripts.UI
                 NewGameText.color = _selectedIndex == 0 ? SelectedColor : UnselectedColor;
             if (QuitText != null)
                 QuitText.color = _selectedIndex == 1 ? SelectedColor : UnselectedColor;
+        }
+
+        private void PlayNavigationSound()
+        {
+            if (NavigationSfx != null && _sfxSource != null)
+            {
+                _sfxSource.clip = NavigationSfx;
+                _sfxSource.Play();
+                StartCoroutine(StopSoundAfterDuration(0.3f));
+            }
+        }
+
+        private IEnumerator StopSoundAfterDuration(float duration)
+        {
+            yield return new WaitForSeconds(duration);
+            if (_sfxSource != null && _sfxSource.clip == NavigationSfx)
+                _sfxSource.Stop();
         }
 
         private void ExecuteSelectedOption()

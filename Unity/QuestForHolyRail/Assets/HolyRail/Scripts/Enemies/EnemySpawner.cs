@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using System.Linq;
 using HolyRail.Scripts;
+using StarterAssets;
 
 namespace HolyRail.Scripts.Enemies
 {
@@ -334,9 +335,18 @@ namespace HolyRail.Scripts.Enemies
 
         private void Update()
         {
+            // Auto-find Player reference if null
             if (!Player)
             {
-                return;
+                var playerController = ThirdPersonController_RailGrinder.Instance;
+                if (playerController != null)
+                {
+                    Player = playerController.transform;
+                }
+                else
+                {
+                    return; // Still no player, skip this frame
+                }
             }
 
             // Check bullet proximity for parry threshold
@@ -345,6 +355,16 @@ namespace HolyRail.Scripts.Enemies
                 if (bullet == null || !bullet.gameObject.activeInHierarchy) continue;
                 float dist = Vector3.Distance(bullet.transform.position, Player.position);
                 bullet.SetInParryThreshold(dist <= ParryThresholdDistance);
+            }
+
+            // Distance-based trigger fallback (works when CharacterController disabled during grinding)
+            if (!_hasBeenTriggered && UseConstantSpawnMode)
+            {
+                if (Player.position.z >= transform.position.z)
+                {
+                    _hasBeenTriggered = true;
+                    Debug.Log("[EnemySpawner] Triggered via distance check");
+                }
             }
 
             // Constant spawn mode - only spawns after player enters trigger zone

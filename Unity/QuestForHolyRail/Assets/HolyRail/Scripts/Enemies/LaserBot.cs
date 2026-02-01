@@ -142,25 +142,12 @@ namespace HolyRail.Scripts.Enemies
 
         private void CachePlayerReference()
         {
-            if (Spawner != null && Spawner.Player != null)
+            // Use the base class GetPlayer() which handles both spawned and pre-placed bots
+            _playerTransform = GetPlayer();
+            if (_playerTransform != null)
             {
-                _playerTransform = Spawner.Player;
                 _playerController = _playerTransform.GetComponent<ThirdPersonController_RailGrinder>();
-                if (_playerTransform != null)
-                {
-                    _playerLastPosition = _playerTransform.position;
-                }
-            }
-            else
-            {
-                // Fallback: find player by tag
-                var playerObj = GameObject.FindGameObjectWithTag("Player");
-                if (playerObj != null)
-                {
-                    _playerTransform = playerObj.transform;
-                    _playerController = playerObj.GetComponent<ThirdPersonController_RailGrinder>();
-                    _playerLastPosition = _playerTransform.position;
-                }
+                _playerLastPosition = _playerTransform.position;
             }
         }
 

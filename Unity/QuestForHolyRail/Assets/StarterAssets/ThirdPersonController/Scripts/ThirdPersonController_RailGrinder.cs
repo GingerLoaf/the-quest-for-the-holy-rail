@@ -304,7 +304,7 @@ namespace StarterAssets
         public AudioClip[] SkateLandingAudioClips;
         [Tooltip("Looping sound effect while skating")]
         public AudioClip SkateLoopAudioClip;
-        [Range(0, 1)] public float SkateAudioVolume = 0.5f;
+        [Range(0, 1)] public float SkateAudioVolume = 0.05f;
 
         [Space(10)]
         [Tooltip("The height the player can jump")]

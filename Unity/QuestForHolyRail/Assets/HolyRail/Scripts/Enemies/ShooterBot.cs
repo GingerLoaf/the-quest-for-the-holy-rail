@@ -120,9 +120,10 @@ namespace HolyRail.Scripts.Enemies
             Debug.Log($"ShooterBot [{name}]: Spawned with FireRate={EffectiveFireRate}s, FiringRange={EffectiveFiringRange}m, InitialTimer={_fireTimer:F2}s");
 
             // Calculate target offset for following the player
-            if (Spawner && Spawner.Player)
+            var player = GetPlayer();
+            if (player != null)
             {
-                Vector3 playerPos = Spawner.Player.position;
+                Vector3 playerPos = player.position;
                 Vector3 spawnPos = transform.position;
 
                 // Randomize target position within offset ranges
@@ -172,9 +173,10 @@ namespace HolyRail.Scripts.Enemies
             _fireTimer = EffectiveFireRate * Random.Range(0.5f, 1.5f);
 
             // Calculate target offset for following the player
-            if (Spawner && Spawner.Player)
+            var player = GetPlayer();
+            if (player != null)
             {
-                Vector3 playerPos = Spawner.Player.position;
+                Vector3 playerPos = player.position;
 
                 // Randomize target position within offset ranges
                 _targetOffset = new Vector3(
@@ -209,9 +211,10 @@ namespace HolyRail.Scripts.Enemies
 
         protected override void UpdateMovement()
         {
-            if (!Spawner || !Spawner.Player) return;
+            var player = GetPlayer();
+            if (player == null) return;
 
-            Vector3 playerPos = Spawner.Player.position;
+            Vector3 playerPos = player.position;
             Vector3 currentPos = transform.position;
 
             // Target position: constant Z distance ahead, follow player X, maintain Y offset
@@ -301,9 +304,10 @@ namespace HolyRail.Scripts.Enemies
 
         private void UpdatePlayerVelocity()
         {
-            if (!Spawner || !Spawner.Player) return;
+            var player = GetPlayer();
+            if (player == null) return;
 
-            Vector3 currentPos = Spawner.Player.position;
+            Vector3 currentPos = player.position;
             if (Time.deltaTime > 0.0001f)
             {
                 // Calculate velocity from position delta (works during grinding/wall-riding)
@@ -366,16 +370,8 @@ namespace HolyRail.Scripts.Enemies
 
         private void UpdateFiring()
         {
-            if (!Spawner)
-            {
-                Debug.LogWarning("ShooterBot: No Spawner reference!");
-                return;
-            }
-            if (!Spawner.Player)
-            {
-                Debug.LogWarning("ShooterBot: No Player reference on Spawner!");
-                return;
-            }
+            var player = GetPlayer();
+            if (player == null) return;
 
             if (_botState != BotState.Active)
             {
@@ -401,7 +397,7 @@ namespace HolyRail.Scripts.Enemies
             // Start warning blink 0.75s before firing (only if not already blinking)
             if (_fireTimer <= 0.3f && !_isBlinking)
             {
-                float dist = Vector3.Distance(transform.position, Spawner.Player.position);
+                float dist = Vector3.Distance(transform.position, player.position);
                 if (dist <= effectiveRange)
                 {
                     StartWarningBlink();
@@ -416,7 +412,7 @@ namespace HolyRail.Scripts.Enemies
 
             if (_fireTimer <= 0f)
             {
-                var playerPos = Spawner.Player.position;
+                var playerPos = player.position;
                 float distanceToPlayer = Vector3.Distance(transform.position, playerPos);
 
                 Debug.Log($"ShooterBot [{name}]: Fire timer elapsed. Distance={distanceToPlayer:F1}m, FiringRange={effectiveRange}m, MyPos={transform.position}");

@@ -1,3 +1,4 @@
+using StarterAssets;
 using UnityEngine;
 
 namespace HolyRail.Scripts.Enemies
@@ -13,6 +14,9 @@ namespace HolyRail.Scripts.Enemies
         }
 
         protected EnemySpawner Spawner;
+
+        // Cached player reference for bots that don't have a Spawner (pre-placed bots)
+        private Transform _cachedPlayerTransform;
 
         [Header("Bot Settings")]
         [field: Tooltip("Collision radius of the bot for physics queries")]
@@ -82,6 +86,42 @@ namespace HolyRail.Scripts.Enemies
             Spawner = spawner;
         }
 
+        /// <summary>
+        /// Gets the player transform, checking Spawner first then falling back to
+        /// finding the player directly. Works for both spawned and pre-placed bots.
+        /// </summary>
+        protected Transform GetPlayer()
+        {
+            // Try Spawner first (for spawned bots)
+            if (Spawner != null && Spawner.Player != null)
+            {
+                _cachedPlayerTransform = Spawner.Player;
+                return _cachedPlayerTransform;
+            }
+
+            // Return cached reference if valid
+            if (_cachedPlayerTransform != null)
+            {
+                return _cachedPlayerTransform;
+            }
+
+            // Fallback to finding player via ThirdPersonController singleton
+            if (ThirdPersonController_RailGrinder.Instance != null)
+            {
+                _cachedPlayerTransform = ThirdPersonController_RailGrinder.Instance.transform;
+                return _cachedPlayerTransform;
+            }
+
+            // Last resort: find by tag
+            var playerObj = GameObject.FindGameObjectWithTag("Player");
+            if (playerObj != null)
+            {
+                _cachedPlayerTransform = playerObj.transform;
+            }
+
+            return _cachedPlayerTransform;
+        }
+
         protected virtual void Awake()
         {
             MainCamera = Camera.main;
@@ -148,12 +188,13 @@ namespace HolyRail.Scripts.Enemies
             _transitionStartWorldPos = transform.position;
 
             // Target is offscreen behind player (negative Z in world space)
-            if (Spawner != null && Spawner.Player != null)
+            var player = GetPlayer();
+            if (player != null)
             {
                 _transitionTargetWorldPos = new Vector3(
                     transform.position.x,
                     transform.position.y,
-                    Spawner.Player.position.z - 30f
+                    player.position.z - 30f
                 );
             }
             else
@@ -190,6 +231,7 @@ namespace HolyRail.Scripts.Enemies
 
             _transitionProgress += Time.deltaTime;
             var progressFraction = Mathf.Clamp01(_transitionProgress / _transitionDuration);
+            var player = GetPlayer();
 
             if (progressFraction >= 1f)
             {
@@ -197,9 +239,9 @@ namespace HolyRail.Scripts.Enemies
                 Vector3 finalPos = _transitionTargetWorldPos;
 
                 // Ensure final position is ahead of player in world Z
-                if (Spawner != null && Spawner.Player != null && _botState == BotState.Entering)
+                if (player != null && _botState == BotState.Entering)
                 {
-                    float playerZ = Spawner.Player.position.z;
+                    float playerZ = player.position.z;
                     if (finalPos.z < playerZ + 5f)
                     {
                         finalPos.z = playerZ + 10f;
@@ -234,9 +276,9 @@ namespace HolyRail.Scripts.Enemies
                 Vector3 newPos = Vector3.Lerp(_transitionStartWorldPos, _transitionTargetWorldPos, progressFraction);
 
                 // During entering transition, ensure bot stays ahead of player
-                if (_botState == BotState.Entering && Spawner != null && Spawner.Player != null)
+                if (_botState == BotState.Entering && player != null)
                 {
-                    float playerZ = Spawner.Player.position.z;
+                    float playerZ = player.position.z;
                     if (newPos.z < playerZ + 2f)
                     {
                         newPos.z = playerZ + 2f;
@@ -258,11 +300,8 @@ namespace HolyRail.Scripts.Enemies
                 case "MoveTo":
                     if (args.Length > 0 && args[0] is Vector3 pos)
                     {
-                        if (Spawner != null && Spawner.Player != null)
-                        {
-                            _targetOffset = pos;
-                            Debug.Log($"ShooterBot [{name}]: Received 'MoveTo' command, new offset={_targetOffset}");
-                        }
+                        _targetOffset = pos;
+                        Debug.Log($"BaseEnemyBot [{name}]: Received 'MoveTo' command, new offset={_targetOffset}");
                     }
 
                     break;
@@ -271,16 +310,8 @@ namespace HolyRail.Scripts.Enemies
 
         protected virtual void Update()
         {
-            if (!Spawner)
-            {
-                Debug.LogWarning($"[{name}] BLOCKED: Spawner is null!");
-                return;
-            }
-            if (!Spawner.Player)
-            {
-                Debug.LogWarning($"[{name}] BLOCKED: Spawner.Player is null!");
-                return;
-            }
+            // Pre-placed bots work without a Spawner - they find the player directly via GetPlayer()
+            // No longer blocking on null Spawner or Spawner.Player
 
             UpdateTransition();
 
@@ -288,14 +319,6 @@ namespace HolyRail.Scripts.Enemies
             if (_botState == BotState.Active)
             {
                 UpdateMovement();
-            }
-            else
-            {
-                // Log every second to avoid spam
-                if (Time.frameCount % 60 == 0)
-                {
-                    Debug.Log($"[{name}] State={_botState}, waiting for Active state");
-                }
             }
         }
 
