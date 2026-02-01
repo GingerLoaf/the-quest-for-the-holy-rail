@@ -19,6 +19,10 @@ Shader "HolyRail/AdditiveScrollingNoise"
         _NoiseScale2 ("Noise Scale 2", Vector) = (1, 1, 0, 0)
         _NoiseScrollSpeed2 ("Noise Scroll Speed 2", Vector) = (-0.3, 0.1, 0, 0)
 
+        [Header(Fresnel)]
+        _FresnelPower ("Fresnel Power", Float) = 2.0
+        _FresnelIntensity ("Fresnel Intensity", Float) = 1.0
+
         [Header(Output)]
         _Intensity ("Intensity", Float) = 1.0
     }
@@ -50,6 +54,7 @@ Shader "HolyRail/AdditiveScrollingNoise"
             struct Attributes
             {
                 float4 positionOS : POSITION;
+                float3 normalOS : NORMAL;
                 float2 uv : TEXCOORD0;
             };
 
@@ -58,6 +63,8 @@ Shader "HolyRail/AdditiveScrollingNoise"
                 float4 positionCS : SV_POSITION;
                 float2 uv : TEXCOORD0;
                 float gradientFactor : TEXCOORD1;
+                float3 normalWS : TEXCOORD2;
+                float3 viewDirWS : TEXCOORD3;
             };
 
             TEXTURE2D(_NoiseTex1);
@@ -75,6 +82,8 @@ Shader "HolyRail/AdditiveScrollingNoise"
                 float4 _NoiseScrollSpeed1;
                 float4 _NoiseScale2;
                 float4 _NoiseScrollSpeed2;
+                float _FresnelPower;
+                float _FresnelIntensity;
                 float _Intensity;
             CBUFFER_END
 
@@ -82,8 +91,13 @@ Shader "HolyRail/AdditiveScrollingNoise"
             {
                 Varyings output;
 
-                output.positionCS = TransformObjectToHClip(input.positionOS.xyz);
+                float3 positionWS = TransformObjectToWorld(input.positionOS.xyz);
+                output.positionCS = TransformWorldToHClip(positionWS);
                 output.uv = input.uv;
+
+                // World space normal and view direction for fresnel
+                output.normalWS = TransformObjectToWorldNormal(input.normalOS);
+                output.viewDirWS = GetWorldSpaceNormalizeViewDir(positionWS);
 
                 // Calculate gradient factor based on toggle
                 if (_UseObjectSpaceGradient > 0.5)
@@ -114,13 +128,19 @@ Shader "HolyRail/AdditiveScrollingNoise"
                 // Combine noise by multiplication
                 half combinedNoise = noise1 * noise2;
 
+                // Calculate fresnel
+                float3 normalWS = normalize(input.normalWS);
+                float3 viewDirWS = normalize(input.viewDirWS);
+                float NdotV = dot(normalWS, viewDirWS);
+                float fresnel = pow(1.0 - saturate(NdotV), _FresnelPower) * _FresnelIntensity;
+
                 // Lerp between bottom and top color based on gradient factor
                 half4 gradientColor = lerp(_BottomColor, _TopColor, input.gradientFactor);
 
-                // Final output: gradient color * combined noise * intensity
+                // Final output: gradient color * combined noise * fresnel * intensity (no saturation)
                 half4 finalColor;
-                finalColor.rgb = gradientColor.rgb * combinedNoise * _Intensity;
-                finalColor.a = gradientColor.a * combinedNoise;
+                finalColor.rgb = gradientColor.rgb * combinedNoise * fresnel * _Intensity;
+                finalColor.a = gradientColor.a * combinedNoise * fresnel;
 
                 return finalColor;
             }
