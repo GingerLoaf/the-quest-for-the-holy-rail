@@ -63,7 +63,7 @@ namespace HolyRail.Trees
 
         [Header("Smoothing")]
         [field: SerializeField] public bool EnablePathSmoothing { get; set; } = true;
-        [field: SerializeField, Range(0f, 1f)] public float SmoothingTolerance { get; set; } = 0.3f;
+        [field: SerializeField, Range(0f, 2f)] public float SmoothingTolerance { get; set; } = 0.8f;
 
         [Header("Material")]
         [field: SerializeField] public Material TaperedMaterial { get; set; }

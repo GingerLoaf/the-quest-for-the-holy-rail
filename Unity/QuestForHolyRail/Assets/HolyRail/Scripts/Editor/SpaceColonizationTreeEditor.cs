@@ -108,7 +108,9 @@ namespace HolyRail.Trees.Editor
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Visualization", EditorStyles.boldLabel);
             EditorGUILayout.PropertyField(serializedObject.FindProperty("<ShowAttractors>k__BackingField"));
-            EditorGUILayout.PropertyField(serializedObject.FindProperty("<TreeColor>k__BackingField"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("<ShowNodes>k__BackingField"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("<NodeColor>k__BackingField"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("<LineColor>k__BackingField"));
             EditorGUILayout.PropertyField(serializedObject.FindProperty("<AttractorColor>k__BackingField"));
             EditorGUILayout.PropertyField(serializedObject.FindProperty("<GizmoSize>k__BackingField"));
 

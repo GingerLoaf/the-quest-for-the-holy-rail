@@ -80,24 +80,24 @@ namespace HolyRail.Scripts.Enemies
         private static readonly int EmissionColorID = Shader.PropertyToID("_EmissionColor");
         private static readonly int FresnelPowerID = Shader.PropertyToID("_FresnelPower");
 
-        // Fresnel power values for warning flash
-        private const float WarningFresnelPower = 0.1f;
-        private const float NormalFresnelPower = 6f;
+        // Warning blink values
+        private const float BlinkFresnelOn = 6f;
+        private const float BlinkEmissionOn = 8f;
+        private const float BlinkOnDuration = 0.15f; // How long the "on" part lasts
 
-        // Update-based flash system (replaces coroutines for reliability)
-        private bool _isFlashing;
-        private float _flashTimer;
-        private bool _isFresnelFlash; // true = fresnel warning flash, false = emission fire flash
+        // Blink state
+        private bool _isBlinking;
+        private float _blinkTimer;
 
         protected override void Awake()
         {
             base.Awake();
-            // Find the first enabled renderer (skip disabled placeholder renderers)
-            foreach (var r in GetComponentsInChildren<Renderer>())
+            // Find the SF_Drone_ZR7 SkinnedMeshRenderer specifically for the warning blink effect
+            foreach (var smr in GetComponentsInChildren<SkinnedMeshRenderer>())
             {
-                if (r.enabled)
+                if (smr.gameObject.name == "SF_Drone_ZR7")
                 {
-                    _renderer = r;
+                    _renderer = smr;
                     break;
                 }
             }
@@ -301,8 +301,8 @@ namespace HolyRail.Scripts.Enemies
         public override void OnRecycle()
         {
             base.OnRecycle();
-            _isFlashing = false;
-            _flashTimer = 0f;
+            _isBlinking = false;
+            _blinkTimer = 0f;
             // Clear property block to reset to shared material defaults
             if (_renderer != null && _propertyBlock != null)
             {
@@ -319,17 +319,17 @@ namespace HolyRail.Scripts.Enemies
 
         public void ResetFireTimer()
         {
-            // Use actual fire rate, with FlashDuration as minimum (for warning flash)
-            _fireTimer = Mathf.Max(EffectiveFireRate, FlashDuration);
+            // Use actual fire rate, with 0.75s minimum (for warning blink)
+            _fireTimer = Mathf.Max(EffectiveFireRate, 0.5f);
             Debug.Log($"ShooterBot [{name}]: Fire timer reset, will fire in {_fireTimer}s");
         }
 
         protected override void Update()
         {
             base.Update();
-            
+
             UpdatePlayerVelocity();
-            UpdateFlash();
+            UpdateBlink();
             UpdateFiring();
         }
 
@@ -346,31 +346,31 @@ namespace HolyRail.Scripts.Enemies
             _lastPlayerPos = currentPos;
         }
 
-        private void UpdateFlash()
+        private void UpdateBlink()
         {
-            if (!_isFlashing) return;
+            if (!_isBlinking) return;
+            if (_renderer == null || _propertyBlock == null) return;
 
-            _flashTimer -= Time.deltaTime;
-            if (_flashTimer <= 0f)
+            _blinkTimer -= Time.deltaTime;
+            if (_blinkTimer <= 0f)
             {
-                // Flash complete - clear property block to return to material's default state
-                _isFlashing = false;
-                if (_renderer != null && _propertyBlock != null)
-                {
-                    _propertyBlock.Clear();
-                    _renderer.SetPropertyBlock(_propertyBlock);
-                }
+                // Blink complete - return to normal
+                _isBlinking = false;
+                _propertyBlock.Clear();
+                _renderer.SetPropertyBlock(_propertyBlock);
             }
         }
 
-        private void StartWarningFlash(float duration)
+        private void StartWarningBlink()
         {
             if (_renderer == null || _propertyBlock == null) return;
 
-            _isFlashing = true;
-            _flashTimer = duration;
-            _isFresnelFlash = true;
-            _propertyBlock.SetFloat(FresnelPowerID, WarningFresnelPower);
+            _isBlinking = true;
+            _blinkTimer = BlinkOnDuration;
+
+            // Set blink ON state
+            _propertyBlock.SetFloat(FresnelPowerID, BlinkFresnelOn);
+            _propertyBlock.SetColor(EmissionColorID, Color.white * BlinkEmissionOn);
             _renderer.SetPropertyBlock(_propertyBlock);
         }
 
@@ -378,10 +378,10 @@ namespace HolyRail.Scripts.Enemies
         {
             if (_renderer == null || _propertyBlock == null) return;
 
-            _isFlashing = true;
-            _flashTimer = duration;
-            _isFresnelFlash = false;
-            _propertyBlock.Clear(); // Clear fresnel override first
+            // Fire flash uses the same blink system
+            _isBlinking = true;
+            _blinkTimer = duration;
+            _propertyBlock.Clear();
             _propertyBlock.SetColor(EmissionColorID, color);
             _renderer.SetPropertyBlock(_propertyBlock);
         }
@@ -420,15 +420,15 @@ namespace HolyRail.Scripts.Enemies
             float effectiveRange = EffectiveFiringRange;
             float effectiveRate = EffectiveFireRate;
 
-            // Start warning flash before firing (only if not already flashing)
-            if (_fireTimer <= FlashDuration && !_isFlashing)
+            // Start warning blink 0.75s before firing (only if not already blinking)
+            if (_fireTimer <= 0.5f && !_isBlinking)
             {
                 float dist = Vector3.Distance(transform.position, Spawner.Player.position);
                 if (dist <= effectiveRange)
                 {
-                    StartWarningFlash(FlashDuration);
+                    StartWarningBlink();
 
-                    // Play warning sound (limited to 0.5 seconds)
+                    // Play warning sound
                     if (_warningClip != null)
                     {
                         PlayClipForDuration(_warningClip, 0.5f, _warningAudioVolume);

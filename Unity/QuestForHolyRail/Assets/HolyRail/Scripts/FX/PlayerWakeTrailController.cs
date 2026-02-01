@@ -48,6 +48,18 @@ namespace HolyRail.FX
         {
             InitializeWakePositions();
 
+            // Record initial wake position when re-enabled during play mode
+            // This prevents black ground if OnEnable runs after player teleport
+            if (Application.isPlaying && PlayerTransform != null)
+            {
+                var pos = PlayerTransform.position;
+                _lastRecordedPosition = pos;
+                _lastFramePosition = pos;
+                _hasRecordedFirst = true;
+                RecordWakePosition(pos);
+                UpdateShaderProperties(pos);
+            }
+
 #if UNITY_EDITOR
             if (!Application.isPlaying)
             {
@@ -59,8 +71,6 @@ namespace HolyRail.FX
 
         private void OnDisable()
         {
-            Debug.Log($"[WakeTrail] OnDisable called! Setting _WakePositionCount to 0. Stack:\n{System.Environment.StackTrace}");
-
             Shader.SetGlobalInt(WakePositionCountId, 0);
             Shader.SetGlobalFloat(PlayerSpeedId, 0f);
 
@@ -148,6 +158,11 @@ namespace HolyRail.FX
             if (!Application.isPlaying)
                 return;
 
+            // Skip when game is paused to avoid division by zero in speed calculation
+            // This prevents shader corruption when Time.timeScale = 0 (e.g., during death)
+            if (Time.deltaTime <= 0f)
+                return;
+
             if (PlayerTransform == null)
                 return;
 
@@ -216,8 +231,6 @@ namespace HolyRail.FX
 
         private void UpdateShaderProperties(Vector3 playerPos)
         {
-            Debug.Log($"[WakeTrail] UpdateShaderProperties: _wakeCount={_wakeCount}");
-
             Shader.SetGlobalVectorArray(WakePositionsId, _wakePositions);
             Shader.SetGlobalInt(WakePositionCountId, _wakeCount);
             Shader.SetGlobalVector(PlayerPositionXZId, new Vector2(playerPos.x, playerPos.z));
@@ -230,34 +243,46 @@ namespace HolyRail.FX
         /// Resets the wake trail when player teleports (e.g., on respawn).
         /// Call this to prevent visual artifacts from position discontinuity.
         /// </summary>
-        public void ResetWake()
+        /// <param name="overridePosition">Optional position to use if PlayerTransform is not available.</param>
+        public void ResetWake(Vector3? overridePosition = null)
         {
-            Debug.Log($"[WakeTrail] ResetWake called. PlayerTransform null: {PlayerTransform == null}");
-
             InitializeWakePositions();
             _smoothedSpeed = 0f;
             _currentSpeed = 0f;
 
+            // Try to get a valid position
+            Vector3 resetPosition;
+
             if (PlayerTransform != null)
             {
-                var pos = PlayerTransform.position;
-                _lastRecordedPosition = pos;
-                _lastFramePosition = pos;
-                _hasRecordedFirst = true;
-
-                // Record initial wake position so shader has valid data (count > 0)
-                // This prevents the ground from turning black on respawn
-                RecordWakePosition(pos);
-
-                Debug.Log($"[WakeTrail] After RecordWakePosition: _wakeCount={_wakeCount}, pos={pos}");
-
-                UpdateShaderProperties(pos);
+                resetPosition = PlayerTransform.position;
+            }
+            else if (overridePosition.HasValue)
+            {
+                resetPosition = overridePosition.Value;
             }
             else
             {
-                Debug.LogWarning("[WakeTrail] ResetWake: PlayerTransform is NULL!");
-                _hasRecordedFirst = false;
+                // Fallback: try to find player by tag
+                var player = GameObject.FindGameObjectWithTag("Player");
+                if (player != null)
+                {
+                    PlayerTransform = player.transform;
+                    resetPosition = player.transform.position;
+                }
+                else
+                {
+                    // Last resort: use this transform's position and update shader to prevent black floor
+                    resetPosition = transform.position;
+                    Debug.LogWarning("PlayerWakeTrailController.ResetWake: Could not find player, using fallback position");
+                }
             }
+
+            _lastRecordedPosition = resetPosition;
+            _lastFramePosition = resetPosition;
+            _hasRecordedFirst = true;
+            RecordWakePosition(resetPosition);
+            UpdateShaderProperties(resetPosition);
         }
 
 #if UNITY_EDITOR

@@ -2609,8 +2609,10 @@ namespace StarterAssets
             _controller.enabled = true;
 
             // Reset wake trail to prevent visual artifacts from teleport
-            var wakeController = FindAnyObjectByType<PlayerWakeTrailController>();
-            wakeController?.ResetWake();
+            // Use FindObjectsInactive.Include because the player (and wake controller) may be temporarily disabled during death
+            // Pass spawn position as fallback in case PlayerTransform reference is temporarily null
+            var wakeController = FindAnyObjectByType<PlayerWakeTrailController>(FindObjectsInactive.Include);
+            wakeController?.ResetWake(_spawnPosition);
 
             // Reset velocity and movement state
             _verticalVelocity = 0f;
