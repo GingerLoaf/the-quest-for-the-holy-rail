@@ -43,8 +43,8 @@ float _AttractionRadius;
 float _KillRadius;
 float _NoiseStrength;
 float _NoiseScale;
-float3 _BiasVector1;
-float3 _BiasVector2;
+float3 _BiasDirection;
+float _BiasStrength;
 float _MinBranchSpreadAngle;  // In radians
 
 // PCG hash for deterministic random
@@ -180,8 +180,7 @@ void Grow(uint3 id : SV_DispatchThreadID)
     );
 
     // Blend in direction bias
-    float3 combinedBias = _BiasVector1 + _BiasVector2;
-    avgDirection = avgDirection + combinedBias;
+    avgDirection = avgDirection + _BiasDirection * _BiasStrength;
     avgDirection = normalize(avgDirection);
 
     // Add deterministic noise

@@ -19,6 +19,22 @@ MonoBehaviour:
     characterAtlas: {fileID: 2800000, guid: b02416e2c7e7041d89598abd50602e28, type: 3}
     noiseTexture: {fileID: 2800000, guid: 36fa1695dcdc54c46b37b636c177fdf8, type: 3}
     wipeNoiseTexture: {fileID: 2800000, guid: 3846aa72649f63d448aa52d6cf1d1a9d, type: 3}
+--- !u!114 &5678901234567890123
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dddf7e015ed484f95a75c443f3e9f520, type: 3}
+  m_Name: GradientFogRenderFeature
+  m_EditorClassIdentifier:
+  m_Active: 1
+  settings:
+    renderPassEvent: 9
+    fogMaterial: {fileID: 2100000, guid: 85439d37e016349aea68b81b5f349e86, type: 2}
 --- !u!114 &-8472619384726193847
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -85,6 +101,7 @@ MonoBehaviour:
   - {fileID: -4388276215733514893}
   - {fileID: -8472619384726193847}
   - {fileID: 1234567890123456789}
+  - {fileID: 5678901234567890123}
   m_RendererFeatureMap: ad6b866f10d7b46c738de82808b619c3
   m_UseNativeRenderPass: 1
   xrSystemData: {fileID: 0}

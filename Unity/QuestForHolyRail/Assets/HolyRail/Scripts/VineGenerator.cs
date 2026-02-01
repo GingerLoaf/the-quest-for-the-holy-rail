@@ -159,8 +159,8 @@ namespace HolyRail.Vines
         [field: SerializeField, Range(0.5f, 3f)] public float BillboardAvoidanceDistance { get; set; } = 1.5f;
 
         [Header("Direction Bias")]
-        [field: SerializeField] public Vector3 BiasVector1 { get; set; } = new Vector3(0f, 0f, 0.5f);
-        [field: SerializeField] public Vector3 BiasVector2 { get; set; } = new Vector3(0f, 0.2f, 0f);
+        [field: SerializeField] public Vector3 BiasDirection { get; set; } = new Vector3(0f, 0f, 1f);
+        [field: SerializeField, Range(0f, 1f)] public float BiasStrength { get; set; } = 0.5f;
 
         [Header("Branch Spread")]
         [field: SerializeField, Range(0f, 90f)]
@@ -586,11 +586,9 @@ namespace HolyRail.Vines
             }
 
             // 5. Apply direction bias
-            Vector3 combinedBias = BiasVector1 + BiasVector2;
-            float biasMagnitude = combinedBias.magnitude;
-            if (biasMagnitude > 0.01f)
+            if (BiasStrength > 0.01f && BiasDirection.sqrMagnitude > 0.01f)
             {
-                Vector3 biasDir = combinedBias.normalized;
+                Vector3 biasDir = BiasDirection.normalized;
                 Vector3 toPosition = position - prevPosition;
                 float biasComponent = Vector3.Dot(toPosition, biasDir);
 
@@ -598,7 +596,7 @@ namespace HolyRail.Vines
                 if (biasComponent < 0)
                 {
                     // Add push proportional to how much we're going against the bias
-                    position += biasDir * (-biasComponent * biasMagnitude);
+                    position += biasDir * (-biasComponent * BiasStrength);
                 }
             }
 
@@ -876,8 +874,7 @@ namespace HolyRail.Vines
                         Vector3 travelDir = (position - prevPosition).normalized;
                         if (travelDir.sqrMagnitude < 0.01f)
                         {
-                            Vector3 combinedBias = BiasVector1 + BiasVector2;
-                            travelDir = combinedBias.sqrMagnitude > 0.01f ? combinedBias.normalized : Vector3.forward;
+                            travelDir = BiasDirection.sqrMagnitude > 0.01f ? BiasDirection.normalized : Vector3.forward;
                         }
 
                         // Very gradual cubic falloff - start curving early, gentle push
@@ -1059,9 +1056,8 @@ namespace HolyRail.Vines
             _generatedNodes.Clear();
             _generatedAttractors.Clear();  // Free mode doesn't use attractors
 
-            // Compute forward direction from combined bias
-            Vector3 combinedBias = BiasVector1 + BiasVector2;
-            var forward = combinedBias.sqrMagnitude > 0.01f ? combinedBias.normalized : Vector3.forward;
+            // Compute forward direction from bias
+            var forward = BiasDirection.sqrMagnitude > 0.01f ? BiasDirection.normalized : Vector3.forward;
             // Handle case where forward is parallel to up
             var right = Mathf.Abs(Vector3.Dot(forward, Vector3.up)) > 0.99f
                 ? Vector3.Cross(Vector3.forward, forward).normalized
@@ -2335,8 +2331,8 @@ namespace HolyRail.Vines
                 VineComputeShader.SetFloat("_KillRadius", KillRadius);
                 VineComputeShader.SetFloat("_NoiseStrength", NoiseStrength);
                 VineComputeShader.SetFloat("_NoiseScale", NoiseScale);
-                VineComputeShader.SetVector("_BiasVector1", BiasVector1);
-                VineComputeShader.SetVector("_BiasVector2", BiasVector2);
+                VineComputeShader.SetVector("_BiasDirection", BiasDirection.normalized);
+                VineComputeShader.SetFloat("_BiasStrength", BiasStrength);
                 VineComputeShader.SetFloat("_MinBranchSpreadAngle", MinBranchSpreadAngle * Mathf.Deg2Rad);
 
                 // Run algorithm iterations
@@ -2919,6 +2915,10 @@ namespace HolyRail.Vines
                         meshController.showHideDuration = GlowShowHideDuration;
                         meshController.glowMix = 0f;
                         meshController.glowLocation = 0f;
+                    }
+                    else
+                    {
+                        Debug.Log($"VineGenerator: Path {pathIdx} skipped mesh generation - only {uniqueNodeCount} unique node(s) after deduplication (meshStartIndex={meshStartIndex}, path.Count={path.Count})");
                     }
                 }
 

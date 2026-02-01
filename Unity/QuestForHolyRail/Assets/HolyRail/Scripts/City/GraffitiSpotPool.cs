@@ -4,42 +4,22 @@ using UnityEngine;
 
 namespace HolyRail.City
 {
+    /// <summary>
+    /// Spawns and manages all graffiti spots in the city.
+    /// Spots are spawned once and persist - no pooling or activation radius.
+    /// </summary>
     [ExecuteInEditMode]
     public class GraffitiSpotPool : MonoBehaviour
     {
-        private const float DefaultCellSize = 50f;
-
+        private const string ContainerName = "GraffitiSpots";
         [Header("References")]
         [field: SerializeField] public CityManager CityManager { get; private set; }
-        [field: SerializeField] public Transform TrackingTarget { get; private set; }
 
-        [Header("Pool Settings")]
-        [field: SerializeField] public float ActivationRadius { get; private set; } = 100f;
-        [field: SerializeField] public float UpdateDistanceThreshold { get; private set; } = 25f;
-
-        [Header("Debug")]
-        [field: SerializeField] public bool ShowDebugGizmos { get; private set; }
-
-        private static readonly Vector3 InactivePosition = new(0, -1000f, 0);
-
-        private SpatialGrid<GraffitiSpotData> _spatialGrid;
-        private readonly List<GraffitiSpot> _pool = new();
-        private readonly List<int> _activeIndices = new();
-        private readonly List<int> _queryResults = new();
-        private readonly HashSet<int> _assignedSpotIndices = new();
-
-        // Tracks which graffiti spots have been completed by the player.
-        // DESIGN NOTE: This set is intentionally never cleared across Clear() calls or leapfrogs
-        // to preserve player completion state during gameplay. In extended sessions with loop mode,
-        // this may grow unboundedly (~12 bytes per entry). For typical gameplay this is negligible,
-        // but consider implementing a size cap with LRU eviction if extended sessions cause issues.
-        private readonly HashSet<int> _completedSpotIndices = new();
-        private GameObject _poolContainer;
-        private Vector3 _lastUpdatePosition;
+        private readonly List<GraffitiSpot> _spots = new();
+        private GameObject _container;
         private bool _initialized;
 
-        public int ActiveSpotCount { get; private set; }
-        public int TotalPoolSize => _pool.Count;
+        public int SpotCount => _spots.Count;
         public bool Initialized => _initialized;
 
         private void Start()
@@ -52,33 +32,14 @@ namespace HolyRail.City
 
         private void Update()
         {
-            // Initialize if needed
-            if (!_initialized)
+            if (!_initialized && CityManager != null && CityManager.HasGraffitiData)
             {
-                if (CityManager != null && CityManager.HasGraffitiData)
-                    Initialize();
+                Initialize();
             }
 
-            // Detect when graffiti data has been cleared
             if (_initialized && (CityManager == null || !CityManager.HasGraffitiData))
             {
                 Clear();
-                return;
-            }
-
-            if (TrackingTarget == null)
-                return;
-
-            var currentPosition = TrackingTarget.position;
-            var delta = currentPosition - _lastUpdatePosition;
-            var distanceMovedSq = delta.sqrMagnitude;
-            var thresholdSq = UpdateDistanceThreshold * UpdateDistanceThreshold;
-
-            if (distanceMovedSq >= thresholdSq)
-            {
-                if (_initialized)
-                    UpdateActiveSpots(currentPosition);
-                _lastUpdatePosition = currentPosition;
             }
         }
 
@@ -92,75 +53,71 @@ namespace HolyRail.City
 
             if (CityManager.GraffitiSpotPrefab == null)
             {
-                Debug.LogWarning("GraffitiSpotPool: Cannot initialize - GraffitiSpotPrefab is not assigned on CityManager.");
+                Debug.LogWarning("GraffitiSpotPool: Cannot initialize - GraffitiSpotPrefab is not assigned.");
                 return;
             }
 
-            _spatialGrid = new SpatialGrid<GraffitiSpotData>(
-                DefaultCellSize,
-                CityManager.transform.position,
-                g => g.Position);
-            _spatialGrid.Initialize(CityManager.GraffitiSpots);
-
-            CreatePool();
-
+            Clear();
+            SpawnAllSpots();
             _initialized = true;
 
-            if (TrackingTarget != null)
-            {
-                _lastUpdatePosition = TrackingTarget.position;
-                UpdateActiveSpots(_lastUpdatePosition);
-            }
-
-            Debug.Log($"GraffitiSpotPool: Initialized with spatial grid of {_spatialGrid.CellCount} cells for {CityManager.GraffitiSpots.Count} graffiti spots.");
+            Debug.Log($"GraffitiSpotPool: Spawned {_spots.Count} graffiti spots.");
         }
 
-        public void RefreshSpots()
+        private void SpawnAllSpots()
         {
-            if (!_initialized && CityManager != null && CityManager.HasGraffitiData)
+            _container = new GameObject(ContainerName);
+            _container.transform.SetParent(transform);
+            _container.transform.localPosition = Vector3.zero;
+
+            var graffitiData = CityManager.GraffitiSpots;
+            for (int i = 0; i < graffitiData.Count; i++)
             {
-                Initialize();
-                return;
+                var data = graffitiData[i];
+                var go = Instantiate(CityManager.GraffitiSpotPrefab, _container.transform);
+                go.name = $"GraffitiSpot_{i}";
+                go.transform.position = data.Position;
+                go.transform.rotation = data.Rotation;
+
+                var spot = go.GetComponent<GraffitiSpot>();
+                if (spot == null)
+                {
+                    Debug.LogError($"GraffitiSpotPool: Prefab missing GraffitiSpot component!");
+                    DestroyImmediate(go);
+                    continue;
+                }
+
+                _spots.Add(spot);
             }
-
-            if (!_initialized)
-                return;
-
-            var position = TrackingTarget != null ? TrackingTarget.position : transform.position;
-            UpdateActiveSpots(position);
-            _lastUpdatePosition = position;
         }
 
         public void ResyncAfterLeapfrog()
         {
             if (CityManager == null || !CityManager.LoopState.IsActive)
-            {
-                _spatialGrid?.ClearQueryOffset();
                 return;
-            }
 
             var loopState = CityManager.LoopState;
+            var graffitiData = CityManager.GraffitiSpots;
+            var halfBStartIndex = loopState.HalfB.GraffitiStartIndex;
+            var halfBOffset = loopState.HalfB.CurrentOffset - loopState.HalfA.CurrentOffset;
 
-            if (_initialized && _spatialGrid != null)
+            for (int i = 0; i < _spots.Count && i < graffitiData.Count; i++)
             {
-                var offset = loopState.HalfB.CurrentOffset - loopState.HalfA.CurrentOffset;
-                _spatialGrid.SetQueryOffset(offset, loopState.HalfB.GraffitiStartIndex);
-            }
+                var spot = _spots[i];
+                if (spot == null) continue;
 
-            // Force update active spots if we have a tracking target
-            if (TrackingTarget != null)
-            {
-                var currentPosition = TrackingTarget.position;
-                if (_initialized)
-                    UpdateActiveSpots(currentPosition);
-                _lastUpdatePosition = currentPosition;
+                var position = graffitiData[i].Position;
+                if (i >= halfBStartIndex)
+                {
+                    position += halfBOffset;
+                }
+                spot.transform.position = position;
             }
         }
 
         public void Clear()
         {
-            // Destroy all pooled graffiti spots
-            foreach (var spot in _pool)
+            foreach (var spot in _spots)
             {
                 if (spot != null)
                 {
@@ -170,248 +127,58 @@ namespace HolyRail.City
                         DestroyImmediate(spot.gameObject);
                 }
             }
-            _pool.Clear();
+            _spots.Clear();
 
-            // Destroy the pool container
-            if (_poolContainer != null)
+            if (_container != null)
             {
                 if (Application.isPlaying)
-                    Destroy(_poolContainer);
+                    Destroy(_container);
                 else
-                    DestroyImmediate(_poolContainer);
-                _poolContainer = null;
+                    DestroyImmediate(_container);
+                _container = null;
             }
 
-            _activeIndices.Clear();
-            _queryResults.Clear();
-            _assignedSpotIndices.Clear();
-            // Note: Don't clear _completedSpotIndices - we want to remember which were completed
-            _spatialGrid = null;
+            // Also destroy any orphaned containers (from domain reloads, etc.)
+            DestroyOrphanedContainers();
+
             _initialized = false;
-            ActiveSpotCount = 0;
+        }
+
+        private void DestroyOrphanedContainers()
+        {
+            // Find containers that are children of this transform
+            for (int i = transform.childCount - 1; i >= 0; i--)
+            {
+                var child = transform.GetChild(i);
+                if (child.name == ContainerName || child.name.StartsWith(ContainerName))
+                {
+                    if (Application.isPlaying)
+                        Destroy(child.gameObject);
+                    else
+                        DestroyImmediate(child.gameObject);
+                }
+            }
         }
 
         /// <summary>
         /// Resets all graffiti spots for soft reset on death.
-        /// Clears completion tracking and resets all active graffiti spots.
         /// </summary>
         public void ResetAllGraffiti()
         {
-            // Clear completion tracking so graffiti can be collected again
-            _completedSpotIndices.Clear();
-
-            // Reset all active graffiti spots in the pool
-            foreach (var spot in _pool)
+            foreach (var spot in _spots)
             {
-                if (spot != null && spot.gameObject.activeInHierarchy)
+                if (spot != null)
                 {
                     spot.ResetForPoolReuse();
                 }
             }
 
-            // Force update active spots to refresh state
-            if (_initialized && TrackingTarget != null)
-            {
-                UpdateActiveSpots(TrackingTarget.position);
-            }
-
             Debug.Log("[GraffitiSpotPool] Reset all graffiti for soft reset.");
-        }
-
-        private void CreatePool()
-        {
-            const string containerName = "GraffitiSpots_Pool";
-
-            // Clear existing pool
-            foreach (var spot in _pool)
-            {
-                if (spot != null)
-                    DestroyImmediate(spot.gameObject);
-            }
-            _pool.Clear();
-            _activeIndices.Clear();
-
-            // Destroy old container if it exists
-            if (_poolContainer != null)
-            {
-                DestroyImmediate(_poolContainer);
-                _poolContainer = null;
-            }
-
-            // Find and destroy any orphaned containers from domain reloads
-            DestroyOrphanedContainers(containerName);
-
-            // Create pool container (starts empty, spots created on-demand)
-            _poolContainer = new GameObject(containerName);
-            _poolContainer.transform.SetParent(transform);
-            _poolContainer.transform.localPosition = Vector3.zero;
-        }
-
-        private void UpdateActiveSpots(Vector3 center)
-        {
-            if (_spatialGrid == null)
-                return;
-
-            _spatialGrid.GetItemsInRadius(center, ActivationRadius, _queryResults);
-            ActivateSpotsForIndices(_queryResults);
-        }
-
-        private void ActivateSpotsForIndices(List<int> spotIndices)
-        {
-            var graffitiSpots = CityManager.GraffitiSpots;
-
-            // Get loop mode offset info
-            var loopState = CityManager?.LoopState;
-            var isLoopMode = loopState != null && loopState.IsActive;
-            var halfBStartIndex = isLoopMode ? loopState.HalfB.GraffitiStartIndex : int.MaxValue;
-            var halfBOffset = isLoopMode ? (loopState.HalfB.CurrentOffset - loopState.HalfA.CurrentOffset) : Vector3.zero;
-
-            // Deactivate all spots first and move them out of the way
-            for (int i = 0; i < _pool.Count; i++)
-            {
-                if (_pool[i] != null)
-                {
-                    _pool[i].gameObject.SetActive(false);
-                    _pool[i].transform.position = InactivePosition;
-                }
-            }
-            _activeIndices.Clear();
-            _assignedSpotIndices.Clear();
-
-            // Single pass: assign spots to unique indices, grow pool on demand
-            int poolIndex = 0;
-            for (int i = 0; i < spotIndices.Count; i++)
-            {
-                var spotIndex = spotIndices[i];
-
-                // Skip if this spot already has a prefab assigned
-                if (!_assignedSpotIndices.Add(spotIndex))
-                    continue;
-
-                // Skip if this spot was already completed
-                if (_completedSpotIndices.Contains(spotIndex))
-                    continue;
-
-                // Grow pool on demand if needed
-                if (poolIndex >= _pool.Count)
-                {
-                    var go = Instantiate(CityManager.GraffitiSpotPrefab, _poolContainer.transform);
-                    go.name = $"GraffitiSpot_{poolIndex}";
-                    go.transform.position = InactivePosition;
-                    go.SetActive(false);
-                    var graffitiSpot = go.GetComponent<GraffitiSpot>();
-                    if (graffitiSpot == null)
-                    {
-                        Debug.LogError("GraffitiSpotPool: GraffitiSpotPrefab doesn't have a GraffitiSpot component!");
-                        DestroyImmediate(go);
-                        continue;
-                    }
-                    _pool.Add(graffitiSpot);
-                }
-
-                var spot = _pool[poolIndex];
-                var data = graffitiSpots[spotIndex];
-
-                spot.ResetForPoolReuse();
-
-                // Apply offset for HalfB instances in loop mode
-                var position = data.Position;
-                if (spotIndex >= halfBStartIndex)
-                {
-                    position += halfBOffset;
-                }
-
-                spot.transform.position = position;
-                spot.transform.rotation = data.Rotation;
-                spot.gameObject.SetActive(true);
-
-                // Track if this spot gets completed
-                if (spot.IsCompleted)
-                {
-                    _completedSpotIndices.Add(spotIndex);
-                }
-
-                _activeIndices.Add(spotIndex);
-                poolIndex++;
-            }
-
-            ActiveSpotCount = poolIndex;
-        }
-
-        private void DestroyOrphanedContainers(string containerName)
-        {
-            var toDestroy = new List<GameObject>();
-            var existing = GameObject.Find(containerName);
-            while (existing != null)
-            {
-                toDestroy.Add(existing);
-                existing.name = existing.name + "_MarkedForDestroy";
-                existing = GameObject.Find(containerName);
-            }
-
-            foreach (var obj in toDestroy)
-            {
-                if (Application.isPlaying)
-                    Destroy(obj);
-                else
-                    DestroyImmediate(obj);
-            }
-        }
-
-        private void OnDrawGizmosSelected()
-        {
-            if (!ShowDebugGizmos || !_initialized)
-                return;
-
-            // Draw activation radius
-            if (TrackingTarget != null)
-            {
-                Gizmos.color = new Color(1f, 0.5f, 0f, 0.3f);
-                DrawCircle(TrackingTarget.position + Vector3.up * 2f, ActivationRadius, 32);
-
-                Gizmos.color = new Color(1f, 0.8f, 0f, 0.3f);
-                DrawCircle(TrackingTarget.position + Vector3.up * 2f, UpdateDistanceThreshold, 16);
-            }
-
-            // Draw active graffiti spots
-            Gizmos.color = new Color(1f, 0f, 0.5f, 0.7f);
-            foreach (var spot in _pool)
-            {
-                if (spot != null && spot.gameObject.activeSelf)
-                {
-                    Gizmos.DrawWireSphere(spot.transform.position, 1f);
-                }
-            }
-        }
-
-        private void DrawCircle(Vector3 center, float radius, int segments)
-        {
-            var angleStep = 360f / segments;
-            var prevPoint = center + new Vector3(radius, 0, 0);
-
-            for (int i = 1; i <= segments; i++)
-            {
-                var angle = i * angleStep * Mathf.Deg2Rad;
-                var point = center + new Vector3(Mathf.Cos(angle) * radius, 0, Mathf.Sin(angle) * radius);
-                Gizmos.DrawLine(prevPoint, point);
-                prevPoint = point;
-            }
         }
 
         private void OnDestroy()
         {
-            foreach (var spot in _pool)
-            {
-                if (spot != null)
-                    DestroyImmediate(spot.gameObject);
-            }
-            _pool.Clear();
-
-            if (_poolContainer != null)
-            {
-                DestroyImmediate(_poolContainer);
-                _poolContainer = null;
-            }
+            Clear();
         }
     }
 }

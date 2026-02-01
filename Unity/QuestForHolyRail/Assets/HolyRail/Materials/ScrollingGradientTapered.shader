@@ -23,6 +23,9 @@ Shader "HolyRail/ScrollingGradientTapered"
         _TexRotation ("Texture Rotation (Degrees)", Float) = 0.0
         _TexBlend ("Texture Blend", Range(0, 1)) = 0.0
 
+        [Header(Fog)]
+        _FogInfluence ("Fog Influence", Range(0, 1)) = 1.0
+
         [Header(Vertex Tapering)]
         _Radius ("Tube Radius", Float) = 0.1
         _SplineLength ("Spline Length", Float) = 10.0
@@ -103,6 +106,8 @@ Shader "HolyRail/ScrollingGradientTapered"
                 half _GlowMix;
                 half _GlowBrightness;
                 half3 _UniformGlowColor;
+                // Fog
+                half _FogInfluence;
                 // Tapering properties
                 float _Radius;
                 float _SplineLength;
@@ -264,8 +269,9 @@ Shader "HolyRail/ScrollingGradientTapered"
 
                 half3 finalColor = baseColor * _BaseBrightness + baseColor * glow + _UniformGlowColor * glow;
 
-                 // Apply fog
-                finalColor = MixFog(finalColor, input.fogFactor);
+                 // Apply fog with influence control (0 = no fog, 1 = full fog)
+                half3 foggedColor = MixFog(finalColor, input.fogFactor);
+                finalColor = lerp(finalColor, foggedColor, _FogInfluence);
 
                 return half4(finalColor, 1.0h);
             }
@@ -325,6 +331,7 @@ Shader "HolyRail/ScrollingGradientTapered"
                 half _GlowMix;
                 half _GlowBrightness;
                 half3 _UniformGlowColor;
+                half _FogInfluence;
                 float _Radius;
                 float _SplineLength;
                 float _EndTaperDistance;
@@ -485,6 +492,7 @@ Shader "HolyRail/ScrollingGradientTapered"
                 half _GlowMix;
                 half _GlowBrightness;
                 half3 _UniformGlowColor;
+                half _FogInfluence;
                 float _Radius;
                 float _SplineLength;
                 float _EndTaperDistance;

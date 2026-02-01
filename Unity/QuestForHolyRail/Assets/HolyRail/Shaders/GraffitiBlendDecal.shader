@@ -172,15 +172,6 @@ Shader "HolyRail/GraffitiBlendDecal"
                 // Reconstruct world position from depth
                 float3 positionWS = ComputeWorldSpacePosition(screenUV, depth, UNITY_MATRIX_I_VP);
 
-                // Get decal center in world space and compute distances
-                float3 decalCenterWS = TransformObjectToWorld(float3(0, 0, 0));
-                float distToSampledSurface = length(positionWS - _WorldSpaceCameraPos);
-                float distToDecalCenter = length(decalCenterWS - _WorldSpaceCameraPos);
-
-                // Clip if the sampled surface is significantly closer than the decal center
-                // This prevents drawing on objects between the camera and the projection surface
-                clip(distToSampledSurface - distToDecalCenter * 0.5);
-
                 // Transform to decal object space
                 float3 positionOS = TransformWorldToObject(positionWS);
                 positionOS = positionOS * float3(1.0, -1.0, 1.0);
@@ -371,24 +362,7 @@ Shader "HolyRail/GraffitiBlendDecal"
 
                 float2 screenUV = input.screenPos.xy / input.screenPos.w;
                 float depth = SampleSceneDepth(screenUV);
-
-                // Clip if sampling skybox/far plane
-                #if UNITY_REVERSED_Z
-                clip(depth - 0.0001);
-                #else
-                clip(0.9999 - depth);
-                #endif
-
                 float3 positionWS = ComputeWorldSpacePosition(screenUV, depth, UNITY_MATRIX_I_VP);
-
-                // Get decal center in world space and compute distances
-                float3 decalCenterWS = TransformObjectToWorld(float3(0, 0, 0));
-                float distToSampledSurface = length(positionWS - _WorldSpaceCameraPos);
-                float distToDecalCenter = length(decalCenterWS - _WorldSpaceCameraPos);
-
-                // Clip if the sampled surface is significantly closer than the decal center
-                clip(distToSampledSurface - distToDecalCenter * 0.5);
-
                 float3 positionOS = TransformWorldToObject(positionWS);
                 positionOS = positionOS * float3(1.0, -1.0, 1.0);
 
@@ -584,24 +558,7 @@ Shader "HolyRail/GraffitiBlendDecal"
 
                 float2 screenUV = input.screenPos.xy / input.screenPos.w;
                 float depth = SampleSceneDepth(screenUV);
-
-                // Clip if sampling skybox/far plane
-                #if UNITY_REVERSED_Z
-                clip(depth - 0.0001);
-                #else
-                clip(0.9999 - depth);
-                #endif
-
                 float3 positionWS = ComputeWorldSpacePosition(screenUV, depth, UNITY_MATRIX_I_VP);
-
-                // Get decal center in world space and compute distances
-                float3 decalCenterWS = TransformObjectToWorld(float3(0, 0, 0));
-                float distToSampledSurface = length(positionWS - _WorldSpaceCameraPos);
-                float distToDecalCenter = length(decalCenterWS - _WorldSpaceCameraPos);
-
-                // Clip if the sampled surface is significantly closer than the decal center
-                clip(distToSampledSurface - distToDecalCenter * 0.5);
-
                 float3 positionOS = TransformWorldToObject(positionWS);
                 positionOS = positionOS * float3(1.0, -1.0, 1.0);
 
