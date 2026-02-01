@@ -1,6 +1,6 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
---- !u!1 &5363567559823129764
+--- !u!1 &2641355965549289659
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -8,21 +8,21 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 6923014344802477748}
+  - component: {fileID: 2063268431746080987}
   m_Layer: 0
-  m_Name: Root1
+  m_Name: Root
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!4 &6923014344802477748
+--- !u!4 &2063268431746080987
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 5363567559823129764}
+  m_GameObject: {fileID: 2641355965549289659}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
@@ -61,7 +61,7 @@ Transform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
-  - {fileID: 6923014344802477748}
+  - {fileID: 2063268431746080987}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &7584329156842915003
@@ -76,30 +76,35 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6241bccd232814042b36cc0929dba2fe, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::HolyRail.Trees.SpaceColonizationTree
+  <AutoUpdate>k__BackingField: 1
   <Seed>k__BackingField: 12345
-  <MaxIterations>k__BackingField: 100
-  <StepSize>k__BackingField: 0.3
-  <AttractionRadius>k__BackingField: 5
-  <KillRadius>k__BackingField: 0.5
+  <MaxIterations>k__BackingField: 200
+  <StepSize>k__BackingField: 0.4
+  <AttractionRadius>k__BackingField: 8
+  <KillRadius>k__BackingField: 0.8
   <AttractorBounds>k__BackingField:
-    m_Center: {x: 0, y: 5, z: 0}
-    m_Extent: {x: 5, y: 5, z: 5}
-  <AttractorCount>k__BackingField: 1000
+    m_Center: {x: 0, y: 7.31, z: 0}
+    m_Extent: {x: 7.02, y: 8.18, z: 5}
+  <AttractorCount>k__BackingField: 2000
   <RootPoints>k__BackingField:
-  - {fileID: 6923014344802477748}
+  - {fileID: 2063268431746080987}
+  <TrunkHeight>k__BackingField: 4
+  <TrunkDirection>k__BackingField: {x: 0, y: 1, z: 0}
+  <TrunkStrength>k__BackingField: 0.85
   <BiasDirection>k__BackingField: {x: 0, y: 1, z: 0}
-  <BiasStrength>k__BackingField: 0.3
-  <NoiseStrength>k__BackingField: 0.15
-  <NoiseScale>k__BackingField: 0.5
-  <BranchDensity>k__BackingField: 0.5
-  <MinBranchSpreadAngle>k__BackingField: 20
-  <MinBranchSeparation>k__BackingField: 1
+  <BiasStrength>k__BackingField: 0.25
+  <NoiseStrength>k__BackingField: 0.08
+  <NoiseScale>k__BackingField: 0.3
+  <BranchDensity>k__BackingField: 0.6
+  <MinBranchSpreadAngle>k__BackingField: 35
+  <MinBranchSeparation>k__BackingField: 0.5
+  <MakeGrindable>k__BackingField: 1
   <MinSplineNodeCount>k__BackingField: 2
   <MinSplineWorldLength>k__BackingField: 1
   <EnablePathSmoothing>k__BackingField: 1
   <SmoothingTolerance>k__BackingField: 0.15
   <TaperedMaterial>k__BackingField: {fileID: 2100000, guid: 5beb3f89a94404447bc95ff93cc34a50, type: 2}
-  <TubeRadius>k__BackingField: 0.08
+  <TubeRadius>k__BackingField: 0.179
   <TubeSides>k__BackingField: 6
   <SegmentsPerUnit>k__BackingField: 4
   <EnableEndTapering>k__BackingField: 1
@@ -107,6 +112,7 @@ MonoBehaviour:
   <DistanceTaperStrength>k__BackingField: 0.3
   <ShowAttractors>k__BackingField: 1
   <ShowNodes>k__BackingField: 1
-  <AttractorColor>k__BackingField: {r: 0, g: 1, b: 1, a: 1}
   <NodeColor>k__BackingField: {r: 0, g: 1, b: 0, a: 1}
+  <LineColor>k__BackingField: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+  <AttractorColor>k__BackingField: {r: 0, g: 1, b: 1, a: 1}
   <GizmoSize>k__BackingField: 0.1

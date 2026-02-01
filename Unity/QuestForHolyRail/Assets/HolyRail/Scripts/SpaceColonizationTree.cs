@@ -3,6 +3,7 @@ using System.Linq;
 using UnityEngine;
 using UnityEngine.Splines;
 using Unity.Mathematics;
+using StarterAssets;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -32,30 +33,38 @@ namespace HolyRail.Trees
         [field: SerializeField] public int Seed { get; set; } = 12345;
 
         [Header("Algorithm")]
-        [field: SerializeField, Range(1, 1000)] public int MaxIterations { get; set; } = 100;
-        [field: SerializeField, Range(0.1f, 2f)] public float StepSize { get; set; } = 0.5f;
-        [field: SerializeField, Range(0.5f, 20f)] public float AttractionRadius { get; set; } = 5f;
-        [field: SerializeField, Range(0.1f, 5f)] public float KillRadius { get; set; } = 0.5f;
+        [field: SerializeField, Range(1, 1000)] public int MaxIterations { get; set; } = 200;
+        [field: SerializeField, Range(0.1f, 2f)] public float StepSize { get; set; } = 0.4f;
+        [field: SerializeField, Range(0.5f, 20f)] public float AttractionRadius { get; set; } = 6f;
+        [field: SerializeField, Range(0.1f, 5f)] public float KillRadius { get; set; } = 0.8f;
 
         [Header("Volume")]
         [field: SerializeField] public Bounds AttractorBounds { get; set; } = new Bounds(Vector3.zero, Vector3.one * 10f);
-        [field: SerializeField, Range(100, 10000)] public int AttractorCount { get; set; } = 1000;
+        [field: SerializeField, Range(100, 10000)] public int AttractorCount { get; set; } = 2000;
 
         [Header("Roots")]
         [field: SerializeField] public List<Transform> RootPoints { get; private set; } = new List<Transform>();
 
+        [Header("Trunk")]
+        [field: SerializeField, Range(0f, 20f)] public float TrunkHeight { get; set; } = 4f;
+        [field: SerializeField] public Vector3 TrunkDirection { get; set; } = Vector3.up;
+        [field: SerializeField, Range(0f, 1f)] public float TrunkStrength { get; set; } = 0.85f;
+
         [Header("Direction")]
-        [field: SerializeField] public Vector3 BiasDirection { get; set; } = Vector3.forward;
-        [field: SerializeField, Range(0f, 1f)] public float BiasStrength { get; set; } = 0.15f;
+        [field: SerializeField] public Vector3 BiasDirection { get; set; } = Vector3.up;
+        [field: SerializeField, Range(0f, 1f)] public float BiasStrength { get; set; } = 0.25f;
 
         [Header("Variation")]
-        [field: SerializeField, Range(0f, 1f)] public float NoiseStrength { get; set; } = 0.25f;
-        [field: SerializeField] public float NoiseScale { get; set; } = 0.5f;
+        [field: SerializeField, Range(0f, 1f)] public float NoiseStrength { get; set; } = 0.08f;
+        [field: SerializeField] public float NoiseScale { get; set; } = 0.3f;
 
         [Header("Branching")]
-        [field: SerializeField, Range(0f, 1f)] public float BranchDensity { get; set; } = 0.8f;
-        [field: SerializeField, Range(0f, 90f)] public float MinBranchSpreadAngle { get; set; } = 20f;
+        [field: SerializeField, Range(0f, 1f)] public float BranchDensity { get; set; } = 0.6f;
+        [field: SerializeField, Range(0f, 90f)] public float MinBranchSpreadAngle { get; set; } = 35f;
         [field: SerializeField, Range(0f, 10f)] public float MinBranchSeparation { get; set; } = 0.5f;
+
+        [Header("Grinding")]
+        [field: SerializeField] public bool MakeGrindable { get; set; } = true;
 
         [Header("Filtering")]
         [field: SerializeField, Range(2, 50)] public int MinSplineNodeCount { get; set; } = 3;
@@ -136,6 +145,21 @@ namespace HolyRail.Trees
             CreateSplinesAndMeshes(paths);
 
             Debug.Log($"SpaceColonizationTree: Created {_generatedSplines.Count} splines from {paths.Count} paths");
+
+            if (MakeGrindable)
+            {
+                RefreshGrindableSplines();
+            }
+        }
+
+        private void RefreshGrindableSplines()
+        {
+            var grindController = FindFirstObjectByType<ThirdPersonController_RailGrinder>();
+            if (grindController != null)
+            {
+                grindController.RefreshSplineContainers();
+                Debug.Log("SpaceColonizationTree: Refreshed grindable splines");
+            }
         }
 
         /// <summary>
@@ -173,9 +197,13 @@ namespace HolyRail.Trees
             _generatedSplines.Clear();
 
             // Also destroy any orphaned children (survives domain reload since _generatedSplines is non-serialized)
+            // Only destroy children that match our naming convention to avoid destroying RootPoints or other children
             for (int i = transform.childCount - 1; i >= 0; i--)
             {
                 var child = transform.GetChild(i).gameObject;
+                if (!child.name.StartsWith("TreeMesh_") && !child.name.StartsWith("TreeSpline_"))
+                    continue;
+
 #if UNITY_EDITOR
                 if (!Application.isPlaying)
                     DestroyImmediate(child);
@@ -222,15 +250,22 @@ namespace HolyRail.Trees
 
         private void InitializeRoots()
         {
+            // Calculate world-space bounds that attractors can reach from
+            var boundsCenter = transform.TransformPoint(AttractorBounds.center);
+            var expandedBounds = new Bounds(boundsCenter, AttractorBounds.size);
+            // Expand by AttractionRadius so roots on the edge can still reach attractors
+            expandedBounds.Expand(AttractionRadius * 2);
+
             if (RootPoints == null || RootPoints.Count == 0)
             {
+                // Use center of attractor bounds - guaranteed to reach attractors
                 _nodes.Add(new TreeNode
                 {
-                    Position = transform.position,
+                    Position = boundsCenter,
                     ParentIndex = -1,
                     DistanceFromRoot = 0f
                 });
-                Debug.Log($"SpaceColonizationTree: Using transform position as root: {transform.position}");
+                Debug.Log($"SpaceColonizationTree: No RootPoints set. Using attractor bounds center: {boundsCenter}");
                 return;
             }
 
@@ -238,14 +273,37 @@ namespace HolyRail.Trees
             {
                 if (root != null)
                 {
+                    Vector3 rootPos = root.position;
+
+                    // Check if root can reach any attractors
+                    if (!expandedBounds.Contains(rootPos))
+                    {
+                        // Clamp to nearest point within bounds
+                        Vector3 clampedPos = expandedBounds.ClosestPoint(rootPos);
+                        Debug.LogWarning($"SpaceColonizationTree: Root '{root.name}' at {rootPos} is outside attractor range. Clamping to {clampedPos}");
+                        rootPos = clampedPos;
+                    }
+
                     _nodes.Add(new TreeNode
                     {
-                        Position = root.position,
+                        Position = rootPos,
                         ParentIndex = -1,
                         DistanceFromRoot = 0f
                     });
-                    Debug.Log($"SpaceColonizationTree: Added root at {root.position}");
+                    Debug.Log($"SpaceColonizationTree: Added root at {rootPos}");
                 }
+            }
+
+            // Fallback if all RootPoints were null/destroyed
+            if (_nodes.Count == 0)
+            {
+                _nodes.Add(new TreeNode
+                {
+                    Position = boundsCenter,
+                    ParentIndex = -1,
+                    DistanceFromRoot = 0f
+                });
+                Debug.LogWarning($"SpaceColonizationTree: All RootPoints are null/missing. Using attractor bounds center: {boundsCenter}");
             }
         }
 
@@ -313,10 +371,34 @@ namespace HolyRail.Trees
                     var attractorIndices = kvp.Value;
                     var node = _nodes[nodeIndex];
 
-                    if (lastGrowIteration.TryGetValue(nodeIndex, out int lastIter))
+                    // Determine if we're still in trunk phase
+                    bool inTrunkPhase = TrunkHeight > 0f && node.DistanceFromRoot < TrunkHeight;
+
+                    // During trunk phase, only allow growth from the furthest node (no branching)
+                    if (inTrunkPhase)
                     {
-                        if (iteration - lastIter < branchCooldown)
+                        float maxDist = 0f;
+                        int furthestNode = -1;
+                        for (int i = 0; i < _nodes.Count; i++)
+                        {
+                            if (_nodes[i].DistanceFromRoot > maxDist)
+                            {
+                                maxDist = _nodes[i].DistanceFromRoot;
+                                furthestNode = i;
+                            }
+                        }
+                        // Skip if this isn't the furthest node
+                        if (furthestNode >= 0 && nodeIndex != furthestNode)
                             continue;
+                    }
+                    else
+                    {
+                        // Normal branching cooldown only applies outside trunk phase
+                        if (lastGrowIteration.TryGetValue(nodeIndex, out int lastIter))
+                        {
+                            if (iteration - lastIter < branchCooldown)
+                                continue;
+                        }
                     }
 
                     Vector3 avgDir = Vector3.zero;
@@ -326,19 +408,26 @@ namespace HolyRail.Trees
                     }
                     avgDir = avgDir.normalized;
 
-                    if (BiasStrength > 0f && BiasDirection.sqrMagnitude > 0.001f)
+                    // During trunk phase, strongly bias toward trunk direction
+                    if (inTrunkPhase && TrunkDirection.sqrMagnitude > 0.001f)
+                    {
+                        avgDir = Vector3.Lerp(avgDir, TrunkDirection.normalized, TrunkStrength).normalized;
+                    }
+                    else if (BiasStrength > 0f && BiasDirection.sqrMagnitude > 0.001f)
                     {
                         avgDir = Vector3.Lerp(avgDir, BiasDirection.normalized, BiasStrength).normalized;
                     }
 
-                    if (NoiseStrength > 0f)
+                    // Reduce noise during trunk phase for straighter trunk
+                    float effectiveNoiseStrength = inTrunkPhase ? NoiseStrength * 0.2f : NoiseStrength;
+                    if (effectiveNoiseStrength > 0f)
                     {
                         float noiseX = Mathf.PerlinNoise(node.Position.x * NoiseScale, node.Position.z * NoiseScale) * 2f - 1f;
                         float noiseY = Mathf.PerlinNoise(node.Position.y * NoiseScale, node.Position.x * NoiseScale) * 2f - 1f;
                         float noiseZ = Mathf.PerlinNoise(node.Position.z * NoiseScale, node.Position.y * NoiseScale) * 2f - 1f;
 
                         var noiseDir = new Vector3(noiseX, noiseY, noiseZ).normalized;
-                        avgDir = Vector3.Lerp(avgDir, noiseDir, NoiseStrength).normalized;
+                        avgDir = Vector3.Lerp(avgDir, noiseDir, effectiveNoiseStrength).normalized;
                     }
 
                     var newPos = node.Position + avgDir * StepSize;

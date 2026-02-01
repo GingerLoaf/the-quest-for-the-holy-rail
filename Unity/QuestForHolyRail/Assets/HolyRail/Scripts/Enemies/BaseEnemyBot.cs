@@ -44,6 +44,14 @@ namespace HolyRail.Scripts.Enemies
         [field: SerializeField]
         public float AvoidanceSmoothTime { get; private set; } = 0.3f;
 
+        [field: Tooltip("Force applied to push bot away from obstacles it's touching")]
+        [field: SerializeField]
+        public float SeparationForce { get; private set; } = 8f;
+
+        [field: Tooltip("Upward bias when stuck to help bot rise over obstacles")]
+        [field: SerializeField]
+        public float StuckUpwardBias { get; private set; } = 5f;
+
         // Smoothing state for obstacle avoidance
         private Vector3 _smoothedAvoidanceDirection;
         private Vector3 _avoidanceVelocity;
@@ -437,6 +445,13 @@ namespace HolyRail.Scripts.Enemies
             Vector3 direction = targetPosition - currentPosition;
             float distance = direction.magnitude;
 
+            // First, check if we're overlapping any colliders and push away
+            Vector3 separationOffset = GetSeparationOffset(currentPosition);
+            if (separationOffset.sqrMagnitude > 0.001f)
+            {
+                currentPosition += separationOffset * Time.deltaTime;
+            }
+
             if (distance < 0.001f)
             {
                 return currentPosition;
@@ -459,9 +474,64 @@ namespace HolyRail.Scripts.Enemies
                 // Stop just before the obstacle
                 float safeDistance = Mathf.Max(0f, finalHit.distance - 0.1f);
                 newPosition = currentPosition + avoidedDirection.normalized * safeDistance;
+
+                // If we're basically stuck (can't move much), add upward bias to escape
+                if (safeDistance < 0.05f && StuckUpwardBias > 0f)
+                {
+                    newPosition += Vector3.up * StuckUpwardBias * Time.deltaTime;
+                }
             }
 
             return newPosition;
+        }
+
+        /// <summary>
+        /// Checks for overlapping colliders and returns a direction to push away from them.
+        /// </summary>
+        private Vector3 GetSeparationOffset(Vector3 position)
+        {
+            if (ObstacleLayerMask == 0 || SeparationForce <= 0f)
+            {
+                return Vector3.zero;
+            }
+
+            // Check for overlapping colliders
+            Collider[] overlaps = Physics.OverlapSphere(position, BotCollisionRadius * 1.1f, ObstacleLayerMask, QueryTriggerInteraction.Ignore);
+
+            if (overlaps.Length == 0)
+            {
+                return Vector3.zero;
+            }
+
+            Vector3 totalSeparation = Vector3.zero;
+
+            foreach (var collider in overlaps)
+            {
+                // Find closest point on the collider
+                Vector3 closestPoint = collider.ClosestPoint(position);
+                Vector3 toBot = position - closestPoint;
+                float dist = toBot.magnitude;
+
+                if (dist < 0.001f)
+                {
+                    // We're inside the collider - push up and away from collider center
+                    toBot = (position - collider.bounds.center).normalized;
+                    if (toBot.sqrMagnitude < 0.1f)
+                    {
+                        toBot = Vector3.up;
+                    }
+                    totalSeparation += (toBot.normalized + Vector3.up * 0.5f) * SeparationForce;
+                }
+                else if (dist < BotCollisionRadius)
+                {
+                    // We're overlapping - push away proportionally
+                    float overlap = BotCollisionRadius - dist;
+                    float pushStrength = (overlap / BotCollisionRadius) * SeparationForce;
+                    totalSeparation += toBot.normalized * pushStrength;
+                }
+            }
+
+            return totalSeparation;
         }
 
         /// <summary>

@@ -469,6 +469,12 @@ namespace StarterAssets
         [Tooltip("Duration of the death wipe animation in seconds")]
         [SerializeField] private float _deathWipeDuration = 1f;
 
+        [Header("Debug")]
+        [Tooltip("Makes the player immune to all damage")]
+        [SerializeField] private bool _enableInvincibility;
+        [Tooltip("Unlocks all abilities (Dash, Parry, Boost) at start")]
+        [SerializeField] private bool _enableAllAbilities;
+
         private MatrixRainDeathVolume _deathWipeVolume;
         private AudioSource _grindLoopAudioSource;
         private AudioSource _skateLoopAudioSource;
@@ -555,10 +561,10 @@ namespace StarterAssets
         public GameObject CinemachineCameraTarget;
 
         [Tooltip("How far in degrees can you move the camera up")]
-        public float TopClamp = 70.0f;
+        public float TopClamp = 90.0f;
 
         [Tooltip("How far in degrees can you move the camera down")]
-        public float BottomClamp = -30.0f;
+        public float BottomClamp = -90.0f;
 
         [Tooltip("Additional degress to override the camera. Useful for fine tuning camera position when locked")]
         public float CameraAngleOverride = 0.0f;
@@ -753,6 +759,18 @@ namespace StarterAssets
                 GameSessionManager.Instance.ResetHealth();
                 GameSessionManager.Instance.ClearPickups();
                 GameSessionManager.Instance.OnPlayerDeath += HandlePlayerDeath;
+
+                // Apply debug settings
+                if (_enableInvincibility)
+                {
+                    GameSessionManager.Instance.IsInvincible = true;
+                    Debug.Log("[Debug] Invincibility enabled");
+                }
+            }
+
+            if (_enableAllAbilities)
+            {
+                AbilityPickUp.UnlockAllAbilities();
             }
 
             // Cache death wipe volume component

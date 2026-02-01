@@ -44,6 +44,13 @@ namespace HolyRail.Trees.Editor
             EditorGUILayout.LabelField("Roots", EditorStyles.boldLabel);
             EditorGUILayout.PropertyField(serializedObject.FindProperty("<RootPoints>k__BackingField"));
 
+            // Trunk
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Trunk", EditorStyles.boldLabel);
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("<TrunkHeight>k__BackingField"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("<TrunkDirection>k__BackingField"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("<TrunkStrength>k__BackingField"));
+
             // Direction
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Direction", EditorStyles.boldLabel);
@@ -62,6 +69,11 @@ namespace HolyRail.Trees.Editor
             EditorGUILayout.PropertyField(serializedObject.FindProperty("<BranchDensity>k__BackingField"));
             EditorGUILayout.PropertyField(serializedObject.FindProperty("<MinBranchSpreadAngle>k__BackingField"));
             EditorGUILayout.PropertyField(serializedObject.FindProperty("<MinBranchSeparation>k__BackingField"));
+
+            // Grinding
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Grinding", EditorStyles.boldLabel);
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("<MakeGrindable>k__BackingField"));
 
             // Filtering
             EditorGUILayout.Space();
