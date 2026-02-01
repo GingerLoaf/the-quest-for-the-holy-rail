@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using HolyRail.Scripts;
+using HolyRail.Scripts.UI;
 using StarterAssets;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -66,6 +67,10 @@ namespace Art.PickUps
         [SerializeField] private AudioClip _pickupSFX;
         [Range(0f, 1f)]
         [SerializeField] private float _pickupVolume = 1f;
+
+        [Header("Tutorial Popup")]
+        [Tooltip("Tutorial popup to show when this ability is collected")]
+        [SerializeField] private AbilityTutorialPopup _tutorialPopup;
 
         private static readonly HashSet<AbilityType> UnlockedAbilities = new();
 
@@ -241,6 +246,12 @@ namespace Art.PickUps
             if (GamepadHaptics.Instance != null)
             {
                 GamepadHaptics.Instance.TriggerHaptic(HapticType.AbilityUnlock);
+            }
+
+            // Show tutorial popup
+            if (_tutorialPopup != null)
+            {
+                _tutorialPopup.Show();
             }
 
             // Hide/destroy the pickup

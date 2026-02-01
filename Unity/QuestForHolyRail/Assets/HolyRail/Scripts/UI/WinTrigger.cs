@@ -1,4 +1,6 @@
 using System.Collections;
+using HolyRail.City;
+using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
@@ -11,6 +13,8 @@ namespace HolyRail.Scripts.UI
 
         [field: SerializeField] public Image FadeOverlay { get; private set; }
         [field: SerializeField] public GameObject WinText { get; private set; }
+        [field: SerializeField] public TextMeshProUGUI ScoreText { get; private set; }
+        [field: SerializeField] public TextMeshProUGUI GraffitiText { get; private set; }
         [field: SerializeField] public float FadeDuration { get; private set; } = 2f;
         [field: SerializeField] public float DisplayDuration { get; private set; } = 5f;
 
@@ -29,6 +33,12 @@ namespace HolyRail.Scripts.UI
 
             if (WinText != null)
                 WinText.SetActive(false);
+
+            if (ScoreText != null)
+                ScoreText.gameObject.SetActive(false);
+
+            if (GraffitiText != null)
+                GraffitiText.gameObject.SetActive(false);
         }
 
         private void Update()
@@ -91,6 +101,25 @@ namespace HolyRail.Scripts.UI
             // Show win text (if exists)
             if (WinText != null)
                 WinText.SetActive(true);
+
+            // Show final score
+            if (ScoreText != null)
+            {
+                int finalScore = ScoreManager.Instance != null ? ScoreManager.Instance.CurrentScore : 0;
+                ScoreText.text = $"Score: ${finalScore:N0}";
+                ScoreText.gameObject.SetActive(true);
+            }
+
+            // Show graffiti count
+            if (GraffitiText != null)
+            {
+                var graffitiPool = FindFirstObjectByType<GraffitiSpotPool>();
+                var cityManager = FindFirstObjectByType<CityManager>();
+                int collected = graffitiPool != null ? graffitiPool.CompletedCount : 0;
+                int total = cityManager != null ? cityManager.ActualGraffitiCount : 0;
+                GraffitiText.text = $"Graffiti: {collected}/{total}";
+                GraffitiText.gameObject.SetActive(true);
+            }
 
             // Hold for display duration (or brief pause if no UI)
             float waitTime = (FadeOverlay != null || WinText != null) ? DisplayDuration : 1f;
