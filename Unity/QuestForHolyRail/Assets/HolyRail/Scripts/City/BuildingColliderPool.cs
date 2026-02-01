@@ -36,11 +36,9 @@ namespace HolyRail.City
         private bool _initialized;
         private int _playerSearchFrame; // Throttle player search
 
-        // Ramp collider pool
-        private SpatialGrid<RampData> _rampSpatialGrid;
+        // Ramp colliders (all created upfront, no pooling)
         private readonly List<BoxCollider> _rampColliderPool = new();
         private readonly List<int> _activeRampIndices = new();
-        private readonly List<int> _rampQueryResults = new();
         private readonly HashSet<int> _assignedRampIndices = new();
         private GameObject _rampPoolContainer;
         private int _rampLayer;
@@ -219,8 +217,7 @@ namespace HolyRail.City
             {
                 if (_initialized)
                     UpdateActiveColliders(currentPosition);
-                if (_rampInitialized)
-                    UpdateActiveRampColliders(currentPosition);
+                // Ramp colliders are all created upfront, no need to update based on position
                 if (_billboardInitialized)
                     UpdateActiveBillboardColliders(currentPosition);
                 _lastUpdatePosition = currentPosition;
@@ -291,23 +288,12 @@ namespace HolyRail.City
 
             Debug.Log($"BuildingColliderPool.InitializeRamps: Initializing with {CityManager.Ramps.Count} ramps, layer={_rampLayer}");
 
-            _rampSpatialGrid = new SpatialGrid<RampData>(
-                DefaultCellSize,
-                CityManager.transform.position,
-                r => r.Position);
-            _rampSpatialGrid.Initialize(CityManager.Ramps);
-
-            CreateRampColliderPool();
+            // Create all ramp colliders upfront (no pooling needed for ramps)
+            CreateAllRampColliders();
 
             _rampInitialized = true;
 
-            // Use tracking target position, or fallback to CityManager position
-            var queryPosition = TrackingTarget != null ? TrackingTarget.position : CityManager.transform.position;
-            UpdateActiveRampColliders(queryPosition);
-            _lastUpdatePosition = queryPosition;
-            Debug.Log($"BuildingColliderPool.InitializeRamps: Updated active colliders at {queryPosition}, ActiveRampColliderCount={ActiveRampColliderCount}");
-
-            Debug.Log($"BuildingColliderPool: Initialized with {_rampColliderPool.Count} ramp colliders, spatial grid has {_rampSpatialGrid.CellCount} cells.");
+            Debug.Log($"BuildingColliderPool: Created {_rampColliderPool.Count} ramp colliders for all ramps.");
         }
 
         public void InitializeBillboards()
@@ -390,7 +376,6 @@ namespace HolyRail.City
             {
                 // Clear any existing offsets if loop mode is not active
                 _spatialGrid?.ClearQueryOffset();
-                _rampSpatialGrid?.ClearQueryOffset();
                 _billboardSpatialGrid?.ClearQueryOffset();
                 return;
             }
@@ -404,11 +389,10 @@ namespace HolyRail.City
                 _spatialGrid.SetQueryOffset(offset, loopState.HalfB.BuildingStartIndex);
             }
 
-            // Update ramp spatial grid offset
-            if (_rampInitialized && _rampSpatialGrid != null)
+            // Update ramp collider positions directly (no spatial grid for ramps)
+            if (_rampInitialized)
             {
-                var offset = loopState.HalfB.CurrentOffset - loopState.HalfA.CurrentOffset;
-                _rampSpatialGrid.SetQueryOffset(offset, loopState.HalfB.RampStartIndex);
+                UpdateRampCollidersForLoopMode();
             }
 
             // Update billboard spatial grid offset
@@ -426,8 +410,7 @@ namespace HolyRail.City
                 var currentPosition = TrackingTarget.position;
                 if (_initialized)
                     UpdateActiveColliders(currentPosition);
-                if (_rampInitialized)
-                    UpdateActiveRampColliders(currentPosition);
+                // Ramp colliders are all created upfront, no need to update based on position
                 if (_billboardInitialized)
                     UpdateActiveBillboardColliders(currentPosition);
                 _lastUpdatePosition = currentPosition;
@@ -510,9 +493,7 @@ namespace HolyRail.City
             }
 
             _activeRampIndices.Clear();
-            _rampQueryResults.Clear();
             _assignedRampIndices.Clear();
-            _rampSpatialGrid = null;
             _rampInitialized = false;
             ActiveRampColliderCount = 0;
         }
@@ -579,11 +560,11 @@ namespace HolyRail.City
             _buildingPoolContainer.transform.localPosition = Vector3.zero;
         }
 
-        private void CreateRampColliderPool()
+        private void CreateAllRampColliders()
         {
-            const string containerName = "RampColliders_Pool";
+            const string containerName = "RampColliders";
 
-            // Clear existing ramp pool
+            // Clear existing ramp colliders
             foreach (var collider in _rampColliderPool)
             {
                 if (collider != null)
@@ -601,11 +582,33 @@ namespace HolyRail.City
 
             // Find and destroy any orphaned containers from domain reloads
             DestroyOrphanedContainers(containerName);
+            DestroyOrphanedContainers("RampColliders_Pool"); // Clean up old pooled containers
 
-            // Create pool container (starts empty, colliders created on-demand)
+            // Create container for all ramp colliders
             _rampPoolContainer = new GameObject(containerName);
             _rampPoolContainer.transform.SetParent(transform);
             _rampPoolContainer.transform.localPosition = Vector3.zero;
+
+            // Create a collider for every ramp
+            var ramps = CityManager.Ramps;
+            for (int i = 0; i < ramps.Count; i++)
+            {
+                var ramp = ramps[i];
+                var go = new GameObject($"RampCollider_{i}");
+                go.transform.SetParent(_rampPoolContainer.transform);
+                go.transform.position = ramp.Position;
+                go.transform.rotation = ramp.Rotation;
+                go.layer = _rampLayer;
+
+                var collider = go.AddComponent<BoxCollider>();
+                collider.size = ramp.Scale;
+                collider.enabled = true;
+
+                _rampColliderPool.Add(collider);
+                _activeRampIndices.Add(i);
+            }
+
+            ActiveRampColliderCount = ramps.Count;
         }
 
         private void CreateBillboardColliderPool()
@@ -712,79 +715,40 @@ namespace HolyRail.City
             ActiveColliderCount = colliderIndex;
         }
 
-        private void UpdateActiveRampColliders(Vector3 center)
+        /// <summary>
+        /// Updates ramp collider positions for loop mode offset changes.
+        /// Called when loop mode halves are repositioned.
+        /// </summary>
+        public void UpdateRampCollidersForLoopMode()
         {
-            if (_rampSpatialGrid == null)
+            if (!_rampInitialized || CityManager == null)
                 return;
 
-            _rampSpatialGrid.GetItemsInRadius(center, ActivationRadius, _rampQueryResults);
-            ActivateCollidersForRamps(_rampQueryResults);
-        }
+            var loopState = CityManager.LoopState;
+            if (loopState == null || !loopState.IsActive)
+                return;
 
-        private void ActivateCollidersForRamps(List<int> rampIndices)
-        {
             var ramps = CityManager.Ramps;
+            var halfBStartIndex = loopState.HalfB.RampStartIndex;
+            var halfBOffset = loopState.HalfB.CurrentOffset - loopState.HalfA.CurrentOffset;
 
-            // Get loop mode offset info
-            var loopState = CityManager?.LoopState;
-            var isLoopMode = loopState != null && loopState.IsActive;
-            var halfBStartIndex = isLoopMode ? loopState.HalfB.RampStartIndex : int.MaxValue;
-            var halfBOffset = isLoopMode ? (loopState.HalfB.CurrentOffset - loopState.HalfA.CurrentOffset) : Vector3.zero;
-
-            // Deactivate all ramp colliders first and move them out of the way
-            for (int i = 0; i < _rampColliderPool.Count; i++)
+            for (int i = 0; i < _rampColliderPool.Count && i < ramps.Count; i++)
             {
-                if (_rampColliderPool[i] != null)
-                {
-                    _rampColliderPool[i].enabled = false;
-                    _rampColliderPool[i].transform.position = InactivePosition;
-                }
-            }
-            _activeRampIndices.Clear();
-            _assignedRampIndices.Clear();
-
-            // Single pass: assign colliders to unique ramps, grow pool on demand
-            int colliderIndex = 0;
-            for (int i = 0; i < rampIndices.Count; i++)
-            {
-                var rampIndex = rampIndices[i];
-
-                // Skip if this ramp already has a collider assigned
-                if (!_assignedRampIndices.Add(rampIndex))
+                var collider = _rampColliderPool[i];
+                if (collider == null)
                     continue;
 
-                // Grow pool on demand if needed
-                if (colliderIndex >= _rampColliderPool.Count)
-                {
-                    var go = new GameObject($"RampCollider_{colliderIndex}");
-                    go.transform.SetParent(_rampPoolContainer.transform);
-                    go.transform.position = InactivePosition;
-                    go.layer = _rampLayer;
-                    var newCollider = go.AddComponent<BoxCollider>();
-                    newCollider.enabled = false;
-                    _rampColliderPool.Add(newCollider);
-                }
-
-                var collider = _rampColliderPool[colliderIndex];
-                var ramp = ramps[rampIndex];
+                var ramp = ramps[i];
+                var position = ramp.Position;
 
                 // Apply offset for HalfB instances in loop mode
-                var position = ramp.Position;
-                if (rampIndex >= halfBStartIndex)
+                if (i >= halfBStartIndex)
                 {
                     position += halfBOffset;
                 }
 
                 collider.transform.position = position;
-                collider.transform.rotation = ramp.Rotation;
-                collider.size = ramp.Scale;
-                collider.enabled = true;
-
-                _activeRampIndices.Add(rampIndex);
-                colliderIndex++;
             }
-
-            ActiveRampColliderCount = colliderIndex;
         }
 
         private void UpdateActiveBillboardColliders(Vector3 center)

@@ -90,6 +90,10 @@ namespace HolyRail.Splines
         private Vector3 _lastPosition;
         private Quaternion _lastRotation;
 
+        // Warning flags (to avoid log spam)
+        private bool _warnedMissingMaterial;
+        private bool _warnedMissingMesh;
+
         // Original knot data for non-destructive noise application
         private List<List<BezierKnot>> _originalKnots = new List<List<BezierKnot>>();
         private bool _knotsCached;
@@ -394,12 +398,14 @@ namespace HolyRail.Splines
 
         /// <summary>
         /// Calculate radial positions and rotations for all clones.
+        /// Applies the root transform's rotation so the entire radial layout rotates with the controller.
         /// </summary>
         private void CalculateCloneTransforms()
         {
             _cloneData.Clear();
 
             var center = transform.position;
+            var rootRotation = transform.rotation;
             float angleStep = 360f / CloneCount;
 
             for (int i = 0; i < CloneCount; i++)
@@ -407,16 +413,17 @@ namespace HolyRail.Splines
                 float angle = i * angleStep;
                 float rad = angle * Mathf.Deg2Rad;
 
-                // Position on circle
-                var pos = center + new Vector3(
+                // Calculate local offset on circle, then rotate by root transform
+                var localOffset = new Vector3(
                     Mathf.Sin(rad) * CircleRadius,
                     0f,
                     Mathf.Cos(rad) * CircleRadius
                 );
+                var pos = center + rootRotation * localOffset;
 
-                // Rotation facing center
+                // Rotation facing center (toCenter is already in world space)
                 var toCenter = (center - pos).normalized;
-                var rotation = Quaternion.LookRotation(toCenter, Vector3.up);
+                var rotation = Quaternion.LookRotation(toCenter, rootRotation * Vector3.up);
 
                 // Calculate mirror scale based on toggles and symmetry mode
                 var scale = CalculateMirrorScale(i, angle);
@@ -620,7 +627,16 @@ namespace HolyRail.Splines
             if (meshFilter != null && meshFilter.sharedMesh != null)
             {
                 SourceMesh = meshFilter.sharedMesh;
+                _warnedMissingMesh = false;
                 Debug.Log($"RadialSplineController: Auto-extracted mesh '{SourceMesh.name}' from MeshFilter");
+            }
+            else
+            {
+                if (!_warnedMissingMesh)
+                {
+                    Debug.LogWarning($"RadialSplineController: No MeshFilter with mesh found on '{MasterSpline.name}'. Assign SourceMesh manually or add SplineExtrude to master spline.");
+                    _warnedMissingMesh = true;
+                }
             }
         }
 
@@ -631,8 +647,21 @@ namespace HolyRail.Splines
         {
             ReleaseBuffers();
 
-            if (_cloneData.Count == 0 || SourceMesh == null)
+            if (_cloneData.Count == 0)
+            {
+                Debug.LogWarning("RadialSplineController: No clone data to render.");
                 return;
+            }
+
+            if (SourceMesh == null)
+            {
+                if (!_warnedMissingMesh)
+                {
+                    Debug.LogWarning("RadialSplineController: SourceMesh is null. Clones will not render.");
+                    _warnedMissingMesh = true;
+                }
+                return;
+            }
 
             int stride = Marshal.SizeOf<RadialCloneData>(); // 44 bytes
 
@@ -690,10 +719,18 @@ namespace HolyRail.Splines
         /// </summary>
         private void RenderClones()
         {
-            if (_argsBuffer == null || _propertyBlock == null || SplineMaterial == null || SourceMesh == null)
+            if (SplineMaterial == null)
+            {
+                if (!_warnedMissingMaterial)
+                {
+                    Debug.LogWarning("RadialSplineController: SplineMaterial is null. Assign the SplineCurvatureInstanced material.");
+                    _warnedMissingMaterial = true;
+                }
                 return;
+            }
 
-            _propertyBlock.SetBuffer("_CloneBuffer", _transformBuffer);
+            if (_argsBuffer == null || _propertyBlock == null || SourceMesh == null)
+                return;
 
             var renderParams = new RenderParams(SplineMaterial)
             {

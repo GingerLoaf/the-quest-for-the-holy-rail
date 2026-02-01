@@ -206,12 +206,12 @@ namespace HolyRail.Vines.Editor
                 EditorGUILayout.Space();
                 EditorGUILayout.LabelField("Direction Bias", EditorStyles.boldLabel);
                 EditorGUILayout.PropertyField(
-                    serializedObject.FindProperty("<BiasVector1>k__BackingField"),
-                    new GUIContent("Bias Vector 1", "First bias direction (vectors are combined)")
+                    serializedObject.FindProperty("<BiasDirection>k__BackingField"),
+                    new GUIContent("Bias Direction", "Direction to bias vine growth toward")
                 );
                 EditorGUILayout.PropertyField(
-                    serializedObject.FindProperty("<BiasVector2>k__BackingField"),
-                    new GUIContent("Bias Vector 2", "Second bias direction (vectors are combined)")
+                    serializedObject.FindProperty("<BiasStrength>k__BackingField"),
+                    new GUIContent("Bias Strength", "How strongly vines are pushed in the bias direction (0-1)")
                 );
 
                 // Rail Connectivity
@@ -243,6 +243,83 @@ namespace HolyRail.Vines.Editor
                     new GUIContent("Enable Connector Rails", "Create rails to unreachable objectives")
                 );
 
+            }
+            else if (generator.AttractorGenerationMode == AttractorMode.Billboard)
+            {
+                // Billboard Mode Settings
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Billboard Mode Settings", EditorStyles.boldLabel);
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("<CityManager>k__BackingField"));
+
+                // Show billboard status if CityManager is assigned
+                if (generator.CityManager != null && generator.CityManager.HasBillboardData)
+                {
+                    EditorGUI.indentLevel++;
+                    EditorGUILayout.LabelField("Billboards:", generator.CityManager.Billboards.Count.ToString());
+                    EditorGUI.indentLevel--;
+                }
+
+                // Billboard Connection Settings
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Connection Settings", EditorStyles.boldLabel);
+                EditorGUILayout.PropertyField(
+                    serializedObject.FindProperty("<BillboardMaxConnectionDistance>k__BackingField"),
+                    new GUIContent("Max Connection Distance", "Maximum distance between billboards to connect")
+                );
+                EditorGUILayout.PropertyField(
+                    serializedObject.FindProperty("<BillboardSameSideOnly>k__BackingField"),
+                    new GUIContent("Same Side Only", "Only connect billboards on the same wall")
+                );
+                EditorGUILayout.PropertyField(
+                    serializedObject.FindProperty("<BillboardInwardOffset>k__BackingField"),
+                    new GUIContent("Inward Offset", "How far vines are offset from billboard surface")
+                );
+
+                // Sag/Shape Settings
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Vine Shape", EditorStyles.boldLabel);
+                EditorGUILayout.PropertyField(
+                    serializedObject.FindProperty("<BillboardSagAmount>k__BackingField"),
+                    new GUIContent("Sag Amount", "How much vines droop in the middle")
+                );
+                EditorGUILayout.PropertyField(
+                    serializedObject.FindProperty("<BillboardPointsPerSpline>k__BackingField"),
+                    new GUIContent("Points Per Vine", "Resolution of each vine segment")
+                );
+
+                // Building Avoidance
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Building Avoidance", EditorStyles.boldLabel);
+                EditorGUILayout.PropertyField(
+                    serializedObject.FindProperty("<EnableBuildingAvoidance>k__BackingField"),
+                    new GUIContent("Enable", "Push vines away from buildings")
+                );
+                if (generator.EnableBuildingAvoidance)
+                {
+                    EditorGUI.indentLevel++;
+                    EditorGUILayout.PropertyField(
+                        serializedObject.FindProperty("<BuildingAvoidanceDistance>k__BackingField"),
+                        new GUIContent("Avoidance Distance", "How far vines stay from building surfaces")
+                    );
+                    EditorGUI.indentLevel--;
+                }
+
+                // Billboard Avoidance (for vines not clipping through the billboards themselves)
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Billboard Avoidance", EditorStyles.boldLabel);
+                EditorGUILayout.PropertyField(
+                    serializedObject.FindProperty("<EnableBillboardAvoidance>k__BackingField"),
+                    new GUIContent("Enable", "Push vines away from billboard surfaces")
+                );
+                if (generator.EnableBillboardAvoidance)
+                {
+                    EditorGUI.indentLevel++;
+                    EditorGUILayout.PropertyField(
+                        serializedObject.FindProperty("<BillboardAvoidanceDistance>k__BackingField"),
+                        new GUIContent("Avoidance Distance", "How far vines stay from billboard surfaces")
+                    );
+                    EditorGUI.indentLevel--;
+                }
             }
             else
             {
@@ -319,18 +396,18 @@ namespace HolyRail.Vines.Editor
                 EditorGUI.indentLevel--;
             }
 
-            // Direction Bias - shown for attractor-based modes and Free mode (Path mode has its own section)
-            if (generator.AttractorGenerationMode != AttractorMode.Path)
+            // Direction Bias - shown for attractor-based modes and Free mode (Path mode has its own section, Billboard mode doesn't use it)
+            if (generator.AttractorGenerationMode != AttractorMode.Path && generator.AttractorGenerationMode != AttractorMode.Billboard)
             {
                 EditorGUILayout.Space();
                 EditorGUILayout.LabelField("Direction Bias", EditorStyles.boldLabel);
                 EditorGUILayout.PropertyField(
-                    serializedObject.FindProperty("<BiasVector1>k__BackingField"),
-                    new GUIContent("Bias Vector 1", "First bias direction (vectors are combined)")
+                    serializedObject.FindProperty("<BiasDirection>k__BackingField"),
+                    new GUIContent("Bias Direction", "Direction to bias vine growth toward")
                 );
                 EditorGUILayout.PropertyField(
-                    serializedObject.FindProperty("<BiasVector2>k__BackingField"),
-                    new GUIContent("Bias Vector 2", "Second bias direction (vectors are combined)")
+                    serializedObject.FindProperty("<BiasStrength>k__BackingField"),
+                    new GUIContent("Bias Strength", "How strongly vines are pushed in the bias direction (0-1)")
                 );
             }
 
@@ -435,6 +512,7 @@ namespace HolyRail.Vines.Editor
             // Auto-regenerate if enabled and properties changed
             bool canAutoRegenerate = generator.AttractorGenerationMode == AttractorMode.Free
                 || generator.AttractorGenerationMode == AttractorMode.Path
+                || generator.AttractorGenerationMode == AttractorMode.Billboard
                 || (generator.VineComputeShader != null && generator.RootPoints.Count > 0);
 
             if (propertiesChanged && generator.AutoRegenerate && canAutoRegenerate)
@@ -550,6 +628,19 @@ namespace HolyRail.Vines.Editor
                     "7. Convert to splines for rail grinding",
                     MessageType.None);
             }
+            else if (generator.AttractorGenerationMode == AttractorMode.Billboard)
+            {
+                EditorGUILayout.HelpBox(
+                    "Billboard Mode:\n" +
+                    "1. Assign a CityManager with billboard data\n" +
+                    "2. Adjust Max Connection Distance for billboard linking\n" +
+                    "3. Enable Same Side Only to restrict connections\n" +
+                    "4. Configure Sag Amount for vine droop\n" +
+                    "5. Enable Building/Billboard Avoidance as needed\n" +
+                    "6. Click REGENERATE VINES\n" +
+                    "7. Convert to splines for rail grinding",
+                    MessageType.None);
+            }
             else
             {
                 EditorGUILayout.HelpBox(
@@ -577,7 +668,7 @@ namespace HolyRail.Vines.Editor
             EditorGUILayout.LabelField(generator.NodeCount.ToString(), valueStyle);
             EditorGUILayout.EndHorizontal();
 
-            if (generator.AttractorGenerationMode != AttractorMode.Free && generator.AttractorGenerationMode != AttractorMode.Path)
+            if (generator.AttractorGenerationMode != AttractorMode.Free && generator.AttractorGenerationMode != AttractorMode.Path && generator.AttractorGenerationMode != AttractorMode.Billboard)
             {
                 EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.LabelField("Active Attractors:", labelStyle, GUILayout.Width(120));

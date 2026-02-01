@@ -12,6 +12,7 @@ using HolyRail.PostProcessing;
 using HolyRail.Scripts;
 using HolyRail.Scripts.Enemies;
 using HolyRail.Graffiti;
+using HolyRail.Scripts.Splines;
 using Random = UnityEngine.Random;
 
 #if ENABLE_INPUT_SYSTEM 
@@ -205,7 +206,24 @@ namespace StarterAssets
             {
                 _splineRefreshCooldown = SplineRefreshInterval;
                 var currentSplines = FindObjectsByType<SplineContainer>(FindObjectsSortMode.None);
-                if (_splineContainers == null || currentSplines.Length != _splineContainers.Length)
+
+                bool needsRefresh = _splineContainers == null ||
+                                    currentSplines.Length != _splineContainers.Length;
+
+                // Also check if any cached container is now null (destroyed and recreated)
+                if (!needsRefresh && _splineContainers != null)
+                {
+                    for (int i = 0; i < _splineContainers.Length; i++)
+                    {
+                        if (_splineContainers[i] == null)
+                        {
+                            needsRefresh = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (needsRefresh)
                 {
                     // Refresh the cached splines and spatial grid
                     _splineContainers = currentSplines;
@@ -490,6 +508,8 @@ namespace StarterAssets
         private float _grindSpeedCurrent;
         private float _grindRotationVelocity;
         private SplineTravelDirection _grindDirection;
+        private GrindSplineSettings _currentGrindSettings;
+        private readonly HashSet<SplineContainer> _usedOneWaySplines = new();
 
         // Wall ride state
         private bool _isWallRiding;
@@ -1199,9 +1219,31 @@ namespace StarterAssets
                 return false;
             }
 
-            if (result.Distance <= GrindDistanceThreshold)
+            // Check for custom magnetism radius from GrindSplineSettings
+            var splineSettings = result.Container.GetComponent<GrindSplineSettings>();
+
+            // Reject if this is a used one-way spline
+            if (splineSettings != null && splineSettings.IsOneWay && _usedOneWaySplines.Contains(result.Container))
+            {
+                return false;
+            }
+
+            float effectiveThreshold = (splineSettings != null && splineSettings.CustomMagnetismRadius > 0f)
+                ? splineSettings.CustomMagnetismRadius
+                : GrindDistanceThreshold;
+
+            if (result.Distance <= effectiveThreshold)
             {
                 var direction = GetVelocityBasedGrindDirection(result.Container, result.SplineParameter);
+
+                // Force direction for one-way splines
+                if (splineSettings != null && splineSettings.IsOneWay)
+                {
+                    direction = splineSettings.ReverseDirection
+                        ? SplineTravelDirection.EndToStart
+                        : SplineTravelDirection.StartToEnd;
+                }
+
                 StartGrind(result.Container, result.SplineParameter, direction);
                 return true;
             }
@@ -1270,6 +1312,7 @@ namespace StarterAssets
         {
             GrindSpline = spline;
             SplineMeshController = spline.GetComponent<SplineMeshController>();
+            _currentGrindSettings = spline.GetComponent<GrindSplineSettings>();
             _grindT = Mathf.Clamp01(startT);
             _grindSplineLength = spline.CalculateLength();
 
@@ -1410,9 +1453,18 @@ namespace StarterAssets
 
             // Store exit velocity for wall ride detection (CharacterController velocity won't be updated yet)
             _preservedExitVelocity = exitDirection * _speed;
+
+            // Mark one-way spline as used
+            if (_currentGrindSettings != null && _currentGrindSettings.IsOneWay && GrindSpline != null)
+            {
+                _usedOneWaySplines.Add(GrindSpline);
+            }
+
+            // Clear cached settings
+            _currentGrindSettings = null;
         }
 
-        private void ExitGrindWithJump(float? jumpHeight = null)
+        private void ExitGrindWithJump(float? jumpHeight = null, float? cooldown = null)
         {
             if (SplineMeshController != null)
             {
@@ -1446,7 +1498,7 @@ namespace StarterAssets
             }
 
             // Start cooldown timer to prevent immediate re-attach in auto-grind mode
-            _grindExitCooldownTimer = GrindExitCooldown;
+            _grindExitCooldownTimer = cooldown ?? GrindExitCooldown;
             _momentumPreservationTimer = MomentumPreservationTime;
 
             // Re-enable controller
@@ -1497,6 +1549,15 @@ namespace StarterAssets
 
             // Clear jump input to prevent double jumping
             _input.jump = false;
+
+            // Mark one-way spline as used
+            if (_currentGrindSettings != null && _currentGrindSettings.IsOneWay && GrindSpline != null)
+            {
+                _usedOneWaySplines.Add(GrindSpline);
+            }
+
+            // Clear cached settings
+            _currentGrindSettings = null;
         }
 
         private void Grind()
@@ -1504,8 +1565,8 @@ namespace StarterAssets
             if (GrindSpline == null || GrindSpline.Spline == null)
                 return;
 
-            // Check for jump input to exit grind early
-            if (_input.jump)
+            // Check for jump input to exit grind early (unless BlockJumpExit is enabled)
+            if (_input.jump && (_currentGrindSettings == null || !_currentGrindSettings.BlockJumpExit))
             {
                 ExitGrindWithJump();
                 return;
@@ -1539,7 +1600,9 @@ namespace StarterAssets
             // Auto-exit at end of spline with a smaller jump
             if (_grindT >= 1f || _grindT <= 0f)
             {
-                ExitGrindWithJump(GrindEndJumpHeight);
+                // Use custom cooldown if available to prevent high-magnetism rails from re-capturing
+                float? endCooldown = _currentGrindSettings?.EndExitCooldown;
+                ExitGrindWithJump(GrindEndJumpHeight, endCooldown);
                 return;
             }
 

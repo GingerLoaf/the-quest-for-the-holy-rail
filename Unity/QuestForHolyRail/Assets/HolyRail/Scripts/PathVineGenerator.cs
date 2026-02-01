@@ -45,6 +45,25 @@ namespace HolyRail
         [SerializeField] private LayerMask _buildingLayer;
         [SerializeField] private float _buildingPadding = 3f;
 
+        [Header("Waypoint Exclusion")]
+        [SerializeField] private bool _excludeConvergencePoint = true;
+        [SerializeField] private float _convergencePointPadding = 25f;
+
+        [SerializeField] private bool _excludeEndpointA = true;
+        [SerializeField] private bool _excludeEndpointB = true;
+        [SerializeField] private bool _excludeEndpointC = true;
+        [SerializeField] private float _endpointPadding = 25f;
+
+        [SerializeField] private bool _excludeConvergenceEndPoint = true;
+        [SerializeField] private float _convergenceEndPointPadding = 25f;
+
+        [SerializeField] private bool _excludeFinalEndPoint = true;
+        [SerializeField] private float _finalEndPointPadding = 25f;
+
+        [SerializeField] private bool _excludeJunctionAB = true;
+        [SerializeField] private bool _excludeJunctionBC = true;
+        [SerializeField] private float _junctionPadding = 25f;
+
         [Header("Smoothing")]
         [SerializeField] private bool _enableSmoothing = true;
         [SerializeField] private float _smoothingTolerance = 0.5f;
@@ -68,6 +87,17 @@ namespace HolyRail
         public bool LiveUpdate => _liveUpdate;
 
         private readonly List<GameObject> _generatedVines = new List<GameObject>();
+
+        private void Start()
+        {
+            // Refresh grind controller's spline cache for any pre-existing vines (generated in editor)
+            if (_makeGrindable && _generatedVines.Count > 0)
+            {
+                var grindController = FindFirstObjectByType<ThirdPersonController_RailGrinder>();
+                grindController?.RefreshSplineContainers();
+            }
+        }
+
         private readonly List<SplineSample> _cachedSplineSamples = new List<SplineSample>();
         private int _vineIndex;
         private IReadOnlyList<Vector3> _currentCorridor;
@@ -248,24 +278,26 @@ namespace HolyRail
                         var mirroredPoints = new List<Vector3>(points.Count);
                         foreach (var p in points)
                         {
-                            mirroredPoints.Add(MirrorPointAcrossPath(p, corridor));
-                        }
+                            var mirrored = MirrorPointAcrossPath(p, corridor);
+                            mirrored = ApplyAvoidance(mirrored);
+                            mirrored = ClampToCorridorBounds(mirrored);
 
-                        // Apply avoidance and bounds clamping to each mirrored point
-                        for (int j = 0; j < mirroredPoints.Count; j++)
-                        {
-                            mirroredPoints[j] = ApplyAvoidance(mirroredPoints[j]);
-                            mirroredPoints[j] = ClampToCorridorBounds(mirroredPoints[j]);
+                            // Skip points near exclusion waypoints
+                            if (!IsNearExclusionWaypoint(mirrored))
+                                mirroredPoints.Add(mirrored);
                         }
 
                         // Refine mirrored points for segment avoidance
                         mirroredPoints = RefinePointsForAvoidance(mirroredPoints);
 
-                        var mirroredSpline = CreateSpline(mirroredPoints, $"Vine_{corridorName}_{_vineIndex}_Mirror");
-                        if (mirroredSpline != null)
+                        if (mirroredPoints.Count >= 2)
                         {
-                            _generatedVines.Add(mirroredSpline.gameObject);
-                            _vineIndex++;
+                            var mirroredSpline = CreateSpline(mirroredPoints, $"Vine_{corridorName}_{_vineIndex}_Mirror");
+                            if (mirroredSpline != null)
+                            {
+                                _generatedVines.Add(mirroredSpline.gameObject);
+                                _vineIndex++;
+                            }
                         }
                     }
                 }
@@ -368,6 +400,10 @@ namespace HolyRail
                 point = ApplyAvoidance(point);
                 point = ClampToCorridorBounds(point);
 
+                // Skip points near exclusion waypoints (convergence points, endpoints, junctions)
+                if (IsNearExclusionWaypoint(point))
+                    continue;
+
                 points.Add(point);
             }
 
@@ -375,6 +411,78 @@ namespace HolyRail
             points = RefinePointsForAvoidance(points);
 
             return points;
+        }
+
+        private bool IsNearExclusionWaypoint(Vector3 point)
+        {
+            if (_cityManager == null)
+                return false;
+
+            // Convergence Point (start plaza)
+            if (_excludeConvergencePoint && _cityManager.ConvergencePoint != null)
+            {
+                float radiusSq = _convergencePointPadding * _convergencePointPadding;
+                if ((point - _cityManager.ConvergencePoint.position).sqrMagnitude < radiusSq)
+                    return true;
+            }
+
+            // Endpoint A
+            if (_excludeEndpointA && _cityManager.EndpointA != null)
+            {
+                float radiusSq = _endpointPadding * _endpointPadding;
+                if ((point - _cityManager.EndpointA.position).sqrMagnitude < radiusSq)
+                    return true;
+            }
+
+            // Endpoint B
+            if (_excludeEndpointB && _cityManager.EndpointB != null)
+            {
+                float radiusSq = _endpointPadding * _endpointPadding;
+                if ((point - _cityManager.EndpointB.position).sqrMagnitude < radiusSq)
+                    return true;
+            }
+
+            // Endpoint C
+            if (_excludeEndpointC && _cityManager.EndpointC != null)
+            {
+                float radiusSq = _endpointPadding * _endpointPadding;
+                if ((point - _cityManager.EndpointC.position).sqrMagnitude < radiusSq)
+                    return true;
+            }
+
+            // Convergence End Point (end plaza)
+            if (_excludeConvergenceEndPoint && _cityManager.ConvergenceEndPoint != null)
+            {
+                float radiusSq = _convergenceEndPointPadding * _convergenceEndPointPadding;
+                if ((point - _cityManager.ConvergenceEndPoint.position).sqrMagnitude < radiusSq)
+                    return true;
+            }
+
+            // Final End Point
+            if (_excludeFinalEndPoint && _cityManager.FinalEndPoint != null)
+            {
+                float radiusSq = _finalEndPointPadding * _finalEndPointPadding;
+                if ((point - _cityManager.FinalEndPoint.position).sqrMagnitude < radiusSq)
+                    return true;
+            }
+
+            // Junction AB
+            if (_excludeJunctionAB && _cityManager.JunctionAB != null)
+            {
+                float radiusSq = _junctionPadding * _junctionPadding;
+                if ((point - _cityManager.JunctionAB.position).sqrMagnitude < radiusSq)
+                    return true;
+            }
+
+            // Junction BC
+            if (_excludeJunctionBC && _cityManager.JunctionBC != null)
+            {
+                float radiusSq = _junctionPadding * _junctionPadding;
+                if ((point - _cityManager.JunctionBC.position).sqrMagnitude < radiusSq)
+                    return true;
+            }
+
+            return false;
         }
 
         private Vector3 ApplyAvoidance(Vector3 point)
@@ -654,6 +762,10 @@ namespace HolyRail
 
             foreach (var sample in _cachedSplineSamples)
             {
+                // Skip positions near exclusion waypoints
+                if (IsNearExclusionWaypoint(sample.Position))
+                    continue;
+
                 float nearestWallDist = FindDistanceToNearestWall(sample.Position, buildings);
 
                 if (nearestWallDist <= maxWallDistance)

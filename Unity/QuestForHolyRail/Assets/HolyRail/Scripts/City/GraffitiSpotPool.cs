@@ -22,6 +22,20 @@ namespace HolyRail.City
         public int SpotCount => _spots.Count;
         public bool Initialized => _initialized;
 
+        public int CompletedCount
+        {
+            get
+            {
+                int count = 0;
+                foreach (var spot in _spots)
+                {
+                    if (spot != null && spot.IsCompleted)
+                        count++;
+                }
+                return count;
+            }
+        }
+
         private void Start()
         {
             if (CityManager != null && CityManager.HasGraffitiData)

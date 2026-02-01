@@ -8,7 +8,7 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: OpheliaOutfit
-  m_Shader: {fileID: 4800000, guid: 56b0919385f83490787543651063d352, type: 3}
+  m_Shader: {fileID: 4800000, guid: a3a4a5a6a7a89012a3a4a5a6a7a89012, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
@@ -23,12 +23,28 @@ Material:
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
+    - _BaseMap:
+        m_Texture: {fileID: 2800000, guid: 922979643dca049bcbae2da565a050a3, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _BumpMap:
+        m_Texture: {fileID: 2800000, guid: 182b4b4bdee114d62b74382604a143bc, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _CharTex:
         m_Texture: {fileID: 2800000, guid: d1118dda59970a2449ee890fa247c4c5, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _EmissionMap:
+        m_Texture: {fileID: 2800000, guid: 522804cc16a9598448a8620d6536676f, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _MainTex:
         m_Texture: {fileID: 2800000, guid: fc6291517881847ea825b1aca0b06cfa, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _MetallicGlossMap:
+        m_Texture: {fileID: 2800000, guid: c869a9c1e877c4928ab30587c078f97f, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _NoiseTex:
@@ -39,25 +55,32 @@ Material:
     m_Floats:
     - _BaseBrightness: 0.25
     - _Brightness: 3
+    - _BumpScale: 1
     - _CharChangeSpeed: 5.1
     - _EdgeAmount: 1
     - _EdgePower: 1.6
-    - _EmissionIntensity: 62.3
+    - _EmissionIntensity: 9.86
     - _Frequency: 1.09
+    - _FresnelIntensity: 0
+    - _FresnelPower: 1.23
     - _GlowLength: 2
     - _GlowLocation: 0
+    - _Metallic: 0
     - _Power: 5.8
     - _Scale: 4
     - _ScrollSpeed: 0.1
+    - _Smoothness: 0.378
     - _Speed: 0.1
     - _TexBlend: 0.92
     - _TexRotation: 0
     - _TrailLength: 1
     m_Colors:
     - _BackgroundColor: {r: 0, g: 0, b: 0, a: 1}
-    - _BaseColor: {r: 0, g: 0.25660384, b: 0.6415094, a: 1}
-    - _CharColor: {r: 1, g: 0.44604036, b: 0.10196078, a: 1}
+    - _BaseColor: {r: 0, g: 0, b: 0, a: 1}
+    - _CharColor: {r: 0, g: 0, b: 0, a: 1}
     - _EdgeColor: {r: 0.7877358, g: 0.93037015, b: 1, a: 1}
+    - _EmissionColor: {r: 0.103773594, g: 0.09207118, b: 0.060208265, a: 1}
+    - _FresnelColor: {r: 1, g: 1, b: 1, a: 1}
     - _GradientColor: {r: 1, g: 0.27789727, b: 0, a: 1}
     - _TexScrollSpeed: {r: 0.01, g: 0.03, b: 0, a: 0}
     - _TexTiling: {r: 1, g: 1, b: 1, a: 0}

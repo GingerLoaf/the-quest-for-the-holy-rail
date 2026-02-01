@@ -164,6 +164,9 @@ namespace HolyRail.City
         [Header("Loop Mode")]
         [field: SerializeField] public bool IsLoopMode { get; set; } = false;
 
+        [Header("Linear Mode")]
+        [field: SerializeField] public bool IsLinearMode { get; set; } = false;
+
         // Loop mode state (serialized for persistence)
         [SerializeField, HideInInspector]
         private LoopModeState _loopState = new LoopModeState();
@@ -450,10 +453,10 @@ namespace HolyRail.City
             var endPos = ConvergenceEndPoint != null ? ConvergenceEndPoint.position : Vector3.zero;
             endPos.y = convergencePos.y; // Flatten to same height
 
-            // In loop mode, only generate corridor A
-            bool generateCorridorA = IsLoopMode || (EnableCorridorA && EndpointA != null);
-            bool generateCorridorB = !IsLoopMode && EnableCorridorB && EndpointB != null;
-            bool generateCorridorC = !IsLoopMode && EnableCorridorC && EndpointC != null;
+            // In loop mode or linear mode, only generate corridor A
+            bool generateCorridorA = IsLoopMode || IsLinearMode || (EnableCorridorA && EndpointA != null);
+            bool generateCorridorB = !IsLoopMode && !IsLinearMode && EnableCorridorB && EndpointB != null;
+            bool generateCorridorC = !IsLoopMode && !IsLinearMode && EnableCorridorC && EndpointC != null;
 
             // Clear B branch paths
             _corridorPathB_ToAB.Clear();
@@ -495,7 +498,52 @@ namespace HolyRail.City
                 sharedSegmentBCToEnd = GenerateCurvedPathSegment(junctionBCPos, endPos, 200, 0);
             }
 
-            if (generateCorridorA && EndpointA != null)
+            // Linear mode: single continuous path through all waypoints
+            if (IsLinearMode && EndpointA != null)
+            {
+                _corridorPathA = new List<Vector3>();
+                _corridorPathB = new List<Vector3>();
+                _corridorPathC = new List<Vector3>();
+                _corridorPathB_ToAB.Clear();
+                _corridorPathB_ToBC.Clear();
+
+                // Build linear path: Start → A → B → C → End → Final
+                var segStartToA = GenerateCurvedPathSegment(convergencePos, EndpointA.position, 0, 0);
+                _corridorPathA.AddRange(segStartToA);
+
+                if (EndpointB != null)
+                {
+                    var segAToB = GenerateCurvedPathSegment(EndpointA.position, EndpointB.position, 0, 1);
+                    for (int i = 1; i < segAToB.Count; i++)
+                        _corridorPathA.Add(segAToB[i]);
+                }
+
+                if (EndpointC != null && EndpointB != null)
+                {
+                    var segBToC = GenerateCurvedPathSegment(EndpointB.position, EndpointC.position, 0, 2);
+                    for (int i = 1; i < segBToC.Count; i++)
+                        _corridorPathA.Add(segBToC[i]);
+                }
+
+                // Determine last waypoint for connection to end
+                Vector3 lastWaypoint = EndpointA.position;
+                if (EndpointC != null) lastWaypoint = EndpointC.position;
+                else if (EndpointB != null) lastWaypoint = EndpointB.position;
+
+                if (ConvergenceEndPoint != null)
+                {
+                    var segToEnd = GenerateCurvedPathSegment(lastWaypoint, endPos, 0, 3);
+                    for (int i = 1; i < segToEnd.Count; i++)
+                        _corridorPathA.Add(segToEnd[i]);
+                }
+
+                if (useFinalEndPoint && sharedFinalSegment != null)
+                {
+                    for (int i = 1; i < sharedFinalSegment.Count; i++)
+                        _corridorPathA.Add(sharedFinalSegment[i]);
+                }
+            }
+            else if (generateCorridorA && EndpointA != null)
             {
                 if (useJunctionAB)
                 {
@@ -515,7 +563,7 @@ namespace HolyRail.City
                 }
             }
 
-            if (generateCorridorB)
+            if (!IsLinearMode && generateCorridorB)
             {
                 // Corridor B: if both junctions enabled, create TWO branches
                 if (useJunctionAB && useJunctionBC)
@@ -593,7 +641,8 @@ namespace HolyRail.City
             }
 
             // Append straight line from ConvergenceEndPoint to FinalEndPoint (shared by all corridors)
-            if (useFinalEndPoint && sharedFinalSegment != null && sharedFinalSegment.Count > 0)
+            // Skip for linear mode since final segment is already appended during linear path generation
+            if (!IsLinearMode && useFinalEndPoint && sharedFinalSegment != null && sharedFinalSegment.Count > 0)
             {
                 // Helper to append final segment to a path
                 void AppendFinalSegment(List<Vector3> path)
@@ -643,19 +692,19 @@ namespace HolyRail.City
                 allPaths.Add(_corridorPathB_ToBC);
             }
 
-            // In loop mode, calculate path midpoint and setup half data
+            // In loop mode (not linear mode), calculate path midpoint and setup half data
             int pathMidpointIndex = 0;
-            if (IsLoopMode && _corridorPathA.Count > 0)
+            if (IsLoopMode && !IsLinearMode && _corridorPathA.Count > 0)
             {
                 pathMidpointIndex = _corridorPathA.Count / 2;
                 SetupLoopModeHalves(pathMidpointIndex);
             }
 
             // Generate buildings along enabled corridors (with overlap checking)
-            // In loop mode, track which half each building belongs to
+            // In loop mode (not linear mode), track which half each building belongs to
             if (generateCorridorA && _corridorPathA.Count > 0)
             {
-                if (IsLoopMode)
+                if (IsLoopMode && !IsLinearMode)
                 {
                     _loopState.HalfA.BuildingStartIndex = _generatedBuildings.Count;
                     GenerateCorridorBuildingsForHalf(_corridorPathA, allPaths, pathToIndex[_corridorPathA], 0, pathMidpointIndex);
@@ -879,10 +928,11 @@ namespace HolyRail.City
             var billboardInfo = EnableBillboards ? $", {_generatedBillboards.Count} billboards" : "";
             var graffitiInfo = EnableGraffiti ? $", {_generatedGraffitiSpots.Count} graffiti spots" : "";
             var loopInfo = IsLoopMode ? " (Loop Mode)" : "";
-            int corridorCount = IsLoopMode ? 1 : EnabledCorridorCount;
-            Debug.Log($"CityManager: Generated {_generatedBuildings.Count} buildings across {corridorCount} corridors{rampInfo}{billboardInfo}{graffitiInfo}{loopInfo}");
+            var linearInfo = IsLinearMode ? " (Linear Mode)" : "";
+            int corridorCount = (IsLoopMode || IsLinearMode) ? 1 : EnabledCorridorCount;
+            Debug.Log($"CityManager: Generated {_generatedBuildings.Count} buildings across {corridorCount} corridors{rampInfo}{billboardInfo}{graffitiInfo}{loopInfo}{linearInfo}");
 
-            if (IsLoopMode)
+            if (IsLoopMode && !IsLinearMode)
             {
                 Debug.Log($"CityManager Loop Mode: HalfA has {_loopState.HalfA.BuildingCount} buildings, {_loopState.HalfA.RampCount} ramps, {_loopState.HalfA.BillboardCount} billboards, {_loopState.HalfA.GraffitiCount} graffiti");
                 Debug.Log($"CityManager Loop Mode: HalfB has {_loopState.HalfB.BuildingCount} buildings, {_loopState.HalfB.RampCount} ramps, {_loopState.HalfB.BillboardCount} billboards, {_loopState.HalfB.GraffitiCount} graffiti");
@@ -969,8 +1019,8 @@ namespace HolyRail.City
             if ((position - convergencePos).sqrMagnitude < convergenceRadiusSq)
                 return true;
 
-            // End convergence plaza
-            if (ConvergenceEndPoint != null && EnableConvergenceEndPlaza)
+            // End convergence point (always exclude obstacles here, regardless of plaza setting)
+            if (ConvergenceEndPoint != null)
             {
                 if ((position - ConvergenceEndPoint.position).sqrMagnitude < endRadiusSq)
                     return true;
@@ -2837,9 +2887,6 @@ namespace HolyRail.City
             if (_argsBuffer == null || _propertyBlock == null)
                 return;
 
-            // Update material buffer reference
-            _propertyBlock.SetBuffer("_BuildingBuffer", _buildingBuffer);
-
             var renderParams = new RenderParams(BuildingMaterial)
             {
                 worldBounds = _renderBounds,
@@ -2911,9 +2958,6 @@ namespace HolyRail.City
         {
             if (_rampArgsBuffer == null || _rampPropertyBlock == null)
                 return;
-
-            // Update material buffer reference
-            _rampPropertyBlock.SetBuffer("_RampBuffer", _rampBuffer);
 
             var renderParams = new RenderParams(RampMaterial)
             {
@@ -3028,9 +3072,6 @@ namespace HolyRail.City
             if (_obstacleArgsBuffer == null || _obstaclePropertyBlock == null)
                 return;
 
-            // Update material buffer reference
-            _obstaclePropertyBlock.SetBuffer("_ObstacleBuffer", _obstacleBuffer);
-
             var renderParams = new RenderParams(ObstacleMaterial)
             {
                 worldBounds = _renderBounds,
@@ -3102,9 +3143,6 @@ namespace HolyRail.City
         {
             if (_billboardArgsBuffer == null || _billboardPropertyBlock == null)
                 return;
-
-            // Update material buffer reference
-            _billboardPropertyBlock.SetBuffer("_BillboardBuffer", _billboardBuffer);
 
             var renderParams = new RenderParams(BillboardMaterial)
             {
@@ -3220,6 +3258,9 @@ namespace HolyRail.City
                 Debug.LogWarning("CityManager: Cannot regenerate graffiti - city not generated yet.");
                 return;
             }
+
+            // Initialize random generator with seed (needed for standalone regeneration)
+            _random = new System.Random(Seed);
 
             // Clear existing graffiti
             _generatedGraffitiSpots.Clear();
