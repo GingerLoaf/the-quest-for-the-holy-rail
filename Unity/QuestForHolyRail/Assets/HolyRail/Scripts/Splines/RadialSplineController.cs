@@ -258,6 +258,23 @@ namespace HolyRail.Splines
                 TryExtractMeshFromSplineExtrude();
             }
 
+            // Validate we have both mesh and spline data before proceeding
+            bool hasMesh = SourceMesh != null;
+            bool hasSplines = MasterSpline.Splines != null && MasterSpline.Splines.Count > 0;
+
+            if (!hasMesh || !hasSplines)
+            {
+                // Clear any existing state to avoid partial data (mesh without splines or vice versa)
+                ClearGrindableContainers();
+                ReleaseBuffers();
+
+                if (!hasMesh)
+                    Debug.LogWarning("RadialSplineController: No mesh available. Assign SourceMesh or add SplineExtrude with mesh to master spline.");
+                if (!hasSplines)
+                    Debug.LogWarning("RadialSplineController: Master spline has no spline data.");
+                return;
+            }
+
             // Cache original knots before applying noise
             CacheOriginalKnots();
 
@@ -271,6 +288,13 @@ namespace HolyRail.Splines
 
             CreateGrindableContainers();
             InitializeBuffers();
+
+            // Validate sync between clones and splines
+            int expectedSplineCount = _cloneData.Count - 1; // Exclude master at index 0
+            if (_grindableContainers.Count != expectedSplineCount)
+            {
+                Debug.LogWarning($"RadialSplineController: Spline count mismatch. Expected {expectedSplineCount}, got {_grindableContainers.Count}");
+            }
         }
 
         /// <summary>

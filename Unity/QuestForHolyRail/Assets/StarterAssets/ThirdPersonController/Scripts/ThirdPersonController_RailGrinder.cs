@@ -547,6 +547,15 @@ namespace StarterAssets
         private Vector3 _spawnPosition;
         private Quaternion _spawnRotation;
 
+        /// <summary>
+        /// Set a new checkpoint position for respawning.
+        /// </summary>
+        public void SetCheckpoint(Vector3 position, Quaternion rotation)
+        {
+            _spawnPosition = position;
+            _spawnRotation = rotation;
+        }
+
         // Dash state
         private bool _isDashing;
         public bool IsDashing => _isDashing;

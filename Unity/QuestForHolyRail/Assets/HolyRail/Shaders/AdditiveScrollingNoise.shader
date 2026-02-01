@@ -23,6 +23,10 @@ Shader "HolyRail/AdditiveScrollingNoise"
         _FresnelPower ("Fresnel Power", Float) = 2.0
         _FresnelIntensity ("Fresnel Intensity", Float) = 1.0
 
+        [Header(Refraction)]
+        _RefractionStrength ("Refraction Strength", Range(0, 0.5)) = 0.0
+        _RefractionNoiseInfluence ("Noise Influence", Range(0, 1)) = 1.0
+
         [Header(Output)]
         _Intensity ("Intensity", Float) = 1.0
     }
@@ -43,13 +47,14 @@ Shader "HolyRail/AdditiveScrollingNoise"
 
             Blend SrcAlpha One
             ZWrite Off
-            Cull Back
+            Cull Off
 
             HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareOpaqueTexture.hlsl"
 
             struct Attributes
             {
@@ -65,6 +70,7 @@ Shader "HolyRail/AdditiveScrollingNoise"
                 float gradientFactor : TEXCOORD1;
                 float3 normalWS : TEXCOORD2;
                 float3 viewDirWS : TEXCOORD3;
+                float4 screenPos : TEXCOORD4;
             };
 
             TEXTURE2D(_NoiseTex1);
@@ -84,6 +90,8 @@ Shader "HolyRail/AdditiveScrollingNoise"
                 float4 _NoiseScrollSpeed2;
                 float _FresnelPower;
                 float _FresnelIntensity;
+                float _RefractionStrength;
+                float _RefractionNoiseInfluence;
                 float _Intensity;
             CBUFFER_END
 
@@ -94,6 +102,9 @@ Shader "HolyRail/AdditiveScrollingNoise"
                 float3 positionWS = TransformObjectToWorld(input.positionOS.xyz);
                 output.positionCS = TransformWorldToHClip(positionWS);
                 output.uv = input.uv;
+
+                // Screen position for refraction sampling
+                output.screenPos = ComputeScreenPos(output.positionCS);
 
                 // World space normal and view direction for fresnel
                 output.normalWS = TransformObjectToWorldNormal(input.normalOS);
@@ -115,7 +126,7 @@ Shader "HolyRail/AdditiveScrollingNoise"
                 return output;
             }
 
-            half4 frag(Varyings input) : SV_Target
+            half4 frag(Varyings input, half facing : VFACE) : SV_Target
             {
                 // Calculate scrolling UVs for both noise textures
                 float2 noiseUV1 = input.uv * _NoiseScale1.xy + _Time.y * _NoiseScrollSpeed1.xy;
@@ -128,11 +139,27 @@ Shader "HolyRail/AdditiveScrollingNoise"
                 // Combine noise by multiplication
                 half combinedNoise = noise1 * noise2;
 
-                // Calculate fresnel
-                float3 normalWS = normalize(input.normalWS);
+                // Calculate fresnel (flip normal for back faces)
+                float3 normalWS = normalize(input.normalWS) * facing;
                 float3 viewDirWS = normalize(input.viewDirWS);
                 float NdotV = dot(normalWS, viewDirWS);
                 float fresnel = pow(1.0 - saturate(NdotV), _FresnelPower) * _FresnelIntensity;
+
+                // Refraction using scrolling noise
+                float2 screenUV = input.screenPos.xy / input.screenPos.w;
+                if (_RefractionStrength > 0.001)
+                {
+                    // Use combined noise to create distortion offset
+                    float2 noiseOffset = (combinedNoise - 0.5) * 2.0 * _RefractionStrength;
+                    // Blend between pure noise distortion and noise-modulated distortion
+                    noiseOffset *= lerp(1.0, combinedNoise, _RefractionNoiseInfluence);
+
+                    float2 distortedUV = screenUV + noiseOffset;
+                    half3 refractionColor = SampleSceneColor(distortedUV);
+
+                    // The refraction is shown through the object - we'll blend it additively
+                    // This creates a "heat shimmer" or "energy field" effect
+                }
 
                 // Lerp between bottom and top color based on gradient factor
                 half4 gradientColor = lerp(_BottomColor, _TopColor, input.gradientFactor);
@@ -141,6 +168,19 @@ Shader "HolyRail/AdditiveScrollingNoise"
                 half4 finalColor;
                 finalColor.rgb = gradientColor.rgb * combinedNoise * fresnel * _Intensity;
                 finalColor.a = gradientColor.a * combinedNoise * fresnel;
+
+                // Add refraction distortion to the scene behind
+                if (_RefractionStrength > 0.001)
+                {
+                    float2 noiseOffset = (combinedNoise - 0.5) * 2.0 * _RefractionStrength;
+                    noiseOffset *= lerp(1.0, combinedNoise, _RefractionNoiseInfluence);
+                    float2 distortedUV = screenUV + noiseOffset;
+                    half3 refractionColor = SampleSceneColor(distortedUV);
+                    half3 originalColor = SampleSceneColor(screenUV);
+
+                    // Add the difference (distortion effect) to the final color
+                    finalColor.rgb += (refractionColor - originalColor) * fresnel;
+                }
 
                 return finalColor;
             }

@@ -12,7 +12,8 @@ Material:
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
-  m_InvalidKeywords: []
+  m_InvalidKeywords:
+  - _USEOBJECTSPACEGRADIENT_ON
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 0
   m_DoubleSidedGI: 0
@@ -25,27 +26,29 @@ Material:
     serializedVersion: 3
     m_TexEnvs:
     - _NoiseTex1:
-        m_Texture: {fileID: 0}
+        m_Texture: {fileID: 2800000, guid: 38c7debc03fd0ec499941f2333cb15eb, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _NoiseTex2:
-        m_Texture: {fileID: 0}
+        m_Texture: {fileID: 2800000, guid: 0df56dc9c52b20c4c9f2ab76b00a1caa, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
-    - _FresnelIntensity: 1
+    - _FresnelIntensity: 2.97
     - _FresnelPower: 0.01
     - _GradientMaxY: 1
-    - _GradientMinY: 0
-    - _Intensity: 1
-    - _UseObjectSpaceGradient: 0
+    - _GradientMinY: -1.55
+    - _Intensity: 3.72
+    - _RefractionNoiseInfluence: 1
+    - _RefractionStrength: 0.232
+    - _UseObjectSpaceGradient: 1
     m_Colors:
     - _BottomColor: {r: 1, g: 0.3279019, b: 0, a: 1}
     - _NoiseScale1: {r: 1, g: 1, b: 0, a: 0}
-    - _NoiseScale2: {r: 1, g: 1, b: 0, a: 0}
-    - _NoiseScrollSpeed1: {r: 0.5, g: 0.2, b: 0, a: 0}
-    - _NoiseScrollSpeed2: {r: -0.3, g: 0.1, b: 0, a: 0}
-    - _TopColor: {r: 1, g: 0, b: 0.026643753, a: 1}
+    - _NoiseScale2: {r: 0.3, g: 1, b: 0, a: 0}
+    - _NoiseScrollSpeed1: {r: 0, g: -0.04, b: 0, a: 0}
+    - _NoiseScrollSpeed2: {r: -0.01, g: -0.01, b: 0, a: 0}
+    - _TopColor: {r: 0, g: 0, b: 0, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

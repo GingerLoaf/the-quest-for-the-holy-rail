@@ -136,6 +136,13 @@ namespace HolyRail.City
         [field: SerializeField] public Transform FinalEndPoint { get; private set; }
         [field: SerializeField] public bool EnableFinalEndPoint { get; private set; } = true;
         [field: SerializeField] public float FinalEndPointRadius { get; private set; } = 15f;
+        [field: SerializeField] public bool EnableFinalPlaza { get; set; } = true;
+        [field: SerializeField, Range(1, 3)] public int FinalPlazaRingRows { get; set; } = 1;
+
+        [Header("Endpoint Plazas")]
+        [field: SerializeField] public float EndpointRadius { get; private set; } = 20f;
+        [field: SerializeField] public bool EnableEndpointPlazas { get; set; } = true;
+        [field: SerializeField, Range(1, 3)] public int EndpointPlazaRingRows { get; set; } = 1;
 
         [Header("Corridor Settings")]
         [field: SerializeField] public float CorridorWidth { get; set; } = 30f;
@@ -740,6 +747,50 @@ namespace HolyRail.City
                 GenerateEndPlazaRing(allPaths);
             }
 
+            // Generate final plaza ring around FinalEndPoint
+            if (!IsLoopMode && FinalEndPoint != null && EnableFinalEndPoint && EnableFinalPlaza)
+            {
+                GenerateFinalPlazaRing();
+            }
+
+            // Generate endpoint plazas (A, B, C)
+            if (!IsLoopMode && EnableEndpointPlazas)
+            {
+                // EndpointA: incoming from ConvergencePoint, outgoing to EndpointB (or ConvergenceEndPoint)
+                if (EndpointA != null)
+                {
+                    var incoming = ConvergencePoint.position - EndpointA.position;
+                    Vector3? outgoing = null;
+                    if (EndpointB != null)
+                        outgoing = EndpointB.position - EndpointA.position;
+                    else if (ConvergenceEndPoint != null)
+                        outgoing = ConvergenceEndPoint.position - EndpointA.position;
+                    GenerateEndpointPlazaRing(EndpointA, incoming, outgoing);
+                }
+
+                // EndpointB: incoming from EndpointA, outgoing to EndpointC (or ConvergenceEndPoint)
+                if (EndpointB != null && EndpointA != null)
+                {
+                    var incoming = EndpointA.position - EndpointB.position;
+                    Vector3? outgoing = null;
+                    if (EndpointC != null)
+                        outgoing = EndpointC.position - EndpointB.position;
+                    else if (ConvergenceEndPoint != null)
+                        outgoing = ConvergenceEndPoint.position - EndpointB.position;
+                    GenerateEndpointPlazaRing(EndpointB, incoming, outgoing);
+                }
+
+                // EndpointC: incoming from EndpointB, outgoing to ConvergenceEndPoint
+                if (EndpointC != null && EndpointB != null)
+                {
+                    var incoming = EndpointB.position - EndpointC.position;
+                    Vector3? outgoing = ConvergenceEndPoint != null
+                        ? ConvergenceEndPoint.position - EndpointC.position
+                        : (Vector3?)null;
+                    GenerateEndpointPlazaRing(EndpointC, incoming, outgoing);
+                }
+            }
+
             // Now initialize the rendering buffers from serialized data
             InitializeBuffersFromSerializedData();
 
@@ -1026,6 +1077,30 @@ namespace HolyRail.City
                     return true;
             }
 
+            // EndpointA
+            if (EndpointA != null)
+            {
+                var endpointRadiusSq = EndpointRadius * EndpointRadius;
+                if ((position - EndpointA.position).sqrMagnitude < endpointRadiusSq)
+                    return true;
+            }
+
+            // EndpointB
+            if (EndpointB != null)
+            {
+                var endpointRadiusSq = EndpointRadius * EndpointRadius;
+                if ((position - EndpointB.position).sqrMagnitude < endpointRadiusSq)
+                    return true;
+            }
+
+            // EndpointC
+            if (EndpointC != null)
+            {
+                var endpointRadiusSq = EndpointRadius * EndpointRadius;
+                if ((position - EndpointC.position).sqrMagnitude < endpointRadiusSq)
+                    return true;
+            }
+
             // JunctionAB
             if (EnableJunctionAB && JunctionAB != null)
             {
@@ -1086,12 +1161,32 @@ namespace HolyRail.City
                     return true;
             }
 
-            // FinalEndPoint - use expanded radius
+            // FinalEndPoint - include building ring if plaza enabled
             if (EnableFinalEndPoint && FinalEndPoint != null)
             {
                 float finalExpandedRadius = FinalEndPointRadius + BuildingSetback + avgBuildingWidth;
+                if (EnableFinalPlaza)
+                {
+                    finalExpandedRadius = FinalEndPointRadius + BuildingSetback +
+                                          FinalPlazaRingRows * (avgBuildingWidth + BuildingSetback) + avgBuildingWidth;
+                }
                 float finalExpandedRadiusSq = finalExpandedRadius * finalExpandedRadius;
                 if ((position - FinalEndPoint.position).sqrMagnitude < finalExpandedRadiusSq)
+                    return true;
+            }
+
+            // Endpoints - include building ring if plazas enabled
+            if (EnableEndpointPlazas)
+            {
+                float endpointExpandedRadius = EndpointRadius + BuildingSetback +
+                                               EndpointPlazaRingRows * (avgBuildingWidth + BuildingSetback) + avgBuildingWidth;
+                float endpointExpandedRadiusSq = endpointExpandedRadius * endpointExpandedRadius;
+
+                if (EndpointA != null && (position - EndpointA.position).sqrMagnitude < endpointExpandedRadiusSq)
+                    return true;
+                if (EndpointB != null && (position - EndpointB.position).sqrMagnitude < endpointExpandedRadiusSq)
+                    return true;
+                if (EndpointC != null && (position - EndpointC.position).sqrMagnitude < endpointExpandedRadiusSq)
                     return true;
             }
 
@@ -1565,6 +1660,122 @@ namespace HolyRail.City
                     // Place building facing inward toward end plaza center
                     var pos = endPlazaPos + new Vector3(Mathf.Sin(angle), 0, Mathf.Cos(angle)) * ringRadius;
                     var facingDir = (endPlazaPos - pos).normalized;
+                    PlaceBuilding(pos, facingDir, needsCollider: true);
+                }
+            }
+        }
+
+        private void GenerateFinalPlazaRing()
+        {
+            if (FinalEndPoint == null || !EnableFinalEndPoint || !EnableFinalPlaza)
+                return;
+
+            var finalPlazaPos = FinalEndPoint.position;
+            finalPlazaPos.y = ConvergencePoint.position.y; // Maintain height consistency
+            float avgBuildingWidth = (BuildingWidthMin + BuildingWidthMax) * 0.5f;
+
+            // Calculate direction from ConvergenceEndPoint to FinalEndPoint for corridor gap
+            var corridorAngles = new List<float>();
+            if (ConvergenceEndPoint != null)
+            {
+                var dir = ConvergenceEndPoint.position - finalPlazaPos;
+                dir.y = 0;
+                float angle = Mathf.Atan2(dir.x, dir.z);
+                corridorAngles.Add(angle);
+            }
+
+            // Place buildings in a ring, skipping corridor entrance
+            float circumference = 2 * Mathf.PI * FinalEndPointRadius;
+            int buildingCount = Mathf.FloorToInt(circumference / (avgBuildingWidth + BuildingSetback));
+            float angleStep = 2 * Mathf.PI / buildingCount;
+
+            // Half-width of corridor gap in radians
+            float corridorGapAngle = Mathf.Atan2(CorridorWidth / 2 + BuildingSetback, FinalEndPointRadius);
+
+            for (int row = 0; row < FinalPlazaRingRows; row++)
+            {
+                float ringRadius = FinalEndPointRadius + BuildingSetback + row * (avgBuildingWidth + BuildingSetback);
+
+                for (int i = 0; i < buildingCount; i++)
+                {
+                    float angle = i * angleStep;
+
+                    // Check if this angle is within corridor entrance gap
+                    bool inCorridorGap = false;
+                    foreach (float corridorAngle in corridorAngles)
+                    {
+                        float angleDiff = Mathf.Abs(Mathf.DeltaAngle(angle * Mathf.Rad2Deg, corridorAngle * Mathf.Rad2Deg)) * Mathf.Deg2Rad;
+                        if (angleDiff < corridorGapAngle)
+                        {
+                            inCorridorGap = true;
+                            break;
+                        }
+                    }
+
+                    if (inCorridorGap)
+                        continue;
+
+                    // Place building facing inward toward final plaza center
+                    var pos = finalPlazaPos + new Vector3(Mathf.Sin(angle), 0, Mathf.Cos(angle)) * ringRadius;
+                    var facingDir = (finalPlazaPos - pos).normalized;
+                    PlaceBuilding(pos, facingDir, needsCollider: true);
+                }
+            }
+        }
+
+        private void GenerateEndpointPlazaRing(Transform endpoint, Vector3? incomingDir, Vector3? outgoingDir)
+        {
+            if (endpoint == null || !EnableEndpointPlazas)
+                return;
+
+            var plazaPos = endpoint.position;
+            plazaPos.y = ConvergencePoint.position.y;
+            float avgBuildingWidth = (BuildingWidthMin + BuildingWidthMax) * 0.5f;
+
+            // Calculate corridor angles to leave gaps
+            var corridorAngles = new List<float>();
+            if (incomingDir.HasValue)
+            {
+                var dir = incomingDir.Value;
+                dir.y = 0;
+                corridorAngles.Add(Mathf.Atan2(dir.x, dir.z));
+            }
+            if (outgoingDir.HasValue)
+            {
+                var dir = outgoingDir.Value;
+                dir.y = 0;
+                corridorAngles.Add(Mathf.Atan2(dir.x, dir.z));
+            }
+
+            float circumference = 2 * Mathf.PI * EndpointRadius;
+            int buildingCount = Mathf.FloorToInt(circumference / (avgBuildingWidth + BuildingSetback));
+            float angleStep = 2 * Mathf.PI / buildingCount;
+            float corridorGapAngle = Mathf.Atan2(CorridorWidth / 2 + BuildingSetback, EndpointRadius);
+
+            for (int row = 0; row < EndpointPlazaRingRows; row++)
+            {
+                float ringRadius = EndpointRadius + BuildingSetback + row * (avgBuildingWidth + BuildingSetback);
+
+                for (int i = 0; i < buildingCount; i++)
+                {
+                    float angle = i * angleStep;
+
+                    bool inCorridorGap = false;
+                    foreach (float corridorAngle in corridorAngles)
+                    {
+                        float angleDiff = Mathf.Abs(Mathf.DeltaAngle(angle * Mathf.Rad2Deg, corridorAngle * Mathf.Rad2Deg)) * Mathf.Deg2Rad;
+                        if (angleDiff < corridorGapAngle)
+                        {
+                            inCorridorGap = true;
+                            break;
+                        }
+                    }
+
+                    if (inCorridorGap)
+                        continue;
+
+                    var pos = plazaPos + new Vector3(Mathf.Sin(angle), 0, Mathf.Cos(angle)) * ringRadius;
+                    var facingDir = (plazaPos - pos).normalized;
                     PlaceBuilding(pos, facingDir, needsCollider: true);
                 }
             }

@@ -9,6 +9,7 @@ namespace HolyRail.Editor
         private bool _settingsFoldout = true;
         private bool _noiseFoldout = true;
         private bool _avoidanceFoldout = true;
+        private bool _waypointExclusionFoldout = true;
         private bool _smoothingFoldout = true;
         private bool _grindingFoldout = true;
         private bool _meshRenderingFoldout = true;
@@ -100,6 +101,31 @@ namespace HolyRail.Editor
                 EditorGUILayout.PropertyField(serializedObject.FindProperty("_rampPadding"));
                 EditorGUILayout.PropertyField(serializedObject.FindProperty("_buildingLayer"));
                 EditorGUILayout.PropertyField(serializedObject.FindProperty("_buildingPadding"));
+                EditorGUI.indentLevel--;
+            }
+
+            // Waypoint Exclusion foldout
+            _waypointExclusionFoldout = EditorGUILayout.Foldout(_waypointExclusionFoldout, "Waypoint Exclusion", true);
+            if (_waypointExclusionFoldout)
+            {
+                EditorGUI.indentLevel++;
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("_excludeConvergencePoint"));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("_convergencePointPadding"));
+                EditorGUILayout.Space(5);
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("_excludeEndpointA"));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("_excludeEndpointB"));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("_excludeEndpointC"));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("_endpointPadding"));
+                EditorGUILayout.Space(5);
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("_excludeConvergenceEndPoint"));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("_convergenceEndPointPadding"));
+                EditorGUILayout.Space(5);
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("_excludeFinalEndPoint"));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("_finalEndPointPadding"));
+                EditorGUILayout.Space(5);
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("_excludeJunctionAB"));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("_excludeJunctionBC"));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("_junctionPadding"));
                 EditorGUI.indentLevel--;
             }
 

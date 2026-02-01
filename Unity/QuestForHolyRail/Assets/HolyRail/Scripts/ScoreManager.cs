@@ -391,7 +391,7 @@ namespace HolyRail.Scripts
             _scoreAnimCoroutine = null;
         }
 
-        private void ShowPopup(string text)
+        public void ShowPopup(string text)
         {
             if (PopupText == null)
                 return;

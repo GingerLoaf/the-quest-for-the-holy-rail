@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using HolyRail.Scripts;
 using StarterAssets;
@@ -50,6 +51,16 @@ namespace Art.PickUps
         [Tooltip("Pulse speed when player is near")]
         [SerializeField] private float _pulseSpeed = 4f;
 
+        [Header("Door/Gate")]
+        [Tooltip("Optional GameObject (e.g., a cube) that blocks the path until this ability is collected")]
+        [SerializeField] private GameObject _door;
+        [Tooltip("Sound to play from the door when unlocking (looped until animation completes)")]
+        [SerializeField] private AudioClip _doorUnlockSFX;
+        [Tooltip("How long the door takes to animate down")]
+        [SerializeField] private float _doorAnimDuration = 1.5f;
+        [Tooltip("3D audio max distance for door sound")]
+        [SerializeField] private float _doorAudioMaxDistance = 50f;
+
         [Header("Audio")]
         [SerializeField] private AudioClip _pickupSFX;
         [Range(0f, 1f)]
@@ -97,9 +108,13 @@ namespace Art.PickUps
             // Restore previously unlocked abilities
             RestoreUnlockedAbility();
 
-            // If this ability is already unlocked, hide the pickup
+            // If this ability is already unlocked, hide the pickup and open the door
             if (UnlockedAbilities.Contains(Ability))
             {
+                if (_door != null)
+                {
+                    _door.SetActive(false);
+                }
                 gameObject.SetActive(false);
             }
         }
@@ -175,6 +190,24 @@ namespace Art.PickUps
             // Unlock the ability
             UnlockAbility();
 
+            // Set this position as the new checkpoint
+            if (ThirdPersonController_RailGrinder.Instance != null)
+            {
+                ThirdPersonController_RailGrinder.Instance.SetCheckpoint(
+                    _startPosition,
+                    Quaternion.LookRotation(_playerTransform.position - _startPosition)
+                );
+            }
+
+            // Show checkpoint notification
+            ScoreManager.Instance?.ShowPopup("CHECKPOINT!");
+
+            // Unlock the door/gate if one is assigned
+            if (_door != null)
+            {
+                StartCoroutine(AnimateDoorDown());
+            }
+
             // Play VFX
             if (_pickupVFX != null)
             {
@@ -229,6 +262,57 @@ namespace Art.PickUps
             {
                 ActionReference.action.Enable();
             }
+        }
+
+        private IEnumerator AnimateDoorDown()
+        {
+            if (_door == null)
+                yield break;
+
+            // Calculate door height from renderer bounds or scale
+            float doorHeight = _door.transform.localScale.y;
+            var renderer = _door.GetComponent<Renderer>();
+            if (renderer != null)
+            {
+                doorHeight = renderer.bounds.size.y;
+            }
+
+            Vector3 startPos = _door.transform.position;
+            Vector3 endPos = startPos - Vector3.up * doorHeight;
+
+            // Create 3D audio source on the door
+            AudioSource doorAudio = null;
+            if (_doorUnlockSFX != null)
+            {
+                doorAudio = _door.AddComponent<AudioSource>();
+                doorAudio.clip = _doorUnlockSFX;
+                doorAudio.loop = true;
+                doorAudio.spatialBlend = 1f; // Full 3D
+                doorAudio.rolloffMode = AudioRolloffMode.Linear;
+                doorAudio.minDistance = 1f;
+                doorAudio.maxDistance = _doorAudioMaxDistance;
+                doorAudio.Play();
+            }
+
+            // Animate door down
+            float elapsed = 0f;
+            while (elapsed < _doorAnimDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = elapsed / _doorAnimDuration;
+                _door.transform.position = Vector3.Lerp(startPos, endPos, t);
+
+                // Fade audio in last 25% of animation
+                if (doorAudio != null && t > 0.75f)
+                {
+                    doorAudio.volume = Mathf.Lerp(1f, 0f, (t - 0.75f) / 0.25f);
+                }
+
+                yield return null;
+            }
+
+            // Clean up
+            _door.SetActive(false);
         }
 
         private void OnDrawGizmosSelected()

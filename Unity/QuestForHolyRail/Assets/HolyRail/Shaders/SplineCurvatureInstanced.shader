@@ -273,9 +273,8 @@ Shader "HolyRail/SplineCurvatureInstanced"
                 // Combine base color with gradient
                 half3 color = lerp(_BaseColor.rgb, gradientColor.rgb, gradientColor.a);
 
-                // Add emission based on curvature intensity and noise
-                float emissionStrength = abs(combinedCurvature) * (0.5 + abs(input.noise) * 0.5);
-                half3 emission = gradientColor.rgb * _EmissionColor.rgb * _EmissionIntensity * emissionStrength;
+                // Add emission - _EmissionIntensity directly controls HDR brightness for bloom
+                half3 emission = _EmissionColor.rgb * _EmissionIntensity;
                 color += emission;
 
                 // Apply fog
