@@ -36,7 +36,7 @@ namespace HolyRail.Scripts.Enemies
         [Header("Position Spread")]
         [field: Tooltip("Random X offset range (left/right spread)")]
         [field: SerializeField]
-        public Vector2 OffsetRangeX { get; private set; } = new(-8f, 8f);
+        public Vector2 OffsetRangeX { get; private set; } = new(-4f, 4f);
 
         [field: Tooltip("Random Y offset range (height spread)")]
         [field: SerializeField]
@@ -52,9 +52,9 @@ namespace HolyRail.Scripts.Enemies
         public float FollowSpeed { get; private set; } = 15f;
 
         [Header("Wall Avoidance")]
-        [field: Tooltip("Layer mask for wall collision")]
+        [field: Tooltip("Layer mask for wall collision (leave empty to disable wall avoidance)")]
         [field: SerializeField]
-        public LayerMask WallLayerMask { get; private set; } = ~0; // Default to all layers
+        public LayerMask WallLayerMask { get; private set; } = 0; // Default to nothing - enable specific layers as needed
 
         [Header("Lead Targeting")]
         [field: Tooltip("How much to lead the target (0 = aim at current position, 1 = full prediction)")]
@@ -123,18 +123,32 @@ namespace HolyRail.Scripts.Enemies
 
             Debug.Log($"ShooterBot [{name}]: Spawned with FireRate={EffectiveFireRate}s, FiringRange={EffectiveFiringRange}m, InitialTimer={_fireTimer:F2}s");
 
-            // Randomize position offset within configured ranges
-            _targetOffset = new Vector3(
-                Random.Range(OffsetRangeX.x, OffsetRangeX.y),
-                Random.Range(OffsetRangeY.x, OffsetRangeY.y),
-                Random.Range(OffsetRangeZ.x, OffsetRangeZ.y)
-            );
-
-            // Initialize player position tracking for velocity-based lead targeting
+            // Calculate target offset for following the player
             if (Spawner && Spawner.Player)
             {
-                _lastPlayerPos = Spawner.Player.position;
+                Vector3 playerPos = Spawner.Player.position;
+                Vector3 spawnPos = transform.position;
+
+                // Randomize target position within offset ranges
+                _targetOffset = new Vector3(
+                    Random.Range(OffsetRangeX.x, OffsetRangeX.y),
+                    Random.Range(OffsetRangeY.x, OffsetRangeY.y),
+                    Random.Range(OffsetRangeZ.x, OffsetRangeZ.y)
+                );
+
+                _lastPlayerPos = playerPos;
                 _playerVelocity = Vector3.zero;
+
+                Debug.Log($"[{name}] SPAWN: playerPos={playerPos}, myPos={spawnPos}, targetOffset={_targetOffset}, state={_botState}");
+            }
+            else
+            {
+                // Fallback if no player reference
+                _targetOffset = new Vector3(
+                    Random.Range(-2f, 2f),
+                    Random.Range(OffsetRangeY.x, OffsetRangeY.y),
+                    OffsetRangeZ.x
+                );
             }
 
             // Clear any property block overrides to use material's default emission
@@ -161,11 +175,22 @@ namespace HolyRail.Scripts.Enemies
             // Range is 50%-150% of fire rate so bots fire at different times
             _fireTimer = EffectiveFireRate * Random.Range(0.5f, 1.5f);
 
-            // Initialize player position tracking for velocity-based lead targeting
+            // Calculate target offset for following the player
             if (Spawner && Spawner.Player)
             {
-                _lastPlayerPos = Spawner.Player.position;
+                Vector3 playerPos = Spawner.Player.position;
+
+                // Randomize target position within offset ranges
+                _targetOffset = new Vector3(
+                    Random.Range(OffsetRangeX.x, OffsetRangeX.y),
+                    Random.Range(OffsetRangeY.x, OffsetRangeY.y),
+                    Random.Range(OffsetRangeZ.x, OffsetRangeZ.y)
+                );
+
+                _lastPlayerPos = playerPos;
                 _playerVelocity = Vector3.zero;
+
+                Debug.Log($"[{name}] SPAWN (EnemyController): playerPos={playerPos}, myPos={transform.position}, finalPos={finalPosition}, targetOffset={_targetOffset}, state={_botState}");
             }
 
             // Clear any property block overrides
@@ -190,38 +215,46 @@ namespace HolyRail.Scripts.Enemies
         {
             if (!Spawner || !Spawner.Player) return;
 
-            var playerTransform = Spawner.Player;
-            Vector3 playerPos = playerTransform.position;
+            Vector3 playerPos = Spawner.Player.position;
+            Vector3 currentPos = transform.position;
 
-            // Calculate target position in WORLD SPACE (not camera-relative)
-            // Bots always stay ahead of player in positive Z world space
+            // Target position: constant Z distance ahead, follow player X, maintain Y offset
             Vector3 targetPosition = new Vector3(
                 playerPos.x + _targetOffset.x,
                 playerPos.y + _targetOffset.y,
-                playerPos.z + Mathf.Abs(_targetOffset.z)  // Always positive Z offset
+                playerPos.z + _targetOffset.z
             );
 
-            // If bot has fallen behind player (negative Z relative to player),
-            // boost speed to catch up quickly
-            Vector3 currentPos = transform.position;
-            float zDiffFromPlayer = currentPos.z - playerPos.z;
-            bool isBehindPlayer = zDiffFromPlayer < 0f;
+            // Calculate speed: at minimum match player Z velocity, plus extra to close the gap
+            float playerZSpeed = Mathf.Max(0f, _playerVelocity.z);
+            float distanceToTarget = Vector3.Distance(currentPos, targetPosition);
+            float catchUpSpeed = distanceToTarget * 2f; // Close gap over ~0.5 seconds
+            float moveSpeed = Mathf.Max(FollowSpeed, playerZSpeed + catchUpSpeed);
 
-            var distanceMultiplier = Mathf.Min(Mathf.Max(Vector3.Distance(targetPosition, currentPos), 1f), 3f);
+            // Smooth movement toward target
+            Vector3 newPosition = Vector3.MoveTowards(currentPos, targetPosition, moveSpeed * Time.deltaTime);
 
-            // Triple speed if behind player to catch up quickly
-            float catchUpMultiplier = isBehindPlayer ? 3f : 1f;
-            var adjustedFollowSpeed = FollowSpeed * distanceMultiplier * catchUpMultiplier;
+            // DEBUG: Log every second
+            if (Time.frameCount % 60 == 0)
+            {
+                Debug.Log($"[{name}] MOVE: pos={currentPos:F1} -> target={targetPosition:F1}, speed={moveSpeed:F1}, playerVel={_playerVelocity:F1}");
+            }
 
-            Vector3 newPosition = Vector3.MoveTowards(currentPos, targetPosition, Time.deltaTime * adjustedFollowSpeed);
+            Vector3 preWallPos = newPosition;
 
             // Check for wall collision and resolve
             newPosition = ResolveWallCollision(currentPos, newPosition);
 
+            // Check if wall blocked us
+            if (Vector3.Distance(preWallPos, newPosition) > 0.01f)
+            {
+                Debug.LogWarning($"[{name}] WALL BLOCKED movement!");
+            }
+
             transform.position = newPosition;
 
-            // Smoothly rotate to face the player
-            var toPlayer = playerPos - transform.position;
+            // Face the player
+            Vector3 toPlayer = playerPos - transform.position;
             if (toPlayer.sqrMagnitude > 0.001f)
             {
                 Quaternion targetRotation = Quaternion.LookRotation(toPlayer);

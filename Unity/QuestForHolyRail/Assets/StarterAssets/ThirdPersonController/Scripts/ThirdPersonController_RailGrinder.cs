@@ -7,6 +7,7 @@ using UnityEngine.SceneManagement;
 using UnityEngine.Splines;
 using Unity.Mathematics;
 using HolyRail.City;
+using HolyRail.FX;
 using HolyRail.PostProcessing;
 using HolyRail.Scripts;
 using HolyRail.Scripts.Enemies;
@@ -2606,6 +2607,10 @@ namespace StarterAssets
             transform.position = _spawnPosition;
             transform.rotation = _spawnRotation;
             _controller.enabled = true;
+
+            // Reset wake trail to prevent visual artifacts from teleport
+            var wakeController = FindAnyObjectByType<PlayerWakeTrailController>();
+            wakeController?.ResetWake();
 
             // Reset velocity and movement state
             _verticalVelocity = 0f;

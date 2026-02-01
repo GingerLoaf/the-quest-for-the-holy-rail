@@ -48,6 +48,8 @@ namespace HolyRail.Scripts
 
         public int CurrentHealth { get; private set; }
 
+        public bool IsInvincible { get; set; }
+
         public int Money
         {
             get => _money;
@@ -84,6 +86,9 @@ namespace HolyRail.Scripts
 
         public void TakeDamage(int amount)
         {
+            if (IsInvincible)
+                return;
+
             CurrentHealth -= amount;
             Debug.Log($"[GameSessionManager] Player took {amount} damage. Current Health: {CurrentHealth}");
             OnHealthChanged?.Invoke(CurrentHealth);

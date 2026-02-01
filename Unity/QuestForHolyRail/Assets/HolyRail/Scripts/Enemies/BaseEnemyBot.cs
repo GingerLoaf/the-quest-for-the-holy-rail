@@ -36,9 +36,10 @@ namespace HolyRail.Scripts.Enemies
         protected BotState _botState = BotState.Active;
         protected bool _isIdle = false;
 
-        // Transition movement
+        // Transition movement (world space positions)
         protected Vector3 _targetOffset;
-        protected Vector3 _startOffset;
+        protected Vector3 _transitionStartWorldPos;
+        protected Vector3 _transitionTargetWorldPos;
         protected float _transitionProgress = 0f;
         protected float _transitionDuration = 1.5f;
 
@@ -70,8 +71,9 @@ namespace HolyRail.Scripts.Enemies
         public virtual void OnSpawn(bool startsIdle, Vector3 finalPosition, float enterDuration)
         {
             _isIdle = startsIdle;
-            _startOffset = Camera.main.transform.InverseTransformPoint(transform.position);
-            _targetOffset = Camera.main.transform.InverseTransformPoint(finalPosition);
+            // Store positions in WORLD SPACE (not camera-relative)
+            _transitionStartWorldPos = transform.position;
+            _transitionTargetWorldPos = finalPosition;
             _transitionDuration = enterDuration;
             _transitionProgress = 0f;
             _botState = BotState.Entering;
@@ -105,11 +107,21 @@ namespace HolyRail.Scripts.Enemies
             _transitionProgress = 0f;
             _transitionDuration = exitDuration;
 
-            // Target is offscreen behind player
+            // Store current position and target exit position in world space
+            _transitionStartWorldPos = transform.position;
+
+            // Target is offscreen behind player (negative Z in world space)
             if (Spawner != null && Spawner.Player != null)
             {
-                _startOffset = Spawner.Player.InverseTransformPoint(transform.position);
-                _targetOffset = Spawner.Player.forward * -30f;
+                _transitionTargetWorldPos = new Vector3(
+                    transform.position.x,
+                    transform.position.y,
+                    Spawner.Player.position.z - 30f
+                );
+            }
+            else
+            {
+                _transitionTargetWorldPos = transform.position + Vector3.back * 30f;
             }
 
             // Disable attacks while exiting
@@ -124,6 +136,7 @@ namespace HolyRail.Scripts.Enemies
 
         /// <summary>
         /// Updates smooth transition movement (entering or exiting).
+        /// Uses WORLD SPACE positioning to ensure bots stay ahead of player.
         /// </summary>
         protected virtual void UpdateTransition()
         {
@@ -132,11 +145,31 @@ namespace HolyRail.Scripts.Enemies
                 return;
             }
 
+            // Log transition progress every second to avoid spam
+            if (Time.frameCount % 60 == 0)
+            {
+                Debug.Log($"[{name}] Transition: state={_botState}, progress={_transitionProgress:F2}/{_transitionDuration:F2}");
+            }
+
             _transitionProgress += Time.deltaTime;
-            var progressFraction = _transitionProgress / _transitionDuration;
+            var progressFraction = Mathf.Clamp01(_transitionProgress / _transitionDuration);
+
             if (progressFraction >= 1f)
             {
-                transform.position = Camera.main.transform.TransformPoint(_targetOffset);
+                // Transition complete
+                Vector3 finalPos = _transitionTargetWorldPos;
+
+                // Ensure final position is ahead of player in world Z
+                if (Spawner != null && Spawner.Player != null && _botState == BotState.Entering)
+                {
+                    float playerZ = Spawner.Player.position.z;
+                    if (finalPos.z < playerZ + 5f)
+                    {
+                        finalPos.z = playerZ + 10f;
+                    }
+                }
+
+                transform.position = finalPos;
 
                 if (_botState == BotState.Entering)
                 {
@@ -160,14 +193,20 @@ namespace HolyRail.Scripts.Enemies
             }
             else
             {
-                // Smooth lerp to target
-                var currentOffset = Vector3.MoveTowards(
-                    _startOffset,
-                    _targetOffset,
-                    progressFraction
-                );
-                
-                transform.position = Camera.main.transform.TransformPoint(currentOffset);
+                // Smooth lerp to target in world space
+                Vector3 newPos = Vector3.Lerp(_transitionStartWorldPos, _transitionTargetWorldPos, progressFraction);
+
+                // During entering transition, ensure bot stays ahead of player
+                if (_botState == BotState.Entering && Spawner != null && Spawner.Player != null)
+                {
+                    float playerZ = Spawner.Player.position.z;
+                    if (newPos.z < playerZ + 2f)
+                    {
+                        newPos.z = playerZ + 2f;
+                    }
+                }
+
+                transform.position = newPos;
             }
         }
 
@@ -195,8 +234,14 @@ namespace HolyRail.Scripts.Enemies
 
         protected virtual void Update()
         {
-            if (!Spawner || !Spawner.Player)
+            if (!Spawner)
             {
+                Debug.LogWarning($"[{name}] BLOCKED: Spawner is null!");
+                return;
+            }
+            if (!Spawner.Player)
+            {
+                Debug.LogWarning($"[{name}] BLOCKED: Spawner.Player is null!");
                 return;
             }
 
@@ -206,6 +251,14 @@ namespace HolyRail.Scripts.Enemies
             if (_botState == BotState.Active)
             {
                 UpdateMovement();
+            }
+            else
+            {
+                // Log every second to avoid spam
+                if (Time.frameCount % 60 == 0)
+                {
+                    Debug.Log($"[{name}] State={_botState}, waiting for Active state");
+                }
             }
         }
 

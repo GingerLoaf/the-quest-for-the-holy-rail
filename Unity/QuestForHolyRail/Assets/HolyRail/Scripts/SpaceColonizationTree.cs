@@ -33,7 +33,7 @@ namespace HolyRail.Trees
 
         [Header("Algorithm")]
         [field: SerializeField, Range(1, 1000)] public int MaxIterations { get; set; } = 100;
-        [field: SerializeField, Range(0.1f, 2f)] public float StepSize { get; set; } = 0.3f;
+        [field: SerializeField, Range(0.1f, 2f)] public float StepSize { get; set; } = 0.5f;
         [field: SerializeField, Range(0.5f, 20f)] public float AttractionRadius { get; set; } = 5f;
         [field: SerializeField, Range(0.1f, 5f)] public float KillRadius { get; set; } = 0.5f;
 
@@ -46,16 +46,16 @@ namespace HolyRail.Trees
 
         [Header("Direction")]
         [field: SerializeField] public Vector3 BiasDirection { get; set; } = Vector3.forward;
-        [field: SerializeField, Range(0f, 1f)] public float BiasStrength { get; set; } = 0.3f;
+        [field: SerializeField, Range(0f, 1f)] public float BiasStrength { get; set; } = 0.15f;
 
         [Header("Variation")]
-        [field: SerializeField, Range(0f, 1f)] public float NoiseStrength { get; set; } = 0.15f;
+        [field: SerializeField, Range(0f, 1f)] public float NoiseStrength { get; set; } = 0.25f;
         [field: SerializeField] public float NoiseScale { get; set; } = 0.5f;
 
         [Header("Branching")]
-        [field: SerializeField, Range(0f, 1f)] public float BranchDensity { get; set; } = 0.5f;
+        [field: SerializeField, Range(0f, 1f)] public float BranchDensity { get; set; } = 0.8f;
         [field: SerializeField, Range(0f, 90f)] public float MinBranchSpreadAngle { get; set; } = 20f;
-        [field: SerializeField, Range(0f, 10f)] public float MinBranchSeparation { get; set; } = 1f;
+        [field: SerializeField, Range(0f, 10f)] public float MinBranchSeparation { get; set; } = 0.5f;
 
         [Header("Filtering")]
         [field: SerializeField, Range(2, 50)] public int MinSplineNodeCount { get; set; } = 3;
@@ -63,7 +63,7 @@ namespace HolyRail.Trees
 
         [Header("Smoothing")]
         [field: SerializeField] public bool EnablePathSmoothing { get; set; } = true;
-        [field: SerializeField, Range(0f, 1f)] public float SmoothingTolerance { get; set; } = 0.15f;
+        [field: SerializeField, Range(0f, 1f)] public float SmoothingTolerance { get; set; } = 0.3f;
 
         [Header("Material")]
         [field: SerializeField] public Material TaperedMaterial { get; set; }
@@ -80,7 +80,9 @@ namespace HolyRail.Trees
 
         [Header("Visualization")]
         [field: SerializeField] public bool ShowAttractors { get; set; } = false;
-        [field: SerializeField] public Color TreeColor { get; set; } = Color.green;
+        [field: SerializeField] public bool ShowNodes { get; set; } = true;
+        [field: SerializeField] public Color NodeColor { get; set; } = Color.green;
+        [field: SerializeField] public Color LineColor { get; set; } = Color.yellow;
         [field: SerializeField] public Color AttractorColor { get; set; } = Color.cyan;
         [field: SerializeField] public float GizmoSize { get; set; } = 0.1f;
 
@@ -332,9 +334,23 @@ namespace HolyRail.Trees
                     if (MinBranchSeparation > 0f)
                     {
                         bool tooClose = false;
-                        foreach (var existingNode in _nodes)
+
+                        // Build ancestor set for this node - we're allowed to be close to our own lineage
+                        var ancestors = new HashSet<int>();
+                        int current = nodeIndex;
+                        while (current >= 0)
                         {
-                            if (Vector3.Distance(newPos, existingNode.Position) < MinBranchSeparation)
+                            ancestors.Add(current);
+                            current = _nodes[current].ParentIndex;
+                        }
+
+                        for (int i = 0; i < _nodes.Count; i++)
+                        {
+                            // Skip ancestors - we're supposed to grow from them
+                            if (ancestors.Contains(i))
+                                continue;
+
+                            if (Vector3.Distance(newPos, _nodes[i].Position) < MinBranchSeparation)
                             {
                                 tooClose = true;
                                 break;
@@ -674,10 +690,11 @@ namespace HolyRail.Trees
                 }
             }
 
-            // Always draw tree structure when nodes exist
+            // Draw tree structure when nodes exist
             if (_nodes.Count > 0)
             {
-                Gizmos.color = TreeColor;
+                // Draw lines between nodes (yellow)
+                Gizmos.color = LineColor;
                 foreach (var node in _nodes)
                 {
                     if (node.ParentIndex >= 0)
@@ -686,11 +703,11 @@ namespace HolyRail.Trees
                     }
                 }
 
-                // Draw root nodes as spheres
-                Gizmos.color = new Color(TreeColor.r, TreeColor.g, TreeColor.b, 1f);
-                foreach (var node in _nodes)
+                // Draw all nodes as spheres (green)
+                if (ShowNodes)
                 {
-                    if (node.ParentIndex < 0)
+                    Gizmos.color = NodeColor;
+                    foreach (var node in _nodes)
                     {
                         Gizmos.DrawSphere(node.Position, GizmoSize);
                     }

@@ -66,6 +66,14 @@ namespace Art.PickUps
 
         public static bool IsAbilityUnlocked(AbilityType ability) => UnlockedAbilities.Contains(ability);
 
+        public static void UnlockAllAbilities()
+        {
+            UnlockedAbilities.Add(AbilityType.Dash);
+            UnlockedAbilities.Add(AbilityType.Parry);
+            UnlockedAbilities.Add(AbilityType.Boost);
+            Debug.Log("[Cheat] All abilities unlocked!");
+        }
+
         public static void ResetUnlockedAbilities()
         {
             UnlockedAbilities.Clear();

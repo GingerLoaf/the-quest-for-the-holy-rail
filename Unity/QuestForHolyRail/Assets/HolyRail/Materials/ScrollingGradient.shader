@@ -23,6 +23,15 @@ Shader "HolyRail/ScrollingGradient"
         _TexScrollSpeed ("Texture Scroll Speed (X, Y)", Vector) = (0, 0, 0, 0)
         _TexRotation ("Texture Rotation (Degrees)", Float) = 0.0
         _TexBlend ("Texture Blend", Range(0, 1)) = 0.0
+
+        [Header(Distance Culling)]
+        _CullDistance ("Cull Distance", Float) = 100.0
+        [HDR] _CullEdgeGlowColor ("Edge Glow Color", Color) = (0, 1, 1, 1)
+        _CullEdgeGlowLength ("Edge Glow Length", Float) = 10.0
+        _CullEdgeGlowFalloff ("Edge Glow Falloff", Float) = 2.0
+        _CullEdgeNoiseTex ("Edge Noise Texture", 2D) = "white" {}
+        _CullEdgeNoiseAmount ("Edge Noise Amount", Range(0, 1)) = 0.5
+        _CullEdgeNoiseScale ("Edge Noise Scale", Float) = 1.0
     }
 
     SubShader
@@ -52,6 +61,8 @@ Shader "HolyRail/ScrollingGradient"
 
             TEXTURE2D(_MainTex);
             SAMPLER(sampler_MainTex);
+            TEXTURE2D(_CullEdgeNoiseTex);
+            SAMPLER(sampler_CullEdgeNoiseTex);
 
             struct Attributes
             {
@@ -67,6 +78,7 @@ Shader "HolyRail/ScrollingGradient"
                 half fogFactor : TEXCOORD1;
                 float3 normalWS : TEXCOORD2;
                 float3 viewDirWS : TEXCOORD3;
+                float3 positionWS : TEXCOORD4;
             };
 
             CBUFFER_START(UnityPerMaterial)
@@ -91,6 +103,13 @@ Shader "HolyRail/ScrollingGradient"
                 half _GlowMix;
                 half _GlowBrightness;
                 half3 _UniformGlowColor;
+                float _CullDistance;
+                half4 _CullEdgeGlowColor;
+                float _CullEdgeGlowLength;
+                float _CullEdgeGlowFalloff;
+                float4 _CullEdgeNoiseTex_ST;
+                float _CullEdgeNoiseAmount;
+                float _CullEdgeNoiseScale;
             CBUFFER_END
 
             Varyings vert(Attributes input)
@@ -102,11 +121,30 @@ Shader "HolyRail/ScrollingGradient"
                 output.fogFactor = ComputeFogFactor(posInputs.positionCS.z);
                 output.normalWS = TransformObjectToWorldNormal(input.normalOS);
                 output.viewDirWS = GetWorldSpaceViewDir(posInputs.positionWS);
+                output.positionWS = posInputs.positionWS;
                 return output;
             }
 
             half4 frag(Varyings input) : SV_Target
             {
+                // Distance culling with edge glow
+                float distanceToCamera = length(input.positionWS - _WorldSpaceCameraPos);
+
+                // Sample noise texture - UV.x wraps radially around the tube, use distance for Y
+                float2 noiseUV = float2(input.uv.x, distanceToCamera * 0.1) * _CullEdgeNoiseScale;
+                half noiseValue = SAMPLE_TEXTURE2D(_CullEdgeNoiseTex, sampler_CullEdgeNoiseTex, noiseUV).r;
+
+                // Apply noise to the cull distance (push edge in/out based on noise)
+                float noisedCullDistance = _CullDistance - (noiseValue * _CullEdgeNoiseAmount * _CullEdgeGlowLength);
+
+                // Clip based on noised distance
+                clip(noisedCullDistance - distanceToCamera);
+
+                // Calculate edge glow (how close to the cull edge we are)
+                float distFromEdge = noisedCullDistance - distanceToCamera;
+                float edgeGlowFactor = 1.0 - saturate(distFromEdge / _CullEdgeGlowLength);
+                edgeGlowFactor = pow(edgeGlowFactor, _CullEdgeGlowFalloff);
+
                 half2 uv = input.uv;
 
                 // Scrolling gradient on V axis
@@ -165,6 +203,9 @@ Shader "HolyRail/ScrollingGradient"
 
                 half3 finalColor = baseColor * _BaseBrightness + baseColor * glow + _UniformGlowColor * glow;
 
+                // Add cull edge glow
+                finalColor += _CullEdgeGlowColor.rgb * edgeGlowFactor;
+
                  // Apply fog
                 finalColor = MixFog(finalColor, input.fogFactor);
 
@@ -200,13 +241,19 @@ Shader "HolyRail/ScrollingGradient"
             struct Varyings
             {
                 float4 positionCS : SV_POSITION;
+                float3 positionWS : TEXCOORD0;
             };
+
+            CBUFFER_START(UnityPerMaterial)
+                float _CullDistance;
+            CBUFFER_END
 
             float3 _LightDirection;
             float3 _LightPosition;
 
-            float4 GetShadowPositionHClip(Attributes input)
+            Varyings ShadowPassVertex(Attributes input)
             {
+                Varyings output;
                 float3 positionWS = TransformObjectToWorld(input.positionOS.xyz);
                 float3 normalWS = TransformObjectToWorldNormal(input.normalOS);
 
@@ -224,18 +271,17 @@ Shader "HolyRail/ScrollingGradient"
                     positionCS.z = max(positionCS.z, UNITY_NEAR_CLIP_VALUE);
                 #endif
 
-                return positionCS;
-            }
-
-            Varyings ShadowPassVertex(Attributes input)
-            {
-                Varyings output;
-                output.positionCS = GetShadowPositionHClip(input);
+                output.positionCS = positionCS;
+                output.positionWS = positionWS;
                 return output;
             }
 
             half4 ShadowPassFragment(Varyings input) : SV_TARGET
             {
+                // Distance culling
+                float distanceToCamera = length(input.positionWS - _WorldSpaceCameraPos);
+                clip(_CullDistance - distanceToCamera);
+
                 return 0;
             }
             ENDHLSL
@@ -264,17 +310,27 @@ Shader "HolyRail/ScrollingGradient"
             struct Varyings
             {
                 float4 positionCS : SV_POSITION;
+                float3 positionWS : TEXCOORD0;
             };
+
+            CBUFFER_START(UnityPerMaterial)
+                float _CullDistance;
+            CBUFFER_END
 
             Varyings DepthOnlyVertex(Attributes input)
             {
                 Varyings output;
                 output.positionCS = TransformObjectToHClip(input.positionOS.xyz);
+                output.positionWS = TransformObjectToWorld(input.positionOS.xyz);
                 return output;
             }
 
             half DepthOnlyFragment(Varyings input) : SV_TARGET
             {
+                // Distance culling
+                float distanceToCamera = length(input.positionWS - _WorldSpaceCameraPos);
+                clip(_CullDistance - distanceToCamera);
+
                 return input.positionCS.z;
             }
             ENDHLSL

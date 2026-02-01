@@ -23,6 +23,10 @@ Material:
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
+    - _CullEdgeNoiseTex:
+        m_Texture: {fileID: 2800000, guid: 0df56dc9c52b20c4c9f2ab76b00a1caa, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _MainTex:
         m_Texture: {fileID: 2800000, guid: fc6291517881847ea825b1aca0b06cfa, type: 3}
         m_Scale: {x: 1, y: 1}
@@ -30,6 +34,11 @@ Material:
     m_Ints: []
     m_Floats:
     - _BaseBrightness: 0.2
+    - _CullDistance: 73.4
+    - _CullEdgeGlowFalloff: 2.9
+    - _CullEdgeGlowLength: 26.95
+    - _CullEdgeNoiseAmount: 0
+    - _CullEdgeNoiseScale: 1.45
     - _EdgeAmount: 1
     - _EdgePower: 0.17
     - _EmissionIntensity: 858
@@ -43,6 +52,7 @@ Material:
     - _TexRotation: 0
     m_Colors:
     - _BaseColor: {r: 1, g: 0.35477337, b: 0, a: 1}
+    - _CullEdgeGlowColor: {r: 0, g: 16, b: 16, a: 1}
     - _EdgeColor: {r: 0, g: 0, b: 0, a: 1}
     - _GradientColor: {r: 0.9811321, g: 0.62806755, b: 0, a: 1}
     - _TexScrollSpeed: {r: 0.01, g: 0.03, b: 0, a: 0}

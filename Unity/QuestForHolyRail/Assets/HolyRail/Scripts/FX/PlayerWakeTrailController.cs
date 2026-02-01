@@ -59,6 +59,8 @@ namespace HolyRail.FX
 
         private void OnDisable()
         {
+            Debug.Log($"[WakeTrail] OnDisable called! Setting _WakePositionCount to 0. Stack:\n{System.Environment.StackTrace}");
+
             Shader.SetGlobalInt(WakePositionCountId, 0);
             Shader.SetGlobalFloat(PlayerSpeedId, 0f);
 
@@ -214,12 +216,48 @@ namespace HolyRail.FX
 
         private void UpdateShaderProperties(Vector3 playerPos)
         {
+            Debug.Log($"[WakeTrail] UpdateShaderProperties: _wakeCount={_wakeCount}");
+
             Shader.SetGlobalVectorArray(WakePositionsId, _wakePositions);
             Shader.SetGlobalInt(WakePositionCountId, _wakeCount);
             Shader.SetGlobalVector(PlayerPositionXZId, new Vector2(playerPos.x, playerPos.z));
 
             float normalizedSpeed = Mathf.Clamp01(_smoothedSpeed / MaxSpeed);
             Shader.SetGlobalFloat(PlayerSpeedId, normalizedSpeed);
+        }
+
+        /// <summary>
+        /// Resets the wake trail when player teleports (e.g., on respawn).
+        /// Call this to prevent visual artifacts from position discontinuity.
+        /// </summary>
+        public void ResetWake()
+        {
+            Debug.Log($"[WakeTrail] ResetWake called. PlayerTransform null: {PlayerTransform == null}");
+
+            InitializeWakePositions();
+            _smoothedSpeed = 0f;
+            _currentSpeed = 0f;
+
+            if (PlayerTransform != null)
+            {
+                var pos = PlayerTransform.position;
+                _lastRecordedPosition = pos;
+                _lastFramePosition = pos;
+                _hasRecordedFirst = true;
+
+                // Record initial wake position so shader has valid data (count > 0)
+                // This prevents the ground from turning black on respawn
+                RecordWakePosition(pos);
+
+                Debug.Log($"[WakeTrail] After RecordWakePosition: _wakeCount={_wakeCount}, pos={pos}");
+
+                UpdateShaderProperties(pos);
+            }
+            else
+            {
+                Debug.LogWarning("[WakeTrail] ResetWake: PlayerTransform is NULL!");
+                _hasRecordedFirst = false;
+            }
         }
 
 #if UNITY_EDITOR

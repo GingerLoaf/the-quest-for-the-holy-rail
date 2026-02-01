@@ -36,6 +36,9 @@ Shader "HolyRail/ScrollingGradientTapered"
         _DistanceFromRootEnd ("Distance From Root End", Range(0, 1)) = 0.0
         _IsBranchMesh ("Is Branch Mesh", Float) = 0.0
         _StartTaperT ("Start Taper T", Float) = 0.0
+
+        [Header(Distance Culling)]
+        _CullDistance ("Cull Distance", Float) = 100.0
     }
 
     SubShader
@@ -82,6 +85,7 @@ Shader "HolyRail/ScrollingGradientTapered"
                 half fogFactor : TEXCOORD2;
                 float3 normalWS : TEXCOORD3;
                 float3 viewDirWS : TEXCOORD4;
+                float3 positionWS : TEXCOORD5;
             };
 
             CBUFFER_START(UnityPerMaterial)
@@ -118,6 +122,8 @@ Shader "HolyRail/ScrollingGradientTapered"
                 float _DistanceFromRootEnd;
                 float _IsBranchMesh;
                 float _StartTaperT;
+                // Distance culling
+                float _CullDistance;
             CBUFFER_END
 
             // Calculate taper factor based on position along spline
@@ -206,11 +212,16 @@ Shader "HolyRail/ScrollingGradientTapered"
                 output.fogFactor = ComputeFogFactor(posInputs.positionCS.z);
                 output.normalWS = TransformObjectToWorldNormal(input.normalOS);
                 output.viewDirWS = GetWorldSpaceViewDir(posInputs.positionWS);
+                output.positionWS = posInputs.positionWS;
                 return output;
             }
 
             half4 frag(Varyings input) : SV_Target
             {
+                // Distance culling
+                float distanceToCamera = length(input.positionWS - _WorldSpaceCameraPos);
+                clip(_CullDistance - distanceToCamera);
+
                 half2 uv = input.uv;
 
                 // Scrolling gradient on V axis
@@ -307,6 +318,7 @@ Shader "HolyRail/ScrollingGradientTapered"
             struct Varyings
             {
                 float4 positionCS : SV_POSITION;
+                float3 positionWS : TEXCOORD0;
             };
 
             CBUFFER_START(UnityPerMaterial)
@@ -341,6 +353,7 @@ Shader "HolyRail/ScrollingGradientTapered"
                 float _DistanceFromRootEnd;
                 float _IsBranchMesh;
                 float _StartTaperT;
+                float _CullDistance;
             CBUFFER_END
 
             float3 _LightDirection;
@@ -432,11 +445,21 @@ Shader "HolyRail/ScrollingGradientTapered"
             {
                 Varyings output;
                 output.positionCS = GetShadowPositionHClip(input);
+
+                // Compute tapered world position for distance culling
+                float taperFactor = CalculateTaperShadow(input.uv, input.uv2);
+                float3 taperOffset = input.normalOS * _Radius * (1.0 - taperFactor);
+                float3 taperedPosOS = input.positionOS.xyz - taperOffset;
+                output.positionWS = TransformObjectToWorld(taperedPosOS);
                 return output;
             }
 
             half4 ShadowPassFragment(Varyings input) : SV_TARGET
             {
+                // Distance culling
+                float distanceToCamera = length(input.positionWS - _WorldSpaceCameraPos);
+                clip(_CullDistance - distanceToCamera);
+
                 return 0;
             }
             ENDHLSL
@@ -468,6 +491,7 @@ Shader "HolyRail/ScrollingGradientTapered"
             struct Varyings
             {
                 float4 positionCS : SV_POSITION;
+                float3 positionWS : TEXCOORD0;
             };
 
             CBUFFER_START(UnityPerMaterial)
@@ -502,6 +526,7 @@ Shader "HolyRail/ScrollingGradientTapered"
                 float _DistanceFromRootEnd;
                 float _IsBranchMesh;
                 float _StartTaperT;
+                float _CullDistance;
             CBUFFER_END
 
             float CalculateTaperDepth(float2 uv, float2 uv2)
@@ -569,11 +594,16 @@ Shader "HolyRail/ScrollingGradientTapered"
                 float3 taperedPosOS = input.positionOS.xyz - taperOffset;
 
                 output.positionCS = TransformObjectToHClip(taperedPosOS);
+                output.positionWS = TransformObjectToWorld(taperedPosOS);
                 return output;
             }
 
             half DepthOnlyFragment(Varyings input) : SV_TARGET
             {
+                // Distance culling
+                float distanceToCamera = length(input.positionWS - _WorldSpaceCameraPos);
+                clip(_CullDistance - distanceToCamera);
+
                 return input.positionCS.z;
             }
             ENDHLSL

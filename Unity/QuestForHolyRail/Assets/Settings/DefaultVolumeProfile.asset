@@ -299,6 +299,68 @@ MonoBehaviour:
   cropToFit:
     m_OverrideState: 1
     m_Value: 1
+--- !u!114 &-2343210990654815576
+MonoBehaviour:
+  m_ObjectHideFlags: 3
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0f109436f26b840c9b633ba29ceec69e, type: 3}
+  m_Name: HeightFogVolume
+  m_EditorClassIdentifier: Assembly-CSharp::HolyRail.PostProcessing.HeightFogVolume
+  active: 1
+  fogColor:
+    m_OverrideState: 1
+    m_Value: {r: 0.5, g: 0.5, b: 0.7, a: 1}
+  density:
+    m_OverrideState: 1
+    m_Value: 0.01
+  startDistance:
+    m_OverrideState: 1
+    m_Value: 0
+--- !u!114 &-2210138334964050034
+MonoBehaviour:
+  m_ObjectHideFlags: 3
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 47d3b406e037b44d0aaf23ccde749ff9, type: 3}
+  m_Name: GradientFogVolume
+  m_EditorClassIdentifier: Assembly-CSharp::HolyRail.PostProcessing.GradientFogVolume
+  active: 1
+  color1:
+    m_OverrideState: 1
+    m_Value: {r: 0.2, g: 0.1, b: 0.3, a: 1}
+  color2:
+    m_OverrideState: 1
+    m_Value: {r: 0.4, g: 0.3, b: 0.5, a: 1}
+  color3:
+    m_OverrideState: 1
+    m_Value: {r: 0.6, g: 0.5, b: 0.7, a: 1}
+  blendHeight12:
+    m_OverrideState: 1
+    m_Value: 10
+  blendHeight23:
+    m_OverrideState: 1
+    m_Value: 50
+  falloff12:
+    m_OverrideState: 1
+    m_Value: 10
+  falloff23:
+    m_OverrideState: 1
+    m_Value: 20
+  density:
+    m_OverrideState: 1
+    m_Value: 0.01
+  startDistance:
+    m_OverrideState: 1
+    m_Value: 0
 --- !u!114 &-1410297666881709256
 MonoBehaviour:
   m_ObjectHideFlags: 3
@@ -468,6 +530,9 @@ MonoBehaviour:
   - {fileID: -6288072647309666549}
   - {fileID: 7518938298396184218}
   - {fileID: -1410297666881709256}
+  - {fileID: 4739837556797849997}
+  - {fileID: -2210138334964050034}
+  - {fileID: -2343210990654815576}
 --- !u!114 &853819529557874667
 MonoBehaviour:
   m_ObjectHideFlags: 3
@@ -856,6 +921,49 @@ MonoBehaviour:
   intensity:
     m_OverrideState: 1
     m_Value: 0
+--- !u!114 &4739837556797849997
+MonoBehaviour:
+  m_ObjectHideFlags: 3
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 89452ee5ee2be43dfad6f677ee8fa8ea, type: 3}
+  m_Name: MatrixRainDeathVolume
+  m_EditorClassIdentifier: Assembly-CSharp::HolyRail.PostProcessing.MatrixRainDeathVolume
+  active: 1
+  wipePosition:
+    m_OverrideState: 1
+    m_Value: 0
+  charColor:
+    m_OverrideState: 1
+    m_Value: {r: 0.1, g: 1, b: 0.35, a: 1}
+  backgroundColor:
+    m_OverrideState: 1
+    m_Value: {r: 0, g: 0, b: 0, a: 1}
+  speed:
+    m_OverrideState: 1
+    m_Value: 1
+  scale:
+    m_OverrideState: 1
+    m_Value: 1
+  brightness:
+    m_OverrideState: 1
+    m_Value: 1
+  trailLength:
+    m_OverrideState: 1
+    m_Value: 0.5
+  charChangeSpeed:
+    m_OverrideState: 1
+    m_Value: 3
+  wipeNoiseScale:
+    m_OverrideState: 1
+    m_Value: 2
+  wipeNoiseStrength:
+    m_OverrideState: 1
+    m_Value: 0.15
 --- !u!114 &6940869943325143175
 MonoBehaviour:
   m_ObjectHideFlags: 3
