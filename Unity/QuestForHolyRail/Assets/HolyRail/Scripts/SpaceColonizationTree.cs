@@ -157,6 +157,7 @@ namespace HolyRail.Trees
         /// </summary>
         public void ClearMeshes()
         {
+            // First clear tracked splines
             foreach (var splineContainer in _generatedSplines)
             {
                 if (splineContainer != null)
@@ -170,6 +171,18 @@ namespace HolyRail.Trees
                 }
             }
             _generatedSplines.Clear();
+
+            // Also destroy any orphaned children (survives domain reload since _generatedSplines is non-serialized)
+            for (int i = transform.childCount - 1; i >= 0; i--)
+            {
+                var child = transform.GetChild(i).gameObject;
+#if UNITY_EDITOR
+                if (!Application.isPlaying)
+                    DestroyImmediate(child);
+                else
+#endif
+                    Destroy(child);
+            }
 
 #if UNITY_EDITOR
             if (!Application.isPlaying)
@@ -479,34 +492,6 @@ namespace HolyRail.Trees
 
             foreach (var path in paths)
             {
-                var splineGO = new GameObject($"TreeSpline_{processedCount}");
-#if UNITY_EDITOR
-                if (!Application.isPlaying)
-                    Undo.RegisterCreatedObjectUndo(splineGO, "Create Tree Spline");
-#endif
-                splineGO.transform.SetParent(transform, false);
-
-                var splineContainer = splineGO.AddComponent<SplineContainer>();
-                if (splineContainer.Splines.Count > 0)
-                    splineContainer.RemoveSplineAt(0);
-
-                var spline = splineContainer.AddSpline();
-
-                var positions = path.Select(i => (float3)_nodes[i].Position).ToList();
-
-                if (EnablePathSmoothing && SmoothingTolerance > 0)
-                {
-                    var smoothed = new List<float3>();
-                    SplineUtility.ReducePoints(positions, smoothed, SmoothingTolerance);
-                    positions = smoothed;
-                }
-
-                foreach (var pos in positions)
-                {
-                    var knot = new BezierKnot(pos);
-                    spline.Add(knot, TangentMode.AutoSmooth);
-                }
-
                 int meshStartIndex = 0;
                 for (int i = 1; i < path.Count; i++)
                 {
@@ -529,113 +514,128 @@ namespace HolyRail.Trees
                 }
 
                 int uniqueNodeCount = path.Count - meshStartIndex;
-                if (uniqueNodeCount >= 2)
+                if (uniqueNodeCount < 2)
+                    continue;
+
+                // Create single GameObject with SplineContainer for mesh - no separate parent spline
+                var meshGO = new GameObject($"TreeMesh_{processedCount}");
+#if UNITY_EDITOR
+                if (!Application.isPlaying)
+                    Undo.RegisterCreatedObjectUndo(meshGO, "Create Tree Mesh");
+#endif
+                meshGO.transform.SetParent(transform, false);
+
+                var meshSplineContainer = meshGO.AddComponent<SplineContainer>();
+                if (meshSplineContainer.Splines.Count > 0)
+                    meshSplineContainer.RemoveSplineAt(0);
+                var meshSpline = meshSplineContainer.AddSpline();
+
+                int actualMeshStart = meshStartIndex > 0 ? meshStartIndex - 1 : meshStartIndex;
+
+                float overlapDistance = 0f;
+                if (meshStartIndex > 0 && actualMeshStart < meshStartIndex)
                 {
-                    var meshGO = new GameObject($"TreeMesh_{processedCount}");
-#if UNITY_EDITOR
-                    if (!Application.isPlaying)
-                        Undo.RegisterCreatedObjectUndo(meshGO, "Create Tree Mesh");
-#endif
-                    meshGO.transform.SetParent(splineGO.transform, false);
-
-                    var meshSplineContainer = meshGO.AddComponent<SplineContainer>();
-                    if (meshSplineContainer.Splines.Count > 0)
-                        meshSplineContainer.RemoveSplineAt(0);
-                    var meshSpline = meshSplineContainer.AddSpline();
-
-                    int actualMeshStart = meshStartIndex > 0 ? meshStartIndex - 1 : meshStartIndex;
-
-                    float overlapDistance = 0f;
-                    if (meshStartIndex > 0 && actualMeshStart < meshStartIndex)
-                    {
-                        overlapDistance = Vector3.Distance(
-                            _nodes[path[actualMeshStart]].Position,
-                            _nodes[path[meshStartIndex]].Position
-                        );
-                    }
-
-                    for (int i = actualMeshStart; i < path.Count; i++)
-                    {
-                        var pos = _nodes[path[i]].Position;
-                        var knot = new BezierKnot(pos);
-                        meshSpline.Add(knot, TangentMode.AutoSmooth);
-                    }
-
-                    var meshFilter = meshGO.AddComponent<MeshFilter>();
-                    var meshRenderer = meshGO.AddComponent<MeshRenderer>();
-
-                    var splineExtrude = meshGO.AddComponent<SplineExtrude>();
-                    splineExtrude.Container = meshSplineContainer;
-                    splineExtrude.Radius = TubeRadius;
-                    splineExtrude.Sides = TubeSides;
-
-#if UNITY_EDITOR
-                    var so = new SerializedObject(splineExtrude);
-                    var shapeProp = so.FindProperty("m_Shape");
-                    if (shapeProp != null)
-                    {
-                        var sidesProp = shapeProp.FindPropertyRelative("m_Sides");
-                        if (sidesProp != null)
-                        {
-                            sidesProp.intValue = TubeSides;
-                            so.ApplyModifiedPropertiesWithoutUndo();
-                        }
-                    }
-#endif
-
-                    splineExtrude.SegmentsPerUnit = SegmentsPerUnit;
-                    splineExtrude.Capped = false;
-                    splineExtrude.Rebuild();
-
-                    float meshSplineLength = meshSpline.GetLength();
-                    var mesh = meshFilter.sharedMesh;
-                    if (mesh != null && meshSplineLength > 0.001f)
-                    {
-                        var uvs = new List<Vector2>();
-                        mesh.GetUVs(0, uvs);
-
-                        var uv2s = new List<Vector2>(uvs.Count);
-                        for (int k = 0; k < uvs.Count; k++)
-                        {
-                            float splineT = Mathf.Clamp01(uvs[k].y / meshSplineLength);
-                            uv2s.Add(new Vector2(splineT, 0f));
-                        }
-                        mesh.SetUVs(1, uv2s);
-                    }
-
-                    if (taperedMat != null)
-                        meshRenderer.sharedMaterial = taperedMat;
-
-                    bool isBranchMesh = meshStartIndex > 0;
-                    float distanceFromRootStart = CalculateDistanceFromRoot(path, meshStartIndex);
-                    float distanceFromRootEnd = CalculateDistanceFromRoot(path, path.Count - 1);
-                    float splineLength = meshSplineLength;
-
-                    float startTaperT = 0f;
-                    if (isBranchMesh && overlapDistance > 0f && splineLength > 0.001f)
-                        startTaperT = overlapDistance / splineLength;
-
-                    float effectiveEndTaper = EnableEndTapering ? EndTaperDistance : 0f;
-
-                    var propBlock = new MaterialPropertyBlock();
-                    propBlock.SetFloat("_Radius", TubeRadius);
-                    propBlock.SetFloat("_SplineLength", splineLength);
-                    propBlock.SetFloat("_EndTaperDistance", effectiveEndTaper);
-                    propBlock.SetFloat("_IsBranchMesh", isBranchMesh ? 1f : 0f);
-                    propBlock.SetFloat("_StartTaperT", startTaperT);
-                    propBlock.SetFloat("_DistanceTaperStrength", DistanceTaperStrength);
-                    propBlock.SetFloat("_DistanceFromRootStart", distanceFromRootStart);
-                    propBlock.SetFloat("_DistanceFromRootEnd", distanceFromRootEnd);
-                    propBlock.SetFloat("_DistanceFromRoot", (distanceFromRootStart + distanceFromRootEnd) * 0.5f);
-                    meshRenderer.SetPropertyBlock(propBlock);
-
-                    var meshController = meshGO.AddComponent<SplineMeshController>();
-                    meshController.MeshTarget = meshRenderer;
-                    meshController.glowMix = 0f;
-                    meshController.glowLocation = 0f;
+                    overlapDistance = Vector3.Distance(
+                        _nodes[path[actualMeshStart]].Position,
+                        _nodes[path[meshStartIndex]].Position
+                    );
                 }
 
-                _generatedSplines.Add(splineContainer);
+                // Collect positions for mesh spline
+                var meshPositions = new List<float3>();
+                for (int i = actualMeshStart; i < path.Count; i++)
+                {
+                    meshPositions.Add((float3)meshGO.transform.InverseTransformPoint(_nodes[path[i]].Position));
+                }
+
+                // Apply same smoothing as gizmo would show
+                if (EnablePathSmoothing && SmoothingTolerance > 0)
+                {
+                    var smoothed = new List<float3>();
+                    SplineUtility.ReducePoints(meshPositions, smoothed, SmoothingTolerance);
+                    meshPositions = smoothed;
+                }
+
+                foreach (var pos in meshPositions)
+                {
+                    var knot = new BezierKnot(pos);
+                    meshSpline.Add(knot, TangentMode.AutoSmooth);
+                }
+
+                var meshFilter = meshGO.AddComponent<MeshFilter>();
+                var meshRenderer = meshGO.AddComponent<MeshRenderer>();
+
+                var splineExtrude = meshGO.AddComponent<SplineExtrude>();
+                splineExtrude.Container = meshSplineContainer;
+                splineExtrude.Radius = TubeRadius;
+                splineExtrude.Sides = TubeSides;
+
+#if UNITY_EDITOR
+                var so = new SerializedObject(splineExtrude);
+                var shapeProp = so.FindProperty("m_Shape");
+                if (shapeProp != null)
+                {
+                    var sidesProp = shapeProp.FindPropertyRelative("m_Sides");
+                    if (sidesProp != null)
+                    {
+                        sidesProp.intValue = TubeSides;
+                        so.ApplyModifiedPropertiesWithoutUndo();
+                    }
+                }
+#endif
+
+                splineExtrude.SegmentsPerUnit = SegmentsPerUnit;
+                splineExtrude.Capped = false;
+                splineExtrude.Rebuild();
+
+                float meshSplineLength = meshSpline.GetLength();
+                var mesh = meshFilter.sharedMesh;
+                if (mesh != null && meshSplineLength > 0.001f)
+                {
+                    var uvs = new List<Vector2>();
+                    mesh.GetUVs(0, uvs);
+
+                    var uv2s = new List<Vector2>(uvs.Count);
+                    for (int k = 0; k < uvs.Count; k++)
+                    {
+                        float splineT = Mathf.Clamp01(uvs[k].y / meshSplineLength);
+                        uv2s.Add(new Vector2(splineT, 0f));
+                    }
+                    mesh.SetUVs(1, uv2s);
+                }
+
+                if (taperedMat != null)
+                    meshRenderer.sharedMaterial = taperedMat;
+
+                bool isBranchMesh = meshStartIndex > 0;
+                float distanceFromRootStart = CalculateDistanceFromRoot(path, meshStartIndex);
+                float distanceFromRootEnd = CalculateDistanceFromRoot(path, path.Count - 1);
+                float splineLength = meshSplineLength;
+
+                float startTaperT = 0f;
+                if (isBranchMesh && overlapDistance > 0f && splineLength > 0.001f)
+                    startTaperT = overlapDistance / splineLength;
+
+                float effectiveEndTaper = EnableEndTapering ? EndTaperDistance : 0f;
+
+                var propBlock = new MaterialPropertyBlock();
+                propBlock.SetFloat("_Radius", TubeRadius);
+                propBlock.SetFloat("_SplineLength", splineLength);
+                propBlock.SetFloat("_EndTaperDistance", effectiveEndTaper);
+                propBlock.SetFloat("_IsBranchMesh", isBranchMesh ? 1f : 0f);
+                propBlock.SetFloat("_StartTaperT", startTaperT);
+                propBlock.SetFloat("_DistanceTaperStrength", DistanceTaperStrength);
+                propBlock.SetFloat("_DistanceFromRootStart", distanceFromRootStart);
+                propBlock.SetFloat("_DistanceFromRootEnd", distanceFromRootEnd);
+                propBlock.SetFloat("_DistanceFromRoot", (distanceFromRootStart + distanceFromRootEnd) * 0.5f);
+                meshRenderer.SetPropertyBlock(propBlock);
+
+                var meshController = meshGO.AddComponent<SplineMeshController>();
+                meshController.MeshTarget = meshRenderer;
+                meshController.glowMix = 0f;
+                meshController.glowLocation = 0f;
+
+                _generatedSplines.Add(meshSplineContainer);
                 processedCount++;
             }
 

@@ -100,6 +100,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   <BotCollisionRadius>k__BackingField: 1.93
   <RotationSmoothTime>k__BackingField: 0.3
+  <ObstacleLayerMask>k__BackingField:
+    serializedVersion: 2
+    m_Bits: 449
+  <ObstacleLookAheadDistance>k__BackingField: 5
+  <ObstacleAvoidanceStrength>k__BackingField: 3
+  <AvoidanceRayCount>k__BackingField: 8
+  <AvoidanceSmoothTime>k__BackingField: 0.25
   _enterAudioClip: {fileID: 8300000, guid: 4d8852f361abb41af984fb8c1a3b5e94, type: 3}
   _exitAudioClip: {fileID: 8300000, guid: 4d8852f361abb41af984fb8c1a3b5e94, type: 3}
   _transitionAudioVolume: 0.6
@@ -112,9 +119,6 @@ MonoBehaviour:
   <OffsetRangeY>k__BackingField: {x: 1, y: 5}
   <OffsetRangeZ>k__BackingField: {x: 4, y: 7}
   <FollowSpeed>k__BackingField: 5
-  <WallLayerMask>k__BackingField:
-    serializedVersion: 2
-    m_Bits: 0
   <LeadFactor>k__BackingField: 1.5
   _motorLoopClip: {fileID: 8300000, guid: d9c51751edf854a2f9dc2a2981610094, type: 3}
   _warningClip: {fileID: 8300000, guid: 97497a7e053e74b23b6d2125d682260c, type: 3}

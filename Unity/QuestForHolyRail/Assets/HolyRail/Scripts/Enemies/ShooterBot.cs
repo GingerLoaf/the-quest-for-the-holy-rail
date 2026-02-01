@@ -51,11 +51,6 @@ namespace HolyRail.Scripts.Enemies
         [field: SerializeField]
         public float FollowSpeed { get; private set; } = 15f;
 
-        [Header("Wall Avoidance")]
-        [field: Tooltip("Layer mask for wall collision (leave empty to disable wall avoidance)")]
-        [field: SerializeField]
-        public LayerMask WallLayerMask { get; private set; } = 0; // Default to nothing - enable specific layers as needed
-
         [Header("Lead Targeting")]
         [field: Tooltip("How much to lead the target (0 = aim at current position, 1 = full prediction)")]
         [field: SerializeField]
@@ -81,12 +76,13 @@ namespace HolyRail.Scripts.Enemies
         private static readonly int FresnelPowerID = Shader.PropertyToID("_FresnelPower");
 
         // Warning blink values
-        private const float BlinkFresnelOn = 6f;
-        private const float BlinkEmissionOn = 8f;
-        private const float BlinkOnDuration = 0.15f; // How long the "on" part lasts
+        private const float BlinkFresnelStart = 0f;
+        private const float BlinkFresnelEnd = 6f;
+        private const float WarningBlinkDuration = 0.3f;
 
         // Blink state
         private bool _isBlinking;
+        private bool _isWarningBlink; // true for warning (lerp fresnel), false for fire flash
         private float _blinkTimer;
 
         protected override void Awake()
@@ -231,26 +227,14 @@ namespace HolyRail.Scripts.Enemies
             float catchUpSpeed = distanceToTarget * 2f; // Close gap over ~0.5 seconds
             float moveSpeed = Mathf.Max(FollowSpeed, playerZSpeed + catchUpSpeed);
 
-            // Smooth movement toward target
-            Vector3 newPosition = Vector3.MoveTowards(currentPos, targetPosition, moveSpeed * Time.deltaTime);
-
             // DEBUG: Log every second
             if (Time.frameCount % 60 == 0)
             {
                 Debug.Log($"[{name}] MOVE: pos={currentPos:F1} -> target={targetPosition:F1}, speed={moveSpeed:F1}, playerVel={_playerVelocity:F1}");
             }
 
-            Vector3 preWallPos = newPosition;
-
-            // Check for wall collision and resolve
-            newPosition = ResolveWallCollision(currentPos, newPosition);
-
-            // Check if wall blocked us
-            if (Vector3.Distance(preWallPos, newPosition) > 0.01f)
-            {
-                Debug.LogWarning($"[{name}] WALL BLOCKED movement!");
-            }
-
+            // Use obstacle avoidance from base class to navigate around walls/floors
+            Vector3 newPosition = MoveWithAvoidance(currentPos, targetPosition, moveSpeed);
             transform.position = newPosition;
 
             // Face the player
@@ -260,25 +244,6 @@ namespace HolyRail.Scripts.Enemies
                 Quaternion targetRotation = Quaternion.LookRotation(toPlayer);
                 transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime / RotationSmoothTime);
             }
-        }
-
-        private Vector3 ResolveWallCollision(Vector3 from, Vector3 to)
-        {
-            Vector3 direction = to - from;
-            float distance = direction.magnitude;
-
-            if (distance < 0.001f) return to;
-
-            // SphereCast from current position to new position to prevent entering walls
-            if (Physics.SphereCast(from, BotCollisionRadius, direction.normalized, out RaycastHit hit,
-                                   distance, WallLayerMask, QueryTriggerInteraction.Ignore))
-            {
-                // Stop just before the wall
-                float safeDistance = Mathf.Max(0f, hit.distance - 0.05f);
-                return from + direction.normalized * safeDistance;
-            }
-
-            return to;
         }
 
         private Vector3 CalculateLeadPosition(Vector3 playerPos, float distanceToPlayer)
@@ -302,6 +267,7 @@ namespace HolyRail.Scripts.Enemies
         {
             base.OnRecycle();
             _isBlinking = false;
+            _isWarningBlink = false;
             _blinkTimer = 0f;
             // Clear property block to reset to shared material defaults
             if (_renderer != null && _propertyBlock != null)
@@ -320,7 +286,7 @@ namespace HolyRail.Scripts.Enemies
         public void ResetFireTimer()
         {
             // Use actual fire rate, with 0.75s minimum (for warning blink)
-            _fireTimer = Mathf.Max(EffectiveFireRate, 0.5f);
+            _fireTimer = Mathf.Max(EffectiveFireRate, 0.3f);
             Debug.Log($"ShooterBot [{name}]: Fire timer reset, will fire in {_fireTimer}s");
         }
 
@@ -352,10 +318,22 @@ namespace HolyRail.Scripts.Enemies
             if (_renderer == null || _propertyBlock == null) return;
 
             _blinkTimer -= Time.deltaTime;
+
+            if (_isWarningBlink)
+            {
+                // Smoothly lerp fresnel from 0 to 6
+                float progress = 1f - (_blinkTimer / WarningBlinkDuration);
+                progress = Mathf.Clamp01(progress);
+                float fresnel = Mathf.Lerp(BlinkFresnelStart, BlinkFresnelEnd, progress);
+                _propertyBlock.SetFloat(FresnelPowerID, fresnel);
+                _renderer.SetPropertyBlock(_propertyBlock);
+            }
+
             if (_blinkTimer <= 0f)
             {
                 // Blink complete - return to normal
                 _isBlinking = false;
+                _isWarningBlink = false;
                 _propertyBlock.Clear();
                 _renderer.SetPropertyBlock(_propertyBlock);
             }
@@ -366,11 +344,11 @@ namespace HolyRail.Scripts.Enemies
             if (_renderer == null || _propertyBlock == null) return;
 
             _isBlinking = true;
-            _blinkTimer = BlinkOnDuration;
+            _isWarningBlink = true;
+            _blinkTimer = WarningBlinkDuration;
 
-            // Set blink ON state
-            _propertyBlock.SetFloat(FresnelPowerID, BlinkFresnelOn);
-            _propertyBlock.SetColor(EmissionColorID, Color.white * BlinkEmissionOn);
+            // Start at fresnel 0, will lerp to 6
+            _propertyBlock.SetFloat(FresnelPowerID, BlinkFresnelStart);
             _renderer.SetPropertyBlock(_propertyBlock);
         }
 
@@ -421,7 +399,7 @@ namespace HolyRail.Scripts.Enemies
             float effectiveRate = EffectiveFireRate;
 
             // Start warning blink 0.75s before firing (only if not already blinking)
-            if (_fireTimer <= 0.5f && !_isBlinking)
+            if (_fireTimer <= 0.3f && !_isBlinking)
             {
                 float dist = Vector3.Distance(transform.position, Spawner.Player.position);
                 if (dist <= effectiveRange)

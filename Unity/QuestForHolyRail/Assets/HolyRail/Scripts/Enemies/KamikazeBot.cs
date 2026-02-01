@@ -117,12 +117,12 @@ namespace HolyRail.Scripts.Enemies
             _armedAudioSource.minDistance = 5f;
             _armedAudioSource.maxDistance = 100f;
 
-            // Cache renderer for visual feedback (find first enabled renderer)
-            foreach (var r in GetComponentsInChildren<Renderer>())
+            // Find the SF_Drone_ZR7 SkinnedMeshRenderer specifically for visual feedback
+            foreach (var smr in GetComponentsInChildren<SkinnedMeshRenderer>())
             {
-                if (r.enabled)
+                if (smr.gameObject.name == "SF_Drone_ZR7")
                 {
-                    _renderer = r;
+                    _renderer = smr;
                     break;
                 }
             }
@@ -173,13 +173,16 @@ namespace HolyRail.Scripts.Enemies
                 float speed = ChaseSpeed;
                 if (playerIsGrinding) speed *= GrindingSpeedBoost;
                 if (_isArmed) speed *= ArmedSpeedBoost;
-                transform.position += direction * speed * Time.deltaTime;
+
+                // Use obstacle avoidance to navigate around walls/floors
+                transform.position = MoveWithAvoidance(transform.position, targetPosition, speed);
             }
 
-            // Face the player
-            if (direction.sqrMagnitude > 0.001f)
+            // Face the movement direction (or player if not moving much)
+            Vector3 lookDirection = (targetPosition - transform.position).normalized;
+            if (lookDirection.sqrMagnitude > 0.001f)
             {
-                Quaternion targetRotation = Quaternion.LookRotation(direction);
+                Quaternion targetRotation = Quaternion.LookRotation(lookDirection);
                 transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime / RotationSmoothTime);
             }
         }

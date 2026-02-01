@@ -23,6 +23,32 @@ namespace HolyRail.Scripts.Enemies
         [field: SerializeField]
         public float RotationSmoothTime { get; private set; } = 0.12f;
 
+        [Header("Obstacle Avoidance")]
+        [field: Tooltip("Layer mask for obstacles to avoid (walls, floors, etc.)")]
+        [field: SerializeField]
+        public LayerMask ObstacleLayerMask { get; private set; } = 1; // Default layer
+
+        [field: Tooltip("How far ahead to look for obstacles")]
+        [field: SerializeField]
+        public float ObstacleLookAheadDistance { get; private set; } = 5f;
+
+        [field: Tooltip("How strongly to steer away from obstacles (higher = more aggressive)")]
+        [field: SerializeField]
+        public float ObstacleAvoidanceStrength { get; private set; } = 3f;
+
+        [field: Tooltip("Number of feeler rays to cast when finding alternate paths")]
+        [field: SerializeField]
+        public int AvoidanceRayCount { get; private set; } = 8;
+
+        [field: Tooltip("How smoothly to transition to avoidance direction (higher = smoother but slower to react)")]
+        [field: SerializeField]
+        public float AvoidanceSmoothTime { get; private set; } = 0.3f;
+
+        // Smoothing state for obstacle avoidance
+        private Vector3 _smoothedAvoidanceDirection;
+        private Vector3 _avoidanceVelocity;
+        private bool _wasAvoiding;
+
         [Header("Transition Audio")]
         [Tooltip("Sound effect played when bot flies in")]
         [SerializeField] protected AudioClip _enterAudioClip;
@@ -62,6 +88,7 @@ namespace HolyRail.Scripts.Enemies
             // Legacy overload for backward compatibility
             _botState = BotState.Active;
             _isIdle = false;
+            ResetAvoidanceState();
         }
 
         /// <summary>
@@ -77,6 +104,7 @@ namespace HolyRail.Scripts.Enemies
             _transitionDuration = enterDuration;
             _transitionProgress = 0f;
             _botState = BotState.Entering;
+            ResetAvoidanceState();
 
             if (EnemyController.Instance != null)
             {
@@ -96,6 +124,7 @@ namespace HolyRail.Scripts.Enemies
             {
                 EnemyController.Instance.OnEnemyKilled(this);
             }
+            ResetAvoidanceState();
         }
 
         /// <summary>
@@ -263,6 +292,188 @@ namespace HolyRail.Scripts.Enemies
         }
 
         protected abstract void UpdateMovement();
+
+        /// <summary>
+        /// Calculates a movement direction that avoids obstacles.
+        /// Returns the adjusted direction, or the original if no obstacles detected.
+        /// </summary>
+        protected Vector3 GetAvoidanceDirection(Vector3 currentPosition, Vector3 desiredDirection, float speed)
+        {
+            if (ObstacleLayerMask == 0 || desiredDirection.sqrMagnitude < 0.001f)
+            {
+                _wasAvoiding = false;
+                return desiredDirection;
+            }
+
+            float lookDistance = Mathf.Max(ObstacleLookAheadDistance, speed * 0.5f);
+            float desiredMagnitude = desiredDirection.magnitude;
+            Vector3 desiredNormalized = desiredDirection.normalized;
+
+            // Check if path ahead is blocked
+            bool isBlocked = Physics.SphereCast(currentPosition, BotCollisionRadius, desiredNormalized, out RaycastHit hit,
+                                                lookDistance, ObstacleLayerMask, QueryTriggerInteraction.Ignore);
+
+            Vector3 targetDirection;
+
+            if (!isBlocked)
+            {
+                // Path is clear - smoothly return to desired direction
+                targetDirection = desiredNormalized;
+
+                // If we were avoiding, keep some momentum to prevent snapping back
+                if (_wasAvoiding && _smoothedAvoidanceDirection.sqrMagnitude > 0.1f)
+                {
+                    float returnBlend = Mathf.Clamp01(Time.deltaTime / (AvoidanceSmoothTime * 0.5f));
+                    _smoothedAvoidanceDirection = Vector3.Lerp(_smoothedAvoidanceDirection, targetDirection, returnBlend);
+
+                    // Check if we've mostly returned to desired direction
+                    if (Vector3.Dot(_smoothedAvoidanceDirection, desiredNormalized) > 0.95f)
+                    {
+                        _wasAvoiding = false;
+                        _smoothedAvoidanceDirection = desiredNormalized;
+                    }
+                    return _smoothedAvoidanceDirection * desiredMagnitude;
+                }
+
+                _wasAvoiding = false;
+                return desiredDirection;
+            }
+
+            // Path is blocked - find an alternate direction
+            Vector3 avoidanceDirection = FindAvoidanceDirection(currentPosition, desiredNormalized, lookDistance, hit.normal);
+
+            // Blend between desired and avoidance based on how close the obstacle is
+            float urgency = 1f - (hit.distance / lookDistance);
+            urgency = Mathf.Clamp01(urgency * ObstacleAvoidanceStrength);
+
+            targetDirection = Vector3.Lerp(desiredNormalized, avoidanceDirection, urgency).normalized;
+
+            // Smoothly interpolate toward the target avoidance direction
+            if (!_wasAvoiding)
+            {
+                _smoothedAvoidanceDirection = desiredNormalized;
+                _wasAvoiding = true;
+            }
+
+            // Use SmoothDamp for natural-feeling movement
+            _smoothedAvoidanceDirection = Vector3.SmoothDamp(
+                _smoothedAvoidanceDirection,
+                targetDirection,
+                ref _avoidanceVelocity,
+                AvoidanceSmoothTime
+            ).normalized;
+
+            return _smoothedAvoidanceDirection * desiredMagnitude;
+        }
+
+        /// <summary>
+        /// Finds an unobstructed direction to steer toward when the primary path is blocked.
+        /// </summary>
+        private Vector3 FindAvoidanceDirection(Vector3 origin, Vector3 blockedDirection, float lookDistance, Vector3 hitNormal)
+        {
+            // Start by trying to slide along the surface
+            Vector3 slideDirection = Vector3.ProjectOnPlane(blockedDirection, hitNormal).normalized;
+            if (slideDirection.sqrMagnitude > 0.1f &&
+                !Physics.SphereCast(origin, BotCollisionRadius, slideDirection, out _, lookDistance * 0.5f, ObstacleLayerMask, QueryTriggerInteraction.Ignore))
+            {
+                return slideDirection;
+            }
+
+            // Cast rays in a fan pattern to find open directions
+            Vector3 bestDirection = Vector3.up; // Default to up if all else fails
+            float bestScore = -1f;
+
+            // Get perpendicular axes for the fan
+            Vector3 right = Vector3.Cross(blockedDirection, Vector3.up).normalized;
+            if (right.sqrMagnitude < 0.1f)
+            {
+                right = Vector3.Cross(blockedDirection, Vector3.forward).normalized;
+            }
+            Vector3 up = Vector3.Cross(right, blockedDirection).normalized;
+
+            for (int i = 0; i < AvoidanceRayCount; i++)
+            {
+                float angle = (i / (float)AvoidanceRayCount) * 360f * Mathf.Deg2Rad;
+                Vector3 offset = (Mathf.Cos(angle) * right + Mathf.Sin(angle) * up).normalized;
+
+                // Test directions at various angles from blocked direction
+                for (float blend = 0.3f; blend <= 1f; blend += 0.35f)
+                {
+                    Vector3 testDirection = Vector3.Lerp(blockedDirection, offset, blend).normalized;
+
+                    if (!Physics.SphereCast(origin, BotCollisionRadius, testDirection, out RaycastHit testHit,
+                                            lookDistance, ObstacleLayerMask, QueryTriggerInteraction.Ignore))
+                    {
+                        // This direction is clear - score by how close it is to desired direction
+                        float score = Vector3.Dot(testDirection, blockedDirection);
+                        if (score > bestScore)
+                        {
+                            bestScore = score;
+                            bestDirection = testDirection;
+                        }
+                    }
+                    else if (testHit.distance > lookDistance * 0.5f)
+                    {
+                        // Partially clear - still usable but lower priority
+                        float score = Vector3.Dot(testDirection, blockedDirection) * 0.5f;
+                        if (score > bestScore)
+                        {
+                            bestScore = score;
+                            bestDirection = testDirection;
+                        }
+                    }
+                }
+            }
+
+            return bestDirection;
+        }
+
+        /// <summary>
+        /// Applies movement with obstacle avoidance. Use this instead of directly setting transform.position.
+        /// Returns the final position after movement.
+        /// </summary>
+        protected Vector3 MoveWithAvoidance(Vector3 currentPosition, Vector3 targetPosition, float speed)
+        {
+            Vector3 direction = targetPosition - currentPosition;
+            float distance = direction.magnitude;
+
+            if (distance < 0.001f)
+            {
+                return currentPosition;
+            }
+
+            float moveDistance = speed * Time.deltaTime;
+            if (moveDistance > distance)
+            {
+                moveDistance = distance;
+            }
+
+            Vector3 moveDirection = direction.normalized;
+            Vector3 avoidedDirection = GetAvoidanceDirection(currentPosition, moveDirection * moveDistance, speed);
+
+            // Final collision check to prevent clipping
+            Vector3 newPosition = currentPosition + avoidedDirection;
+            if (Physics.SphereCast(currentPosition, BotCollisionRadius * 0.9f, avoidedDirection.normalized, out RaycastHit finalHit,
+                                   avoidedDirection.magnitude, ObstacleLayerMask, QueryTriggerInteraction.Ignore))
+            {
+                // Stop just before the obstacle
+                float safeDistance = Mathf.Max(0f, finalHit.distance - 0.1f);
+                newPosition = currentPosition + avoidedDirection.normalized * safeDistance;
+            }
+
+            return newPosition;
+        }
+
+        /// <summary>
+        /// Resets the obstacle avoidance smoothing state.
+        /// Called when bot is spawned/recycled.
+        /// </summary>
+        protected void ResetAvoidanceState()
+        {
+            _smoothedAvoidanceDirection = Vector3.zero;
+            _avoidanceVelocity = Vector3.zero;
+            _wasAvoiding = false;
+        }
 
         protected virtual void OnValidate()
         {
