@@ -459,66 +459,43 @@ namespace HolyRail.Splines
         /// </summary>
         private void CreateGrindableContainers()
         {
-            // Prune nulls from the list
-            _grindableContainers.RemoveAll(c => c == null);
-
-            if (MasterSpline == null || MasterSpline.Splines == null || MasterSpline.Splines.Count == 0)
+            // Always destroy all existing GrindSpline children first (handles domain reload orphans)
+            // Iterate backwards to safely modify collection during iteration
+            for (int i = transform.childCount - 1; i >= 0; i--)
             {
-                ClearGrindableContainers();
-                return;
-            }
-
-            // Calculate needed containers
-            // We skip CloneIndex 0
-            int neededCount = _cloneData.Count > 0 ? _cloneData.Count - 1 : 0;
-            if (neededCount < 0) neededCount = 0;
-
-            // Ensure pool size matches needed count
-            // 1. Create missing
-            while (_grindableContainers.Count < neededCount)
-            {
-                var go = new GameObject("GrindSpline_Temp");
-                go.transform.SetParent(transform);
-                var container = go.AddComponent<SplineContainer>();
-                _grindableContainers.Add(container);
-            }
-
-            // 2. Destroy excess
-            while (_grindableContainers.Count > neededCount)
-            {
-                var lastIdx = _grindableContainers.Count - 1;
-                var container = _grindableContainers[lastIdx];
-                if (container != null && container.gameObject != null)
+                var child = transform.GetChild(i);
+                if (child.name.StartsWith("GrindSpline_"))
                 {
 #if UNITY_EDITOR
                     if (!Application.isPlaying)
-                        DestroyImmediate(container.gameObject);
+                        DestroyImmediate(child.gameObject);
                     else
 #endif
-                        Destroy(container.gameObject);
+                        Destroy(child.gameObject);
                 }
-                _grindableContainers.RemoveAt(lastIdx);
+            }
+            _grindableContainers.Clear();
+
+            if (MasterSpline == null || MasterSpline.Splines == null || MasterSpline.Splines.Count == 0)
+            {
+                return;
             }
 
-            // 3. Update all containers
-            int containerIdx = 0;
+            // Create fresh containers for each clone (skip CloneIndex 0, master spline handles that)
             foreach (var clone in _cloneData)
             {
                 if (clone.CloneIndex == 0)
                     continue;
 
-                // Safety check in case of unexpected list state
-                if (containerIdx >= _grindableContainers.Count) break;
+                var go = new GameObject($"GrindSpline_{clone.CloneIndex}");
+                go.transform.SetParent(transform);
+                go.transform.position = clone.Position;
+                go.transform.rotation = new Quaternion(clone.Rotation.x, clone.Rotation.y, clone.Rotation.z, clone.Rotation.w);
+                go.transform.localScale = clone.Scale;
 
-                var container = _grindableContainers[containerIdx];
-                container.gameObject.name = $"GrindSpline_{clone.CloneIndex}";
-                container.transform.position = clone.Position;
-                container.transform.rotation = new Quaternion(clone.Rotation.x, clone.Rotation.y, clone.Rotation.z, clone.Rotation.w);
-                container.transform.localScale = clone.Scale;
-
+                var container = go.AddComponent<SplineContainer>();
                 CopySplineKnots(MasterSpline, container, clone.Scale);
-                
-                containerIdx++;
+                _grindableContainers.Add(container);
             }
 
             // Notify grinding system to refresh its cache (runtime only)

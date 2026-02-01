@@ -13,6 +13,9 @@ namespace HolyRail.City
         public int BuildingCount;
         public int RampStartIndex;
         public int RampCount;
+        // TODO: Obstacle loop mode support not implemented yet
+        // public int ObstacleStartIndex;
+        // public int ObstacleCount;
         public int BillboardStartIndex;
         public int BillboardCount;
         public int GraffitiStartIndex;
@@ -53,6 +56,23 @@ namespace HolyRail.City
         [field: SerializeField] public float RampAngleMax { get; set; } = 35f;
         [field: SerializeField] public float RampYOffset { get; set; } = -1f;
         [field: SerializeField] public float RampBuildingPadding { get; set; } = 2f;
+
+        [Header("Obstacle Settings")]
+        [field: SerializeField] public bool EnableObstacles { get; set; } = true;
+        [field: SerializeField] public Mesh ObstacleMesh { get; set; }
+        [field: SerializeField] public Material ObstacleMaterial { get; set; }
+        [field: SerializeField] public int ObstacleCount { get; set; } = 30;
+        [field: SerializeField] public float ObstacleScaleXMin { get; set; } = 1f;
+        [field: SerializeField] public float ObstacleScaleXMax { get; set; } = 3f;
+        [field: SerializeField] public float ObstacleScaleYMin { get; set; } = 0.5f;
+        [field: SerializeField] public float ObstacleScaleYMax { get; set; } = 2f;
+        [field: SerializeField] public float ObstacleScaleZMin { get; set; } = 1f;
+        [field: SerializeField] public float ObstacleScaleZMax { get; set; } = 3f;
+        [field: SerializeField] public float ObstacleRotationMin { get; set; } = 0f;
+        [field: SerializeField] public float ObstacleRotationMax { get; set; } = 360f;
+        [field: SerializeField] public float ObstacleBuildingPadding { get; set; } = 2f;
+        [field: SerializeField] public float ObstacleYOffsetMin { get; set; } = 0f;
+        [field: SerializeField] public float ObstacleYOffsetMax { get; set; } = 2f;
 
         [Header("Billboard Settings")]
         [field: SerializeField] public bool EnableBillboards { get; set; } = true;
@@ -168,6 +188,9 @@ namespace HolyRail.City
         private List<RampData> _generatedRamps = new List<RampData>();
 
         [SerializeField, HideInInspector]
+        private List<ObstacleData> _generatedObstacles = new List<ObstacleData>();
+
+        [SerializeField, HideInInspector]
         private List<BillboardData> _generatedBillboards = new List<BillboardData>();
 
         [SerializeField, HideInInspector]
@@ -197,6 +220,12 @@ namespace HolyRail.City
         private MaterialPropertyBlock _rampPropertyBlock;
         private bool _rampBuffersInitialized;
 
+        // Obstacle GPU buffers
+        private GraphicsBuffer _obstacleBuffer;
+        private GraphicsBuffer _obstacleArgsBuffer;
+        private MaterialPropertyBlock _obstaclePropertyBlock;
+        private bool _obstacleBuffersInitialized;
+
         // Billboard GPU buffers
         private GraphicsBuffer _billboardBuffer;
         private GraphicsBuffer _billboardArgsBuffer;
@@ -211,6 +240,7 @@ namespace HolyRail.City
         // Cached arrays for GPU buffer uploads (avoids allocations during leapfrog)
         private BuildingData[] _buildingArrayCache;
         private RampData[] _rampArrayCache;
+        private ObstacleData[] _obstacleArrayCache;
         private BillboardData[] _billboardArrayCache;
 
         // Random number generator for deterministic generation
@@ -234,15 +264,18 @@ namespace HolyRail.City
 
         public int ActualBuildingCount => _generatedBuildings.Count;
         public int ActualRampCount => _generatedRamps.Count;
+        public int ActualObstacleCount => _generatedObstacles.Count;
         public int ActualBillboardCount => _generatedBillboards.Count;
         public int ActualGraffitiCount => _generatedGraffitiSpots.Count;
         public bool HasData => _generatedBuildings.Count > 0;
         public bool HasRampData => _generatedRamps.Count > 0;
+        public bool HasObstacleData => _generatedObstacles.Count > 0;
         public bool HasBillboardData => _generatedBillboards.Count > 0;
         public bool HasGraffitiData => _generatedGraffitiSpots.Count > 0;
         public bool IsGenerated => HasData;
         public IReadOnlyList<BuildingData> Buildings => _generatedBuildings;
         public IReadOnlyList<RampData> Ramps => _generatedRamps;
+        public IReadOnlyList<ObstacleData> Obstacles => _generatedObstacles;
         public IReadOnlyList<BillboardData> Billboards => _generatedBillboards;
         public IReadOnlyList<GraffitiSpotData> GraffitiSpots => _generatedGraffitiSpots;
 
@@ -302,6 +335,10 @@ namespace HolyRail.City
             {
                 InitializeRampBuffersFromSerializedData();
             }
+            if (HasObstacleData && !_obstacleBuffersInitialized)
+            {
+                InitializeObstacleBuffersFromSerializedData();
+            }
             if (HasBillboardData && !_billboardBuffersInitialized)
             {
                 InitializeBillboardBuffersFromSerializedData();
@@ -336,6 +373,11 @@ namespace HolyRail.City
                 InitializeRampBuffersFromSerializedData();
             }
 
+            if (HasObstacleData && !_obstacleBuffersInitialized)
+            {
+                InitializeObstacleBuffersFromSerializedData();
+            }
+
             if (HasBillboardData && !_billboardBuffersInitialized)
             {
                 InitializeBillboardBuffersFromSerializedData();
@@ -356,6 +398,11 @@ namespace HolyRail.City
             if (HasRampData && RampMesh != null && RampMaterial != null && _rampBuffersInitialized)
             {
                 RenderRamps();
+            }
+
+            if (HasObstacleData && ObstacleMesh != null && ObstacleMaterial != null && _obstacleBuffersInitialized)
+            {
+                RenderObstacles();
             }
 
             if (HasBillboardData && BillboardMesh != null && BillboardMaterial != null && _billboardBuffersInitialized)
@@ -680,6 +727,32 @@ namespace HolyRail.City
                 if (generateCorridorC && _corridorPathC.Count > 0)
                     GenerateCorridorRamps(_corridorPathC);
                 InitializeRampBuffersFromSerializedData();
+            }
+
+            // Generate obstacles if enabled
+            if (EnableObstacles)
+            {
+                if (ObstacleMesh == null)
+                {
+                    Debug.LogWarning("CityManager: Obstacles enabled but ObstacleMesh is not assigned! Assign a cube mesh.");
+                }
+                if (ObstacleMaterial == null)
+                {
+                    Debug.LogWarning("CityManager: Obstacles enabled but ObstacleMaterial is not assigned! Assign a material.");
+                }
+
+                // TODO: Obstacle loop mode support not implemented yet - always use regular generation
+                if (generateCorridorA && _corridorPathA.Count > 0)
+                {
+                    GenerateCorridorObstacles(_corridorPathA);
+                }
+                if (generateCorridorB && _corridorPathB.Count > 0)
+                    GenerateCorridorObstacles(_corridorPathB);
+                if (_corridorPathB_ToBC.Count > 0)
+                    GenerateCorridorObstacles(_corridorPathB_ToBC);
+                if (generateCorridorC && _corridorPathC.Count > 0)
+                    GenerateCorridorObstacles(_corridorPathC);
+                InitializeObstacleBuffersFromSerializedData();
             }
 
             // Generate billboards if enabled
@@ -1639,6 +1712,199 @@ namespace HolyRail.City
             return true;
         }
 
+        private void GenerateCorridorObstacles(List<Vector3> path)
+        {
+            if (path.Count < 2)
+                return;
+
+            // Calculate total path length for obstacle distribution
+            float totalLength = 0f;
+            for (int i = 1; i < path.Count; i++)
+            {
+                totalLength += Vector3.Distance(path[i], path[i - 1]);
+            }
+
+            // Distribute obstacles evenly along this corridor (1/3 of total obstacles per corridor)
+            int obstaclesPerCorridor = Mathf.Max(1, ObstacleCount / 3);
+            float obstacleSpacing = totalLength / (obstaclesPerCorridor + 1);
+
+            float accumulatedDistance = obstacleSpacing; // Start offset from convergence
+            int pathIndex = 0;
+            float segmentProgress = 0f;
+
+            for (int obstacleNum = 0; obstacleNum < obstaclesPerCorridor && pathIndex < path.Count - 1; obstacleNum++)
+            {
+                // Find the point along the path at this distance
+                while (pathIndex < path.Count - 1)
+                {
+                    float segmentLength = Vector3.Distance(path[pathIndex], path[pathIndex + 1]);
+                    float remaining = segmentLength - segmentProgress;
+
+                    if (accumulatedDistance <= remaining)
+                    {
+                        // Obstacle position is within this segment
+                        float t = (segmentProgress + accumulatedDistance) / segmentLength;
+                        var obstaclePos = Vector3.Lerp(path[pathIndex], path[pathIndex + 1], t);
+
+                        // Skip if near any plaza or junction
+                        if (IsNearPlazaOrJunction(obstaclePos))
+                        {
+                            accumulatedDistance = obstacleSpacing;
+                            segmentProgress += accumulatedDistance;
+                            continue;
+                        }
+
+                        // Calculate tangent at this point
+                        var tangent = (path[pathIndex + 1] - path[pathIndex]).normalized;
+
+                        // Random offset left/right within corridor
+                        var right = Vector3.Cross(Vector3.up, tangent).normalized;
+                        float halfWidth = CorridorWidth * 0.5f;
+                        obstaclePos += right * RandomRange(-halfWidth, halfWidth);
+
+                        // Try to place obstacle
+                        if (TryPlaceObstacle(obstaclePos, tangent))
+                        {
+                            // Random spacing for next obstacle
+                            accumulatedDistance = obstacleSpacing * RandomRange(0.5f, 1.5f);
+                            segmentProgress += accumulatedDistance;
+                        }
+                        else
+                        {
+                            // Skip this position, try next
+                            accumulatedDistance = obstacleSpacing * RandomRange(0.3f, 0.7f);
+                            segmentProgress += accumulatedDistance;
+                        }
+                        break;
+                    }
+                    else
+                    {
+                        // Move to next segment
+                        accumulatedDistance -= remaining;
+                        segmentProgress = 0f;
+                        pathIndex++;
+                    }
+                }
+            }
+        }
+
+        // TODO: Obstacle loop mode support not implemented yet
+        // private void GenerateCorridorObstaclesForHalf(List<Vector3> path, int startIndex, int endIndex)
+        // {
+        //     ...
+        // }
+
+        private bool TryPlaceObstacle(Vector3 position, Vector3 direction)
+        {
+            // Random scale within ranges (X, Y, Z independently)
+            float scaleX = RandomRange(ObstacleScaleXMin, ObstacleScaleXMax);
+            float scaleY = RandomRange(ObstacleScaleYMin, ObstacleScaleYMax);
+            float scaleZ = RandomRange(ObstacleScaleZMin, ObstacleScaleZMax);
+
+            // Random Y rotation within range
+            float yaw = RandomRange(ObstacleRotationMin, ObstacleRotationMax);
+            var rotation = Quaternion.Euler(0f, yaw, 0f);
+
+            // Random Y offset within range
+            float yOffset = RandomRange(ObstacleYOffsetMin, ObstacleYOffsetMax);
+
+            // Position with Y offset (place bottom of obstacle at ground + offset)
+            var obstaclePosition = new Vector3(position.x, position.y + yOffset + scaleY * 0.5f, position.z);
+
+            // Create bounds for collision checks (axis-aligned for simplicity)
+            float obstaclePadding = 1.5f;
+            float maxHalfExtent = Mathf.Max(scaleX, scaleZ) * 0.5f; // Use max of X/Z for rotated bounds
+            var obstacleMin = new Vector3(
+                obstaclePosition.x - maxHalfExtent - obstaclePadding,
+                0f,
+                obstaclePosition.z - maxHalfExtent - obstaclePadding
+            );
+            var obstacleMax = new Vector3(
+                obstaclePosition.x + maxHalfExtent + obstaclePadding,
+                obstaclePosition.y + scaleY * 0.5f + obstaclePadding,
+                obstaclePosition.z + maxHalfExtent + obstaclePadding
+            );
+
+            // Check if obstacle intersects any buildings (with building padding)
+            foreach (var building in _generatedBuildings)
+            {
+                var buildingMin = new Vector3(
+                    building.Position.x - building.Scale.x * 0.5f - ObstacleBuildingPadding,
+                    0f,
+                    building.Position.z - building.Scale.z * 0.5f - ObstacleBuildingPadding
+                );
+                var buildingMax = new Vector3(
+                    building.Position.x + building.Scale.x * 0.5f + ObstacleBuildingPadding,
+                    building.Position.y + building.Scale.y * 0.5f,
+                    building.Position.z + building.Scale.z * 0.5f + ObstacleBuildingPadding
+                );
+
+                if (obstacleMin.x < buildingMax.x && obstacleMax.x > buildingMin.x &&
+                    obstacleMin.z < buildingMax.z && obstacleMax.z > buildingMin.z)
+                {
+                    return false;
+                }
+            }
+
+            // Check if obstacle intersects any ramps
+            float rampPadding = 1.5f;
+            foreach (var ramp in _generatedRamps)
+            {
+                float rampAngleRad = ramp.Angle * Mathf.Deg2Rad;
+                float rampRun = ramp.Scale.z * Mathf.Cos(rampAngleRad);
+                float rampWidth = ramp.Scale.x;
+
+                var rampMin = new Vector3(
+                    ramp.Position.x - rampWidth * 0.5f - rampPadding,
+                    0f,
+                    ramp.Position.z - rampRun * 0.5f - rampPadding
+                );
+                var rampMax = new Vector3(
+                    ramp.Position.x + rampWidth * 0.5f + rampPadding,
+                    10f,
+                    ramp.Position.z + rampRun * 0.5f + rampPadding
+                );
+
+                if (obstacleMin.x < rampMax.x && obstacleMax.x > rampMin.x &&
+                    obstacleMin.z < rampMax.z && obstacleMax.z > rampMin.z)
+                {
+                    return false;
+                }
+            }
+
+            // Check if obstacle intersects any existing obstacles
+            foreach (var existing in _generatedObstacles)
+            {
+                float existingMaxHalfExtent = Mathf.Max(existing.Scale.x, existing.Scale.z) * 0.5f;
+                var existingMin = new Vector3(
+                    existing.Position.x - existingMaxHalfExtent - obstaclePadding,
+                    0f,
+                    existing.Position.z - existingMaxHalfExtent - obstaclePadding
+                );
+                var existingMax = new Vector3(
+                    existing.Position.x + existingMaxHalfExtent + obstaclePadding,
+                    existing.Position.y + existing.Scale.y * 0.5f + obstaclePadding,
+                    existing.Position.z + existingMaxHalfExtent + obstaclePadding
+                );
+
+                if (obstacleMin.x < existingMax.x && obstacleMax.x > existingMin.x &&
+                    obstacleMin.z < existingMax.z && obstacleMax.z > existingMin.z)
+                {
+                    return false;
+                }
+            }
+
+            var obstacle = new ObstacleData
+            {
+                Position = obstaclePosition,
+                Scale = new Vector3(scaleX, scaleY, scaleZ),
+                Rotation = rotation
+            };
+
+            _generatedObstacles.Add(obstacle);
+            return true;
+        }
+
         private void GenerateCorridorBillboards(List<Vector3> path)
         {
             if (path.Count < 2)
@@ -2053,9 +2319,8 @@ namespace HolyRail.City
                 position += billboardRight * xOffset; // Horizontal offset along billboard
                 position.y = yPos;
 
-                // Left side (normal.x > 0, facing right): Y rotation = 0
-                // Right side (normal.x < 0, facing left): Y rotation = 180
-                var rotation = billboard.Normal.x > 0 ? Quaternion.identity : Quaternion.Euler(0, 180, 0);
+                // Calculate rotation from billboard normal - graffiti faces outward (toward viewer)
+                var rotation = Quaternion.LookRotation(billboard.Normal, Vector3.up);
 
                 var graffiti = new GraffitiSpotData
                 {
@@ -2307,8 +2572,10 @@ namespace HolyRail.City
 
             _debugWallSuccesses++;
 
-            // Left side: Y rotation = 0, Right side: Y rotation = 180
-            var rotation = placeOnLeft ? Quaternion.identity : Quaternion.Euler(0, 180, 0);
+            // Calculate rotation from path tangent - graffiti faces outward from corridor
+            // surfaceNormal already points away from the building (toward corridor center)
+            // We want rotation to face the same direction as surfaceNormal (looking at the viewer)
+            var rotation = Quaternion.LookRotation(surfaceNormal, Vector3.up);
 
             var graffiti = new GraffitiSpotData
             {
@@ -2655,6 +2922,81 @@ namespace HolyRail.City
             Graphics.RenderMeshIndirect(renderParams, RampMesh, _rampArgsBuffer);
         }
 
+        private void InitializeObstacleBuffersFromSerializedData()
+        {
+            if (_generatedObstacles.Count == 0)
+            {
+                Debug.Log("CityManager: No obstacles to initialize buffers for.");
+                return;
+            }
+
+            if (ObstacleMesh == null)
+            {
+                Debug.LogWarning("CityManager: Cannot initialize obstacle buffers - ObstacleMesh is null. Assign a cube mesh.");
+                return;
+            }
+
+            if (ObstacleMaterial == null)
+            {
+                Debug.LogWarning("CityManager: Cannot initialize obstacle buffers - ObstacleMaterial is null. Assign a material.");
+                return;
+            }
+
+            Debug.Log($"CityManager: Initializing obstacle buffers for {_generatedObstacles.Count} obstacles...");
+
+            // Release any existing obstacle buffers
+            ReleaseObstacleBuffers();
+
+            int obstacleStride = Marshal.SizeOf<ObstacleData>();
+
+            // Create and populate obstacle buffer from serialized data
+            _obstacleBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, _generatedObstacles.Count, obstacleStride);
+            _obstacleBuffer.SetData(_generatedObstacles.ToArray());
+
+            // Create indirect args buffer for RenderMeshIndirect
+            _obstacleArgsBuffer = new GraphicsBuffer(GraphicsBuffer.Target.IndirectArguments, 1, 5 * sizeof(uint));
+            uint[] args = new uint[]
+            {
+                ObstacleMesh.GetIndexCount(0),
+                (uint)_generatedObstacles.Count,
+                ObstacleMesh.GetIndexStart(0),
+                ObstacleMesh.GetBaseVertex(0),
+                0
+            };
+            _obstacleArgsBuffer.SetData(args);
+
+            // Create property block for obstacle material
+            _obstaclePropertyBlock = new MaterialPropertyBlock();
+            _obstaclePropertyBlock.SetBuffer("_ObstacleBuffer", _obstacleBuffer);
+
+            // TODO: Obstacle loop mode support not implemented yet
+            // _obstaclePropertyBlock.SetVector("_HalfAOffset", Vector3.zero);
+            // _obstaclePropertyBlock.SetVector("_HalfBOffset", Vector3.zero);
+            // _obstaclePropertyBlock.SetInt("_HalfBStartIndex", int.MaxValue);
+
+            _obstacleBuffersInitialized = true;
+            Debug.Log($"CityManager: Obstacle buffers initialized successfully. Mesh: {ObstacleMesh.name}, Material: {ObstacleMaterial.name}");
+        }
+
+        private void RenderObstacles()
+        {
+            if (_obstacleArgsBuffer == null || _obstaclePropertyBlock == null)
+                return;
+
+            // Update material buffer reference
+            _obstaclePropertyBlock.SetBuffer("_ObstacleBuffer", _obstacleBuffer);
+
+            var renderParams = new RenderParams(ObstacleMaterial)
+            {
+                worldBounds = _renderBounds,
+                matProps = _obstaclePropertyBlock,
+                shadowCastingMode = ShadowCastingMode.On,
+                receiveShadows = true
+            };
+
+            Graphics.RenderMeshIndirect(renderParams, ObstacleMesh, _obstacleArgsBuffer);
+        }
+
         private void InitializeBillboardBuffersFromSerializedData()
         {
             if (_generatedBillboards.Count == 0)
@@ -2752,6 +3094,17 @@ namespace HolyRail.City
             _rampBuffersInitialized = false;
         }
 
+        private void ReleaseObstacleBuffers()
+        {
+            _obstacleBuffer?.Release();
+            _obstacleArgsBuffer?.Release();
+
+            _obstacleBuffer = null;
+            _obstacleArgsBuffer = null;
+
+            _obstacleBuffersInitialized = false;
+        }
+
         private void ReleaseBuffers()
         {
             _buildingBuffer?.Release();
@@ -2768,9 +3121,11 @@ namespace HolyRail.City
         {
             ReleaseBuffers();
             ReleaseRampBuffers();
+            ReleaseObstacleBuffers();
             ReleaseBillboardBuffers();
             _generatedBuildings.Clear();
             _generatedRamps.Clear();
+            _generatedObstacles.Clear();
             _generatedBillboards.Clear();
             _generatedGraffitiSpots.Clear();
             _corridorPathA.Clear();
@@ -2943,6 +3298,14 @@ namespace HolyRail.City
                 _rampPropertyBlock.SetInt("_HalfBStartIndex", _loopState.HalfB.RampStartIndex);
             }
 
+            // TODO: Obstacle loop mode support not implemented yet
+            // if (_obstaclePropertyBlock != null)
+            // {
+            //     _obstaclePropertyBlock.SetVector("_HalfAOffset", halfAOffset);
+            //     _obstaclePropertyBlock.SetVector("_HalfBOffset", halfBOffset);
+            //     _obstaclePropertyBlock.SetInt("_HalfBStartIndex", _loopState.HalfB.ObstacleStartIndex);
+            // }
+
             // Update billboard shader uniforms
             if (_billboardPropertyBlock != null)
             {
@@ -2960,7 +3323,7 @@ namespace HolyRail.City
         /// </summary>
         private void ExpandRenderBoundsForOffsets()
         {
-            if (_generatedBuildings.Count == 0 && _generatedBillboards.Count == 0)
+            if (_generatedBuildings.Count == 0 && _generatedObstacles.Count == 0 && _generatedBillboards.Count == 0)
                 return;
 
             // Expand bounds to include both half offsets
@@ -3013,6 +3376,17 @@ namespace HolyRail.City
                 _rampBuffer.SetData(_rampArrayCache, 0, 0, _generatedRamps.Count);
             }
 
+            if (_obstacleBuffer != null && _generatedObstacles.Count > 0)
+            {
+                // Resize cache if needed
+                if (_obstacleArrayCache == null || _obstacleArrayCache.Length < _generatedObstacles.Count)
+                {
+                    _obstacleArrayCache = new ObstacleData[_generatedObstacles.Count];
+                }
+                _generatedObstacles.CopyTo(_obstacleArrayCache);
+                _obstacleBuffer.SetData(_obstacleArrayCache, 0, 0, _generatedObstacles.Count);
+            }
+
             if (_billboardBuffer != null && _generatedBillboards.Count > 0)
             {
                 // Resize cache if needed
@@ -3034,7 +3408,7 @@ namespace HolyRail.City
         /// </summary>
         private void ExpandRenderBounds(Vector3 offset)
         {
-            if (_generatedBuildings.Count == 0 && _generatedBillboards.Count == 0)
+            if (_generatedBuildings.Count == 0 && _generatedObstacles.Count == 0 && _generatedBillboards.Count == 0)
                 return;
 
             // If this is the first time or we don't have valid bounds, do a full recalculation
@@ -3067,7 +3441,7 @@ namespace HolyRail.City
         /// </summary>
         private void RecalculateRenderBoundsFull()
         {
-            if (_generatedBuildings.Count == 0 && _generatedBillboards.Count == 0)
+            if (_generatedBuildings.Count == 0 && _generatedObstacles.Count == 0 && _generatedBillboards.Count == 0)
                 return;
 
             // Find min/max extents of all geometry
@@ -3245,6 +3619,7 @@ namespace HolyRail.City
             // Only release GPU buffers, keep serialized data for persistence
             ReleaseBuffers();
             ReleaseRampBuffers();
+            ReleaseObstacleBuffers();
             ReleaseBillboardBuffers();
         }
 
@@ -3252,6 +3627,7 @@ namespace HolyRail.City
         {
             ReleaseBuffers();
             ReleaseRampBuffers();
+            ReleaseObstacleBuffers();
             ReleaseBillboardBuffers();
         }
 
