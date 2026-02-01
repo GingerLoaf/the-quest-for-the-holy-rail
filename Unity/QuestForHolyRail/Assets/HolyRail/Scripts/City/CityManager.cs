@@ -3003,9 +3003,12 @@ namespace HolyRail.City
             parentGO.transform.SetParent(transform);
             _obstacleColliderParent = parentGO.transform;
 
+            int obstacleLayer = LayerMask.NameToLayer("Obstacle");
+
             foreach (var obstacle in _generatedObstacles)
             {
                 var colliderGO = new GameObject("ObstacleCollider");
+                colliderGO.layer = obstacleLayer;
                 colliderGO.transform.SetParent(_obstacleColliderParent);
                 colliderGO.transform.position = obstacle.Position;
                 colliderGO.transform.rotation = obstacle.Rotation;
