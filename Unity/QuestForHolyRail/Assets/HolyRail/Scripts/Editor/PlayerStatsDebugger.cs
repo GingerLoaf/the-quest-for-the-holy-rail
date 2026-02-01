@@ -3,6 +3,7 @@ using UnityEditor;
 using HolyRail.Scripts;
 using HolyRail.Scripts.Enemies;
 using HolyRail.Graffiti;
+using StarterAssets;
 using UnityEngine.Rendering.Universal;
 using System.Collections.Generic;
 using System.Linq;
@@ -20,6 +21,7 @@ namespace HolyRail.Scripts.Editor
 
         private EnemySpawner _spawner;
         private bool _initialized;
+        private Vector2 _scrollPos;
 
         [MenuItem("Tools/Player Stats Debugger")]
         public static void ShowWindow()
@@ -96,6 +98,8 @@ namespace HolyRail.Scripts.Editor
                 return;
             }
 
+            _scrollPos = EditorGUILayout.BeginScrollView(_scrollPos);
+
             GUILayout.Label("Available Upgrades", EditorStyles.boldLabel);
             EditorGUILayout.Space();
 
@@ -103,6 +107,7 @@ namespace HolyRail.Scripts.Editor
             {
                 EditorGUILayout.HelpBox("No PlayerUpgrade assets found in Resources!", MessageType.Warning);
                 if (GUILayout.Button("Reload Upgrades")) LoadUpgrades();
+                EditorGUILayout.EndScrollView();
                 return;
             }
 
@@ -160,6 +165,41 @@ namespace HolyRail.Scripts.Editor
             if (GUILayout.Button("Reset All to Tier 0"))
             {
                 ResetAll();
+            }
+
+            EditorGUILayout.Space(10);
+            GUILayout.Label("Debug Spawning", EditorStyles.boldLabel);
+            if (GUILayout.Button("Spawn Health Pickup"))
+            {
+                SpawnHealthPickup();
+            }
+
+            EditorGUILayout.EndScrollView();
+        }
+
+        private void SpawnHealthPickup()
+        {
+            if (ThirdPersonController_RailGrinder.Instance == null)
+            {
+                Debug.LogWarning("Player controller not found.");
+                return;
+            }
+
+            var player = ThirdPersonController_RailGrinder.Instance;
+            var field = typeof(ThirdPersonController_RailGrinder).GetField("_healthPickupPrefab", BindingFlags.NonPublic | BindingFlags.Instance);
+            if (field != null)
+            {
+                var prefab = field.GetValue(player) as GameObject;
+                if (prefab != null)
+                {
+                    Vector3 spawnPos = player.transform.position + player.transform.forward * 2f + Vector3.up;
+                    Instantiate(prefab, spawnPos, Quaternion.identity);
+                    Debug.Log("Spawned Health Pickup via Debugger");
+                }
+                else
+                {
+                    Debug.LogWarning("Health Pickup Prefab is missing on the Player Controller.");
+                }
             }
         }
 

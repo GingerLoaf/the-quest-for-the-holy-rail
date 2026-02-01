@@ -2719,7 +2719,8 @@ namespace StarterAssets
                         float spawnT = Mathf.Clamp01(_grindT + (lookAheadT * direction));
                         
                         // Evaluate position on spline
-                        spawnPos = (Vector3)GrindSpline.EvaluatePosition(spawnT);
+                        var localPos = GrindSpline.Spline.EvaluatePosition(spawnT);
+                        spawnPos = GrindSpline.transform.TransformPoint(localPos);
                         
                         // Add height offset (using the same offset as vine generator if possible, or a default)
                         spawnPos += transform.up * 1.0f;

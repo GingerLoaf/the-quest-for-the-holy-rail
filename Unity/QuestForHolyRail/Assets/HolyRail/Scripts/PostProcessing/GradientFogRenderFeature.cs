@@ -25,7 +25,7 @@ namespace HolyRail.PostProcessing
 
         public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
         {
-            Debug.Log($"GradientFog: AddRenderPasses called, material={(settings.fogMaterial != null ? settings.fogMaterial.name : "NULL")}");
+            //Debug.Log($"GradientFog: AddRenderPasses called, material={(settings.fogMaterial != null ? settings.fogMaterial.name : "NULL")}");
 
             if (settings.fogMaterial == null)
             {

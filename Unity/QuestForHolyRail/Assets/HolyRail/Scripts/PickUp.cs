@@ -23,19 +23,22 @@ namespace HolyRail.Scripts
         [FormerlySerializedAs("TemporaryPickup")] [Tooltip("Assign for Temporary upgrades (reset per run). Health drops should be Temporary.")]
         public ItemPickup temporaryPickup;
 
-        [FormerlySerializedAs("CollectionRadius")]
+        [FormerlySerializedAs("collectionRadiusSquared")]
         [Header("Pickup Settings")]
         [Tooltip("Distance within which the player can collect this pickup")]
-        public float collectionRadius = 0.5f;
+        public float collectionRadius = 1.5f;
 
         [FormerlySerializedAs("VisualObject")] [Tooltip("Visual object to disable on collection")]
         public Renderer visualObject;
 
         private bool _collected = false;
         private Transform _playerTransform;
+        private float _sqrCollectionRadius;
 
         private void Start()
         {
+            _sqrCollectionRadius = collectionRadius * collectionRadius;
+
             if (ThirdPersonController_RailGrinder.Instance != null)
             {
                 _playerTransform = ThirdPersonController_RailGrinder.Instance.transform;
@@ -44,12 +47,23 @@ namespace HolyRail.Scripts
 
         private void Update()
         {
-            if (_collected || !_playerTransform)
+            if (_collected)
                 return;
 
-            float distance = Vector3.Distance(transform.position, _playerTransform.position);
+            if (!_playerTransform)
+            {
+                if (ThirdPersonController_RailGrinder.Instance != null)
+                {
+                    _playerTransform = ThirdPersonController_RailGrinder.Instance.transform;
+                }
+                
+                if (!_playerTransform)
+                    return;
+            }
 
-            if (distance <= collectionRadius)
+            // Optimized distance check using squared magnitude to avoid expensive Sqrt
+            Vector3 offset = transform.position - _playerTransform.position;
+            if (offset.sqrMagnitude <= _sqrCollectionRadius)
             {
                 Collect();
             }
@@ -85,13 +99,13 @@ namespace HolyRail.Scripts
                 GamepadHaptics.Instance.TriggerHaptic(HapticType.Pickup);
             }
 
-            // Hide or destroy the pickup
+            // Hide or disable the visual object if set
             if (visualObject)
             {
                 visualObject.enabled = false;
             }
 
-            // Destroy the pickup after a short delay to allow any effects to play
+            // Destroy the pickup after a short delay
             Destroy(gameObject, 0.1f);
         }
 
