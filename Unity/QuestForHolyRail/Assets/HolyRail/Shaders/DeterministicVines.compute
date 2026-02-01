@@ -43,8 +43,9 @@ float _AttractionRadius;
 float _KillRadius;
 float _NoiseStrength;
 float _NoiseScale;
-float3 _ForwardDirection;
-float _ForwardBias;
+float3 _BiasVector1;
+float3 _BiasVector2;
+float _MinBranchSpreadAngle;  // In radians
 
 // PCG hash for deterministic random
 uint pcgHash(uint input)
@@ -178,13 +179,39 @@ void Grow(uint3 id : SV_DispatchThreadID)
         float(_VoteZ[id.x]) / float(_FixedPointScale * voteCount)
     );
 
-    // Blend in forward direction bias before normalizing
-    avgDirection = avgDirection + _ForwardDirection * _ForwardBias;
+    // Blend in direction bias
+    float3 combinedBias = _BiasVector1 + _BiasVector2;
+    avgDirection = avgDirection + combinedBias;
     avgDirection = normalize(avgDirection);
 
     // Add deterministic noise
     float3 noise = noiseFromPosition(node.Position, _Seed + int(id.x) + _CurrentIteration);
     avgDirection = normalize(avgDirection + noise * _NoiseStrength);
+
+    // Enforce minimum spread angle from parent direction
+    if (node.ParentIndex >= 0)
+    {
+        float3 parentPos = _Nodes[node.ParentIndex].Position;
+        float3 parentDir = normalize(node.Position - parentPos);
+
+        float cosAngle = dot(avgDirection, parentDir);
+        float minCos = cos(_MinBranchSpreadAngle);
+
+        // If growing too parallel to parent, push perpendicular
+        if (cosAngle > minCos)
+        {
+            // Get perpendicular component
+            float3 perp = avgDirection - parentDir * cosAngle;
+            float perpLen = length(perp);
+
+            if (perpLen > 0.001)
+            {
+                perp = perp / perpLen;
+                // Blend to achieve minimum spread angle
+                avgDirection = normalize(parentDir * minCos + perp * sin(_MinBranchSpreadAngle));
+            }
+        }
+    }
 
     // Compute new position
     float3 newPosition = node.Position + avgDirection * _StepSize;

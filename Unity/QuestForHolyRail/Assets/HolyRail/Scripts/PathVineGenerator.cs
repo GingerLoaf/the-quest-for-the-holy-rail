@@ -718,5 +718,19 @@ namespace HolyRail
                 return Mathf.Sqrt(distForward * distForward + distRight * distRight);
             }
         }
+
+        public float GetDistanceToNearestSpline(Vector3 point)
+        {
+            float nearestDistSq = float.MaxValue;
+
+            foreach (var sample in _cachedSplineSamples)
+            {
+                float distSq = (point - sample.Position).sqrMagnitude;
+                if (distSq < nearestDistSq)
+                    nearestDistSq = distSq;
+            }
+
+            return nearestDistSq < float.MaxValue ? Mathf.Sqrt(nearestDistSq) : float.MaxValue;
+        }
     }
 }

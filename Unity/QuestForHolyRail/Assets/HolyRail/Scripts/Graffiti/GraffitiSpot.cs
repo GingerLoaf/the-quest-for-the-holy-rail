@@ -33,9 +33,12 @@ namespace HolyRail.Graffiti
         private Transform _playerTransform;
         private ThirdPersonController_RailGrinder _playerController;
         private ScoreManager _scoreManager;
+        private Collider _collider;
 
         private void Awake()
         {
+            _collider = GetComponent<Collider>();
+
             if (DecalProjector != null && DecalProjector.material != null)
             {
                 _decalMaterial = new Material(DecalProjector.material);
@@ -55,11 +58,7 @@ namespace HolyRail.Graffiti
                 float radiusBonus = GameSessionManager.Instance.GetUpgradeValue(UpgradeType.SprayPaintRadius);
                 if (radiusBonus > 0)
                 {
-                    var sphereCollider = GetComponent<SphereCollider>();
-                    if (sphereCollider != null)
-                    {
-                        sphereCollider.radius *= (1.0f + radiusBonus);
-                    }
+                    ApplyRadiusBonus(1.0f + radiusBonus);
                 }
             }
         }
@@ -74,6 +73,31 @@ namespace HolyRail.Graffiti
 
         private void Update()
         {
+            // Distance-based detection as fallback/supplement to triggers
+            if (!_isCompleted)
+            {
+                var player = ThirdPersonController_RailGrinder.Instance;
+                if (player != null)
+                {
+                    float detectionRadius = GetColliderRadius();
+                    float distance = Vector3.Distance(transform.position, player.transform.position);
+
+                    // Enter check: only use distance when grinding (triggers don't work during grind)
+                    if (player.IsGrinding && distance <= detectionRadius)
+                    {
+                        if (!_isPlayerInRange)
+                        {
+                            EnterRange(player.gameObject);
+                        }
+                    }
+                    // Exit check: ALWAYS check distance to ensure we exit even if triggers fail
+                    else if (_isPlayerInRange && distance > detectionRadius * 1.1f)
+                    {
+                        ExitRange();
+                    }
+                }
+            }
+
             if (_isCompleted || !_isPlayerInRange || _playerController == null)
             {
                 return;
@@ -138,30 +162,40 @@ namespace HolyRail.Graffiti
 
             if (other.CompareTag("Player"))
             {
-                _isPlayerInRange = true;
-                _playerTransform = other.transform;
-                _playerController = other.GetComponent<ThirdPersonController_RailGrinder>();
+                EnterRange(other.gameObject);
+            }
+        }
 
-                if (_decalMaterial != null)
-                {
-                    _decalMaterial.SetFloat(FrameEnabledProperty, 1f);
-                }
+        private void EnterRange(GameObject playerObject)
+        {
+            if (_isPlayerInRange)
+            {
+                return;
+            }
 
-                if (ProgressUI != null)
-                {
-                    ProgressUI.Show();
-                }
+            _isPlayerInRange = true;
+            _playerTransform = playerObject.transform;
+            _playerController = playerObject.GetComponent<ThirdPersonController_RailGrinder>();
 
-                if (_playerController != null)
-                {
-                    _playerController.SetActiveGraffiti(this);
-                }
+            if (_decalMaterial != null)
+            {
+                _decalMaterial.SetFloat(FrameEnabledProperty, 1f);
+            }
 
-                // Play enter range sound
-                if (_enterRangeClip != null)
-                {
-                    AudioSource.PlayClipAtPoint(_enterRangeClip, transform.position, _audioVolume);
-                }
+            if (ProgressUI != null)
+            {
+                ProgressUI.Show();
+            }
+
+            if (_playerController != null)
+            {
+                _playerController.SetActiveGraffiti(this);
+            }
+
+            // Play enter range sound
+            if (_enterRangeClip != null)
+            {
+                AudioSource.PlayClipAtPoint(_enterRangeClip, transform.position, _audioVolume);
             }
         }
 
@@ -169,40 +203,45 @@ namespace HolyRail.Graffiti
         {
             if (other.CompareTag("Player"))
             {
-                _isPlayerInRange = false;
-
-                // Stop haptic feedback if player was spraying when they left
-                if (_wasSprayingLastFrame && GamepadHaptics.Instance != null)
-                {
-                    GamepadHaptics.Instance.StopContinuousHaptic();
-                }
-                _wasSprayingLastFrame = false;
-
-                if (_decalMaterial != null)
-                {
-                    _decalMaterial.SetFloat(FrameEnabledProperty, 0f);
-                }
-
-                if (ProgressUI != null)
-                {
-                    ProgressUI.Hide();
-                }
-
-                if (_playerController != null)
-                {
-                    _playerController.SetSprayTarget(Vector3.zero, false);
-                    _playerController.SetActiveGraffiti(null);
-                    _playerController = null;
-                }
-
-                _playerTransform = null;
-
-                // Reset progress if player left without completing
-                if (!_isCompleted)
-                {
-                    ResetProgress();
-                }
+                ExitRange();
             }
+        }
+
+        private void ExitRange()
+        {
+            if (!_isPlayerInRange)
+            {
+                return;
+            }
+
+            _isPlayerInRange = false;
+
+            // Stop haptic feedback if player was spraying when they left
+            if (_wasSprayingLastFrame && GamepadHaptics.Instance != null)
+            {
+                GamepadHaptics.Instance.StopContinuousHaptic();
+            }
+            _wasSprayingLastFrame = false;
+
+            if (_decalMaterial != null)
+            {
+                _decalMaterial.SetFloat(FrameEnabledProperty, 0f);
+            }
+
+            if (ProgressUI != null)
+            {
+                ProgressUI.Hide();
+            }
+
+            if (_playerController != null)
+            {
+                _playerController.SetSprayTarget(Vector3.zero, false);
+                _playerController.SetActiveGraffiti(null);
+                _playerController = null;
+            }
+
+            _playerTransform = null;
+            // Progress is NOT reset here - player can return and continue spraying
         }
 
         private void Complete()
@@ -276,6 +315,41 @@ namespace HolyRail.Graffiti
             _isPlayerInRange = false;
             _playerTransform = null;
             _playerController = null;
+        }
+
+        private float GetColliderRadius()
+        {
+            if (_collider == null)
+            {
+                return 5f;
+            }
+
+            float scale = transform.lossyScale.x;
+
+            if (_collider is SphereCollider sphere)
+            {
+                return sphere.radius * scale;
+            }
+
+            if (_collider is BoxCollider box)
+            {
+                return Mathf.Max(box.size.x, box.size.z) / 2f * scale;
+            }
+
+            // Fallback for other collider types
+            return _collider.bounds.extents.magnitude;
+        }
+
+        private void ApplyRadiusBonus(float multiplier)
+        {
+            if (_collider is SphereCollider sphere)
+            {
+                sphere.radius *= multiplier;
+            }
+            else if (_collider is BoxCollider box)
+            {
+                box.size *= multiplier;
+            }
         }
 
         public bool IsCompleted => _isCompleted;

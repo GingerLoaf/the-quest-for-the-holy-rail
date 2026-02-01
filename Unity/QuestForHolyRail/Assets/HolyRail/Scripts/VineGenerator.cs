@@ -159,8 +159,12 @@ namespace HolyRail.Vines
         [field: SerializeField, Range(0.5f, 3f)] public float BillboardAvoidanceDistance { get; set; } = 1.5f;
 
         [Header("Direction Bias")]
-        [field: SerializeField] public Vector3 ForwardDirection { get; set; } = Vector3.forward;
-        [field: SerializeField, Range(0f, 2f)] public float ForwardBias { get; set; } = 0.5f;
+        [field: SerializeField] public Vector3 BiasVector1 { get; set; } = new Vector3(0f, 0f, 0.5f);
+        [field: SerializeField] public Vector3 BiasVector2 { get; set; } = new Vector3(0f, 0.2f, 0f);
+
+        [Header("Branch Spread")]
+        [field: SerializeField, Range(0f, 90f)]
+        public float MinBranchSpreadAngle { get; set; } = 20f;
 
         [Header("Free Mode Settings")]
         [field: SerializeField] public int FreeSplineCount { get; set; } = 10;
@@ -581,17 +585,20 @@ namespace HolyRail.Vines
                 position += GetRampAvoidanceOffset(position, prevPosition);
             }
 
-            // 5. Apply forward bias to encourage flow in ForwardDirection
-            if (ForwardBias > 0.01f)
+            // 5. Apply direction bias
+            Vector3 combinedBias = BiasVector1 + BiasVector2;
+            float biasMagnitude = combinedBias.magnitude;
+            if (biasMagnitude > 0.01f)
             {
+                Vector3 biasDir = combinedBias.normalized;
                 Vector3 toPosition = position - prevPosition;
-                float forwardComponent = Vector3.Dot(toPosition, ForwardDirection.normalized);
+                float biasComponent = Vector3.Dot(toPosition, biasDir);
 
-                // If moving backward relative to forward direction, bias it forward
-                if (forwardComponent < 0)
+                // If moving against the bias direction, push toward it
+                if (biasComponent < 0)
                 {
-                    // Add forward push proportional to how backward we're going
-                    position += ForwardDirection.normalized * (-forwardComponent * ForwardBias);
+                    // Add push proportional to how much we're going against the bias
+                    position += biasDir * (-biasComponent * biasMagnitude);
                 }
             }
 
@@ -867,7 +874,11 @@ namespace HolyRail.Vines
 
                         // Get travel direction
                         Vector3 travelDir = (position - prevPosition).normalized;
-                        if (travelDir.sqrMagnitude < 0.01f) travelDir = ForwardDirection.normalized;
+                        if (travelDir.sqrMagnitude < 0.01f)
+                        {
+                            Vector3 combinedBias = BiasVector1 + BiasVector2;
+                            travelDir = combinedBias.sqrMagnitude > 0.01f ? combinedBias.normalized : Vector3.forward;
+                        }
 
                         // Very gradual cubic falloff - start curving early, gentle push
                         float t = 1f - (dist / detectionRadius); // 1 at center, 0 at edge
@@ -1048,7 +1059,9 @@ namespace HolyRail.Vines
             _generatedNodes.Clear();
             _generatedAttractors.Clear();  // Free mode doesn't use attractors
 
-            var forward = ForwardDirection.normalized;
+            // Compute forward direction from combined bias
+            Vector3 combinedBias = BiasVector1 + BiasVector2;
+            var forward = combinedBias.sqrMagnitude > 0.01f ? combinedBias.normalized : Vector3.forward;
             // Handle case where forward is parallel to up
             var right = Mathf.Abs(Vector3.Dot(forward, Vector3.up)) > 0.99f
                 ? Vector3.Cross(Vector3.forward, forward).normalized
@@ -2322,8 +2335,9 @@ namespace HolyRail.Vines
                 VineComputeShader.SetFloat("_KillRadius", KillRadius);
                 VineComputeShader.SetFloat("_NoiseStrength", NoiseStrength);
                 VineComputeShader.SetFloat("_NoiseScale", NoiseScale);
-                VineComputeShader.SetVector("_ForwardDirection", ForwardDirection.normalized);
-                VineComputeShader.SetFloat("_ForwardBias", ForwardBias);
+                VineComputeShader.SetVector("_BiasVector1", BiasVector1);
+                VineComputeShader.SetVector("_BiasVector2", BiasVector2);
+                VineComputeShader.SetFloat("_MinBranchSpreadAngle", MinBranchSpreadAngle * Mathf.Deg2Rad);
 
                 // Run algorithm iterations
                 int nodeGroupCount = Mathf.CeilToInt(MaxNodes / (float)ThreadGroupSize);
@@ -2879,9 +2893,9 @@ namespace HolyRail.Vines
                             startTaperT = overlapDistance / splineLength;
                         }
 
-                        // Use a minimum taper distance to close mesh ends when user has tapering disabled
-                        // Only apply to the END of meshes (isBranchMesh tells shader to skip start taper)
-                        float effectiveEndTaper = EnableEndTapering ? EndTaperDistance : 0.01f;
+                        // When end tapering is disabled, use 0 for flat/blunt mesh ends
+                        // When enabled, mesh ends taper to a point over EndTaperDistance meters
+                        float effectiveEndTaper = EnableEndTapering ? EndTaperDistance : 0.0f;
 
                         var propBlock = new MaterialPropertyBlock();
                         propBlock.SetFloat("_Radius", VineRadius);

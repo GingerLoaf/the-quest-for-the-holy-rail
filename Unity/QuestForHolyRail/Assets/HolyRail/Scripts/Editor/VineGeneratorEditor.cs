@@ -202,16 +202,16 @@ namespace HolyRail.Vines.Editor
                     new GUIContent("Enable Billboard Vines", "Also generate sagging cable vines connecting billboards")
                 );
 
-                // Direction Flow
+                // Direction Bias
                 EditorGUILayout.Space();
-                EditorGUILayout.LabelField("Direction Flow", EditorStyles.boldLabel);
+                EditorGUILayout.LabelField("Direction Bias", EditorStyles.boldLabel);
                 EditorGUILayout.PropertyField(
-                    serializedObject.FindProperty("<ForwardDirection>k__BackingField"),
-                    new GUIContent("Forward Direction", "Primary direction vines should flow (typically Vector3.forward)")
+                    serializedObject.FindProperty("<BiasVector1>k__BackingField"),
+                    new GUIContent("Bias Vector 1", "First bias direction (vectors are combined)")
                 );
                 EditorGUILayout.PropertyField(
-                    serializedObject.FindProperty("<ForwardBias>k__BackingField"),
-                    new GUIContent("Forward Bias", "How strongly to push vines in the forward direction (0=none, 1=strong)")
+                    serializedObject.FindProperty("<BiasVector2>k__BackingField"),
+                    new GUIContent("Bias Vector 2", "Second bias direction (vectors are combined)")
                 );
 
                 // Rail Connectivity
@@ -301,6 +301,10 @@ namespace HolyRail.Vines.Editor
 
                 // Branch Separation
                 EditorGUILayout.PropertyField(serializedObject.FindProperty("<MinBranchSeparation>k__BackingField"));
+                EditorGUILayout.PropertyField(
+                    serializedObject.FindProperty("<MinBranchSpreadAngle>k__BackingField"),
+                    new GUIContent("Min Branch Spread Angle", "Minimum angle in degrees between sibling branches")
+                );
             }
 
             // Obstacle Avoidance - shown for all modes
@@ -315,16 +319,19 @@ namespace HolyRail.Vines.Editor
                 EditorGUI.indentLevel--;
             }
 
-            // Direction Bias - shown for attractor-based modes and Free mode (Path mode gets direction from CityManager)
+            // Direction Bias - shown for attractor-based modes and Free mode (Path mode has its own section)
             if (generator.AttractorGenerationMode != AttractorMode.Path)
             {
                 EditorGUILayout.Space();
                 EditorGUILayout.LabelField("Direction Bias", EditorStyles.boldLabel);
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("<ForwardDirection>k__BackingField"));
-                if (generator.AttractorGenerationMode != AttractorMode.Free)
-                {
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("<ForwardBias>k__BackingField"));
-                }
+                EditorGUILayout.PropertyField(
+                    serializedObject.FindProperty("<BiasVector1>k__BackingField"),
+                    new GUIContent("Bias Vector 1", "First bias direction (vectors are combined)")
+                );
+                EditorGUILayout.PropertyField(
+                    serializedObject.FindProperty("<BiasVector2>k__BackingField"),
+                    new GUIContent("Bias Vector 2", "Second bias direction (vectors are combined)")
+                );
             }
 
             // AttractorBounds is needed for Free mode too (defines generation volume)
@@ -522,7 +529,7 @@ namespace HolyRail.Vines.Editor
             {
                 EditorGUILayout.HelpBox(
                     "Free Mode Setup:\n" +
-                    "1. Set ForwardDirection for spline travel direction\n" +
+                    "1. Set Direction Bias for spline travel direction\n" +
                     "2. Set AttractorBounds to define generation volume\n" +
                     "3. Adjust FreeSplineCount and spacing\n" +
                     "4. Configure undulation with variation ranges\n" +

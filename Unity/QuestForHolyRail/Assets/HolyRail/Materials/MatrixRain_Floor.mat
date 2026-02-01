@@ -1,0 +1,67 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!21 &2100000
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: MatrixRain_Floor
+  m_Shader: {fileID: 4800000, guid: 7badfe69b966046e68879b527166a682, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords: []
+  m_InvalidKeywords: []
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: -1
+  stringTagMap:
+    RenderType: Opaque
+  disabledShaderPasses: []
+  m_LockedProperties: 
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs:
+    - _CharTex:
+        m_Texture: {fileID: 2800000, guid: b02416e2c7e7041d89598abd50602e28, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _NoiseTex:
+        m_Texture: {fileID: 2800000, guid: 36fa1695dcdc54c46b37b636c177fdf8, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    m_Ints: []
+    m_Floats:
+    - _Brightness: 0.7
+    - _CharChangeSpeed: 0.5
+    - _RingDistortion: 37.87
+    - _RingDistortionFalloff: -0.29
+    - _RingFalloff: 6.7
+    - _RingGlow: 20
+    - _RingPulseSpeed: 0
+    - _RingWidth: 4.54
+    - _Scale: 0.5
+    - _Speed: 0.15
+    - _TrailLength: 0.9
+    - _TriplanarSharpness: 8
+    - _WakeBrightness: 1.2
+    - _WakeCharSpeedBoost: 2
+    - _WakeColorBlend: 1.1
+    - _WakeDistortion: 1.54
+    - _WakeDistortionFade: 2
+    - _WakeDistortionFreq: 0.07
+    - _WakeDistortionSpeed: 2
+    - _WakeExpansion: 1
+    - _WakeFalloff: 1
+    - _WakeIntensity: 0
+    - _WakeRadius: 4.04
+    - _WakeSpeedBoost: 1.5
+    - _WakeSpeedGlow: 0.5
+    m_Colors:
+    - _BackgroundColor: {r: 0, g: 0, b: 0, a: 1}
+    - _CharColor: {r: 0.4, g: 1, b: 1.5, a: 1}
+    - _WakeColor: {r: 0.6, g: 2, b: 2.5, a: 1}
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1

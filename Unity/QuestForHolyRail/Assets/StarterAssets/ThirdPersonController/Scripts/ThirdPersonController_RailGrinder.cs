@@ -2524,7 +2524,7 @@ namespace StarterAssets
             float previousTimeScale = Time.timeScale;
             Time.timeScale = 0f;
 
-            // Animate wipe from 0 to 1 using unscaled time
+            // 1. Animate wipe from 0 to 1 (fade in)
             if (_deathWipeVolume != null)
             {
                 float elapsed = 0f;
@@ -2538,13 +2538,12 @@ namespace StarterAssets
                 _deathWipeVolume.wipePosition.Override(1f);
             }
 
-            // Perform the actual reset while fully covered
+            // 2. Hold fully masked for 0.5s total - perform reset in the middle
+            yield return new WaitForSecondsRealtime(0.1f);  // Ensure mask is rendered
             PerformSoftReset();
+            yield return new WaitForSecondsRealtime(0.4f);  // Hold after reset
 
-            // Wait while fully masked for the teleport to visually take effect
-            yield return new WaitForSecondsRealtime(0.5f);
-
-            // Animate wipe back from 1 to 0
+            // 3. Animate wipe from 1 to 0 (fade out)
             if (_deathWipeVolume != null)
             {
                 float elapsed = 0f;

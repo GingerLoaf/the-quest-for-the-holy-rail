@@ -82,6 +82,7 @@ namespace HolyRail.City
         [field: SerializeField] public float GraffitiProjectionHeight { get; set; } = 3f;
         [field: SerializeField] public bool UseSplineBasedGraffiti { get; set; } = true;
         [field: SerializeField] public PathVineGenerator VineGenerator { get; set; }
+        [field: SerializeField] public float GraffitiMaxDistanceFromRail { get; set; } = 15f;
 
         [Header("Generation Parameters")]
         [field: SerializeField] public int Seed { get; set; } = 12345;
@@ -921,6 +922,54 @@ namespace HolyRail.City
             return false;
         }
 
+        private bool IsInPlazaArea(Vector3 position)
+        {
+            // Use expanded radii that account for building rings around plazas
+            float avgBuildingWidth = (BuildingWidthMin + BuildingWidthMax) * 0.5f;
+
+            // Start convergence plaza - include building ring
+            float convergencePlazaRadius = ConvergenceRadius + BuildingSetback + PlazaRingRows * (avgBuildingWidth + BuildingSetback) + avgBuildingWidth;
+            float convergencePlazaRadiusSq = convergencePlazaRadius * convergencePlazaRadius;
+            if ((position - ConvergencePoint.position).sqrMagnitude < convergencePlazaRadiusSq)
+                return true;
+
+            // End convergence plaza - include building ring
+            if (ConvergenceEndPoint != null && EnableConvergenceEndPlaza)
+            {
+                float endPlazaRadius = ConvergenceEndRadius + BuildingSetback + EndPlazaRingRows * (avgBuildingWidth + BuildingSetback) + avgBuildingWidth;
+                float endPlazaRadiusSq = endPlazaRadius * endPlazaRadius;
+                if ((position - ConvergenceEndPoint.position).sqrMagnitude < endPlazaRadiusSq)
+                    return true;
+            }
+
+            // Junctions - use expanded radius
+            float junctionExpandedRadius = JunctionRadius + BuildingSetback + avgBuildingWidth;
+            float junctionExpandedRadiusSq = junctionExpandedRadius * junctionExpandedRadius;
+
+            if (EnableJunctionAB && JunctionAB != null)
+            {
+                if ((position - JunctionAB.position).sqrMagnitude < junctionExpandedRadiusSq)
+                    return true;
+            }
+
+            if (EnableJunctionBC && JunctionBC != null)
+            {
+                if ((position - JunctionBC.position).sqrMagnitude < junctionExpandedRadiusSq)
+                    return true;
+            }
+
+            // FinalEndPoint - use expanded radius
+            if (EnableFinalEndPoint && FinalEndPoint != null)
+            {
+                float finalExpandedRadius = FinalEndPointRadius + BuildingSetback + avgBuildingWidth;
+                float finalExpandedRadiusSq = finalExpandedRadius * finalExpandedRadius;
+                if ((position - FinalEndPoint.position).sqrMagnitude < finalExpandedRadiusSq)
+                    return true;
+            }
+
+            return false;
+        }
+
         private List<Vector3> GenerateStraightPathSegment(Vector3 start, Vector3 end)
         {
             var path = new List<Vector3>();
@@ -1747,36 +1796,38 @@ namespace HolyRail.City
 
             int placed = 0;
 
-            // For each segment, pick the best candidate (closest to wall) with some randomization
+            // For each segment, try candidates until one succeeds
             for (int seg = 0; seg < graffitiOnWalls && placed < graffitiOnWalls; seg++)
             {
                 if (!segmentCandidates.TryGetValue(seg, out var segCandidates) || segCandidates.Count == 0)
                     continue;
 
-                // Sort by wall distance, then pick from top candidates with randomization
+                // Sort by wall distance (closest first)
                 segCandidates.Sort((a, b) => a.DistanceToWall.CompareTo(b.DistanceToWall));
 
-                // Pick randomly from top 3 candidates (if available) for variety
-                int pickRange = Mathf.Min(3, segCandidates.Count);
-                int pickIndex = Random.Range(0, pickRange);
-                var candidate = segCandidates[pickIndex];
-
-                // Try to place (existing method handles building wall placement + spacing check)
-                // Use Y offsets centered around rail height so graffiti is visible while grinding
-                // -2 to +1 meters from rail: slightly below to slightly above eye level
-                if (TryPlaceGraffitiSpotOnWall(candidate.Position, candidate.SplineTangent, placeOnLeft: true,
-                    yOffsetMin: -2f, yOffsetMax: 1f))
+                // Try each candidate until one succeeds
+                bool placedInSegment = false;
+                foreach (var candidate in segCandidates)
                 {
-                    placed++;
-                }
-                else if (TryPlaceGraffitiSpotOnWall(candidate.Position, candidate.SplineTangent, placeOnLeft: false,
-                    yOffsetMin: -2f, yOffsetMax: 1f))
-                {
-                    placed++;
+                    // Use Y offsets centered around rail height so graffiti is visible while grinding
+                    if (TryPlaceGraffitiSpotOnWall(candidate.Position, candidate.SplineTangent, placeOnLeft: true,
+                        yOffsetMin: -2f, yOffsetMax: 1f))
+                    {
+                        placed++;
+                        placedInSegment = true;
+                        break;
+                    }
+                    else if (TryPlaceGraffitiSpotOnWall(candidate.Position, candidate.SplineTangent, placeOnLeft: false,
+                        yOffsetMin: -2f, yOffsetMax: 1f))
+                    {
+                        placed++;
+                        placedInSegment = true;
+                        break;
+                    }
                 }
             }
 
-            Debug.Log($"CityManager: Placed {placed} graffiti spots using spline-based placement");
+            Debug.Log($"CityManager: Placed {placed}/{graffitiOnWalls} graffiti spots using spline-based placement");
         }
 
         private void GenerateCorridorGraffitiSpots(List<Vector3> path)
@@ -2008,6 +2059,10 @@ namespace HolyRail.City
         {
             _debugWallAttempts++;
 
+            // Reject graffiti in plaza/convergence areas (use expanded radius to cover building rings)
+            if (IsInPlazaArea(pathPosition))
+                return false;
+
             // Calculate perpendicular direction (right of path)
             var right = Vector3.Cross(Vector3.up, tangent).normalized;
 
@@ -2022,6 +2077,21 @@ namespace HolyRail.City
             }
 
             var buildingData = building.Value;
+
+            // Verify the building wall is actually close to the rail position
+            // Calculate horizontal distance from path to building center
+            var toBuildingHorizontal = buildingData.Position - pathPosition;
+            toBuildingHorizontal.y = 0;
+            float distToBuilding = toBuildingHorizontal.magnitude;
+            float buildingHalfSize = Mathf.Max(buildingData.Scale.x, buildingData.Scale.z) * 0.5f;
+            float distToWall = distToBuilding - buildingHalfSize;
+
+            // Reject if wall is too far from rail (should be within corridor width)
+            if (distToWall > CorridorWidth * 0.6f)
+            {
+                _debugBuildingSearchFails++;
+                return false;
+            }
 
             // Calculate position on the building's corridor-facing surface
             // The corridor-facing surface is the side closest to the path
@@ -2205,6 +2275,16 @@ namespace HolyRail.City
                 {
                     _debugBillboardOverlapFails++;
                     return false;
+                }
+            }
+
+            // Final check: ensure graffiti is within max distance from any rail
+            if (VineGenerator != null && UseSplineBasedGraffiti)
+            {
+                float distToRail = VineGenerator.GetDistanceToNearestSpline(position);
+                if (distToRail > GraffitiMaxDistanceFromRail)
+                {
+                    return false; // Too far from any rail
                 }
             }
 
