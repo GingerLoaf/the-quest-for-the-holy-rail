@@ -513,6 +513,7 @@ namespace StarterAssets
 
         private float _parryWindowTimer;
         private bool _parryWindowActive;
+        public bool IsParryActive => _parryWindowActive;
 
         // Spray graffiti state
         private GraffitiSpot _activeGraffiti;
@@ -528,6 +529,8 @@ namespace StarterAssets
 
         // Dash state
         private bool _isDashing;
+        public bool IsDashing => _isDashing;
+        public float DashCooldownNormalized => DashCooldown > 0f ? Mathf.Clamp01(_dashCooldownTimer / DashCooldown) : 0f;
         private float _dashTimer;
         private float _dashCooldownTimer;
         private Vector3 _dashDirection;
@@ -535,6 +538,7 @@ namespace StarterAssets
         // Boost state
         private bool _isBoosting;
         public bool IsBoosting => _isBoosting;
+        public float BoostCooldownNormalized => BoostCooldown > 0f ? Mathf.Clamp01(_boostCooldownTimer / BoostCooldown) : 0f;
         private float _boostTimer;
         private float _boostCooldownTimer;
         private Vector3 _boostDirection;
@@ -621,6 +625,7 @@ namespace StarterAssets
         private Animator _animator;
         private CharacterController _controller;
         private StarterAssetsInputs _input;
+        public StarterAssetsInputs InputState => _input;
         private GameObject _mainCamera;
 
         private const float _threshold = 0.01f;
