@@ -87,6 +87,7 @@ namespace HolyRail.Scripts
 
         // Pause state
         private bool _isPaused;
+
         public static DeathWall Instance { get; private set; }
 
         private void Awake()
@@ -292,21 +293,35 @@ namespace HolyRail.Scripts
                 }
 
                 transform.position += Vector3.forward * CurrentSpeed * Time.deltaTime;
+
+                // Distance-based death check (works even when CharacterController is disabled during grinding)
+                if (StarterAssets.ThirdPersonController_RailGrinder.Instance != null)
+                {
+                    var playerZ = StarterAssets.ThirdPersonController_RailGrinder.Instance.transform.position.z;
+                    if (transform.position.z >= playerZ)
+                    {
+                        DamagePlayer();
+                    }
+                }
             }
+        }
+
+        private void DamagePlayer()
+        {
+            Debug.Log($"<color=red>Player Hit by Death Wall!</color> <color=yellow>Current Speed: {_playerCurrentSpeed:F2} m/s</color> | <color=cyan>Max Speed Reached: {_playerMaxSpeed:F2} m/s</color> | <color=orange>Death Wall Speed: {CurrentSpeed:F2} m/s</color>", gameObject);
+
+#if UNITY_EDITOR
+            RecordDeathAnalytics_EditorOnly();
+#endif
+
+            GameSessionManager.Instance?.TakeDamage(5);
         }
 
         private void OnTriggerEnter(Collider other)
         {
             if (other.CompareTag("Player"))
             {
-                Debug.Log($"<color=red>Player Killed!</color> <color=yellow>Current Speed: {_playerCurrentSpeed:F2} m/s</color> | <color=cyan>Max Speed Reached: {_playerMaxSpeed:F2} m/s</color> | <color=orange>Death Wall Speed: {CurrentSpeed:F2} m/s</color>", gameObject);
-
-#if UNITY_EDITOR
-                RecordDeathAnalytics_EditorOnly();
-#endif
-
-                // Trigger player death event (soft reset instead of scene reload)
-                GameSessionManager.Instance?.TakeDamage(1000);
+                DamagePlayer();
                 return;
             }
 
