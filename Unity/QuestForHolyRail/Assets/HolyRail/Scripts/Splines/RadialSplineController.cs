@@ -94,6 +94,10 @@ namespace HolyRail.Splines
         private bool _warnedMissingMaterial;
         private bool _warnedMissingMesh;
 
+        // Retry mesh extraction at runtime
+        private int _meshRetryCount;
+        private const int MaxMeshRetries = 10;
+
         // Original knot data for non-destructive noise application
         private List<List<BezierKnot>> _originalKnots = new List<List<BezierKnot>>();
         private bool _knotsCached;
@@ -109,6 +113,8 @@ namespace HolyRail.Splines
         private void OnEnable()
         {
             SubscribeToSplineChanges();
+            _meshRetryCount = 0;
+            _warnedMissingMesh = false;
 
             if (_cloneData.Count > 0 && !_buffersInitialized)
             {
@@ -255,7 +261,15 @@ namespace HolyRail.Splines
             // Try to auto-extract mesh from SplineExtrude
             if (SourceMesh == null)
             {
-                TryExtractMeshFromSplineExtrude();
+                if (!TryExtractMeshFromSplineExtrude())
+                {
+                    // At runtime, schedule a retry on next frame if we haven't exceeded max retries
+                    if (Application.isPlaying && _meshRetryCount < MaxMeshRetries)
+                    {
+                        _needsRegeneration = true;
+                        return;
+                    }
+                }
             }
 
             // Validate we have both mesh and spline data before proceeding
@@ -268,7 +282,7 @@ namespace HolyRail.Splines
                 ClearGrindableContainers();
                 ReleaseBuffers();
 
-                if (!hasMesh)
+                if (!hasMesh && _meshRetryCount >= MaxMeshRetries)
                     Debug.LogWarning("RadialSplineController: No mesh available. Assign SourceMesh or add SplineExtrude with mesh to master spline.");
                 if (!hasSplines)
                     Debug.LogWarning("RadialSplineController: Master spline has no spline data.");
@@ -641,26 +655,40 @@ namespace HolyRail.Splines
 
         /// <summary>
         /// Try to extract mesh from SplineExtrude component on master spline.
+        /// In editor, this serializes the mesh reference so it's available in builds.
+        /// At runtime, retries if SplineExtrude hasn't generated the mesh yet.
         /// </summary>
-        private void TryExtractMeshFromSplineExtrude()
+        private bool TryExtractMeshFromSplineExtrude()
         {
             if (MasterSpline == null)
-                return;
+                return false;
 
             var meshFilter = MasterSpline.GetComponent<MeshFilter>();
             if (meshFilter != null && meshFilter.sharedMesh != null)
             {
                 SourceMesh = meshFilter.sharedMesh;
                 _warnedMissingMesh = false;
+                _meshRetryCount = 0;
                 Debug.Log($"RadialSplineController: Auto-extracted mesh '{SourceMesh.name}' from MeshFilter");
+
+#if UNITY_EDITOR
+                // Mark dirty so the mesh reference gets serialized into the scene/prefab
+                if (!Application.isPlaying)
+                {
+                    EditorUtility.SetDirty(this);
+                }
+#endif
+                return true;
             }
             else
             {
-                if (!_warnedMissingMesh)
+                _meshRetryCount++;
+                if (_meshRetryCount >= MaxMeshRetries && !_warnedMissingMesh)
                 {
-                    Debug.LogWarning($"RadialSplineController: No MeshFilter with mesh found on '{MasterSpline.name}'. Assign SourceMesh manually or add SplineExtrude to master spline.");
+                    Debug.LogWarning($"RadialSplineController: No MeshFilter with mesh found on '{MasterSpline.name}' after {MaxMeshRetries} attempts. Assign SourceMesh manually or add SplineExtrude to master spline.");
                     _warnedMissingMesh = true;
                 }
+                return false;
             }
         }
 
